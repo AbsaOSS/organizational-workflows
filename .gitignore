@@ -4,3 +4,5 @@ target
 .idea
 *.iml
 .vscode
+github/security/alerts-aul.json
+github/security/alerts-scan.json

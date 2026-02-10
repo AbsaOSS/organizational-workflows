@@ -13,6 +13,10 @@ Design intent:
 Requirements:
 - `gh` CLI (authenticated; uses GH_TOKEN in CI)
 - `git` available + repository checkout if you want snippet-based fingerprints
+
+Draft / debug (no writes):
+- Run in dry-run mode to compute fingerprints and show intended actions without creating/editing Issues:
+    `python3 promote_alerts.py --file alerts.json --dry-run`
 """
 
 from __future__ import annotations
@@ -429,7 +433,7 @@ def build_body_context(alert: dict[str, Any]) -> str:
     return "\n".join(parts).strip() + "\n"
 
 
-def ensure_issue(repo: str, alert: dict[str, Any]) -> None:
+def ensure_issue(repo: str, alert: dict[str, Any], *, dry_run: bool = False) -> None:
     alert_number = int(alert.get("alert_number"))
 
     tool = str(alert.get("tool") or "")
@@ -487,6 +491,14 @@ def ensure_issue(repo: str, alert: dict[str, Any]) -> None:
         )
 
         title = build_issue_title(rule_name, rule_id, canonical_fp)
+        if dry_run:
+            print(
+                "DRY-RUN: would create issue for alert "
+                f"{alert_number} (fp={canonical_fp[:8]}) "
+                f"labels=[{LABEL_SOURCE}, sec:sev/{severity}] title={title!r}"
+            )
+            return
+
         num = gh_issue_create(repo_full, title, body, [LABEL_SOURCE, f"sec:sev/{severity}"])
         if num is not None:
             print(f"Created issue #{num} for alert {alert_number} (fp={canonical_fp[:8]})")
@@ -498,10 +510,15 @@ def ensure_issue(repo: str, alert: dict[str, Any]) -> None:
 
     # Reopen if needed.
     reopened = False
-    if issue.state.lower() == "closed":
-        if gh_issue_edit_state(repo_full, issue.number, "open"):
+    needs_reopen = issue.state.lower() == "closed"
+    if needs_reopen:
+        if dry_run:
             reopened = True
-            print(f"Reopened issue #{issue.number} (alert {alert_number})")
+            print(f"DRY-RUN: would reopen issue #{issue.number} (alert {alert_number})")
+        else:
+            if gh_issue_edit_state(repo_full, issue.number, "open"):
+                reopened = True
+                print(f"Reopened issue #{issue.number} (alert {alert_number})")
 
     secmeta = load_secmeta(issue.body)
     if not secmeta:
@@ -553,40 +570,52 @@ def ensure_issue(repo: str, alert: dict[str, Any]) -> None:
 
     new_body = upsert_secmeta(issue.body, secmeta)
     if new_body != issue.body:
-        gh_issue_edit_body(repo_full, issue.number, new_body)
+        if dry_run:
+            print(f"DRY-RUN: would update secmeta/body for issue #{issue.number} (alert {alert_number})")
+        else:
+            gh_issue_edit_body(repo_full, issue.number, new_body)
 
     # Ensure baseline labels.
-    gh_issue_add_labels(repo_full, issue.number, [LABEL_SOURCE, f"sec:sev/{severity}"])
+    if dry_run:
+        print(f"DRY-RUN: would ensure labels on issue #{issue.number}: [{LABEL_SOURCE}, sec:sev/{severity}]")
+    else:
+        gh_issue_add_labels(repo_full, issue.number, [LABEL_SOURCE, f"sec:sev/{severity}"])
 
     if reopened:
-        gh_issue_comment(
-            repo_full,
-            issue.number,
-            "[sec-event]\n"
-            f"action={SEC_EVENT_REOPEN}\n"
-            "source=code_scanning\n"
-            f"gh_alert_number={alert_number}\n"
-            "[/sec-event]",
-        )
+        if dry_run:
+            print(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {alert_number})")
+        else:
+            gh_issue_comment(
+                repo_full,
+                issue.number,
+                "[sec-event]\n"
+                f"action={SEC_EVENT_REOPEN}\n"
+                "source=code_scanning\n"
+                f"gh_alert_number={alert_number}\n"
+                "[/sec-event]",
+            )
     elif new_occurrence:
-        gh_issue_comment(
-            repo_full,
-            issue.number,
-            "[sec-event]\n"
-            f"action={SEC_EVENT_OCCURRENCE}\n"
-            "source=code_scanning\n"
-            f"seen_at={utc_today()}\n"
-            f"gh_alert_number={alert_number}\n"
-            f"occurrence_fp={occurrence_fp}\n"
-            f"commit_sha={commit_sha}\n"
-            f"path={path}\n"
-            f"start_line={start_line or ''}\n"
-            f"end_line={end_line or ''}\n"
-            "[/sec-event]",
-        )
+        if dry_run:
+            print(f"DRY-RUN: would comment occurrence event on issue #{issue.number} (alert {alert_number})")
+        else:
+            gh_issue_comment(
+                repo_full,
+                issue.number,
+                "[sec-event]\n"
+                f"action={SEC_EVENT_OCCURRENCE}\n"
+                "source=code_scanning\n"
+                f"seen_at={utc_today()}\n"
+                f"gh_alert_number={alert_number}\n"
+                f"occurrence_fp={occurrence_fp}\n"
+                f"commit_sha={commit_sha}\n"
+                f"path={path}\n"
+                f"start_line={start_line or ''}\n"
+                f"end_line={end_line or ''}\n"
+                "[/sec-event]",
+            )
 
 
-def promote_from_file(path: str) -> None:
+def promote_from_file(path: str, *, dry_run: bool = False) -> None:
     if not os.path.exists(path):
         raise SystemExit(f"ERROR: alerts file not found: {path}")
 
@@ -610,7 +639,7 @@ def promote_from_file(path: str) -> None:
             continue
         # stash repo on the alert for convenience
         alert["_repo"] = repo_full
-        ensure_issue(repo_full, alert)
+        ensure_issue(repo_full, alert, dry_run=dry_run)
 
 
 def parse_args() -> argparse.Namespace:
@@ -621,6 +650,11 @@ def parse_args() -> argparse.Namespace:
         default="alerts.json",
         help="alerts JSON file produced by collect_alert.sh (default: alerts.json)",
     )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Do not create/edit/comment/label issues; only read and print intended actions",
+    )
     return p.parse_args()
 
 
@@ -628,7 +662,7 @@ def main() -> None:
     if shutil.which("gh") is None:
         raise SystemExit("ERROR: gh CLI is required. Install and authenticate (gh auth login).")
     args = parse_args()
-    promote_from_file(args.file)
+    promote_from_file(args.file, dry_run=bool(args.dry_run))
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ Input:
 
 Design intent:
 - One Issue per *finding* (stable identity), not per GitHub alert.
-- Match Issues strictly by alert_hash.
+- Match Issues strictly by fingerprint (scanner-provided "Alert hash").
 - Store identifiers + lifecycle metadata in a single `secmeta` block in the Issue body.
 - Add structured `[sec-event]` comments only for meaningful lifecycle changes (reopen, new occurrence).
 
@@ -15,7 +15,7 @@ Requirements:
 
 
 Draft / debug (no writes):
-- Run in dry-run mode to compute fingerprints and show intended actions without creating/editing Issues:
+- Run in dry-run mode to use alert hash, build secmeta, and show intended actions without creating/editing Issues:
     `python3 promote_alerts.py --file alerts.json --issue-label scope:Security --dry-run`
 """
 
@@ -136,13 +136,6 @@ def run_gh(args: list[str], *, capture_output: bool = True) -> subprocess.Comple
         print("ERROR: gh CLI not found. Install and authenticate gh.", file=sys.stderr)
         raise SystemExit(1)
 
-
-@dataclass
-class IssueRef:
-    number: int
-    state: str
-
-
 @dataclass
 class Issue:
     number: int
@@ -154,68 +147,6 @@ class Issue:
 @dataclass
 class IssueIndex:
     by_fingerprint: dict[str, Issue]
-
-
-def gh_issue_list_first(repo: str, search: str) -> IssueRef | None:
-    res = run_gh(
-        [
-            "issue",
-            "list",
-            "--repo",
-            repo,
-            "--search",
-            search,
-            "--state",
-            "all",
-            "--json",
-            "number,state",
-            "--limit",
-            "1",
-        ]
-    )
-    if res.returncode != 0:
-        print(f"gh issue list failed: {res.stderr}", file=sys.stderr)
-        return None
-    try:
-        items = json.loads(res.stdout or "[]")
-    except Exception:
-        return None
-    if not items:
-        return None
-    num = items[0].get("number")
-    state = items[0].get("state")
-    if not isinstance(num, int):
-        return None
-    return IssueRef(number=num, state=state or "")
-
-
-def gh_issue_view(repo: str, number: int) -> Issue | None:
-    res = run_gh(
-        [
-            "issue",
-            "view",
-            str(number),
-            "--repo",
-            repo,
-            "--json",
-            "number,state,title,body",
-        ]
-    )
-    if res.returncode != 0:
-        print(f"gh issue view failed for #{number}: {res.stderr}", file=sys.stderr)
-        return None
-    try:
-        obj = json.loads(res.stdout)
-    except Exception:
-        return None
-    return Issue(
-        number=int(obj.get("number")),
-        state=str(obj.get("state") or ""),
-        title=str(obj.get("title") or ""),
-        body=str(obj.get("body") or ""),
-    )
-
-
 def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
     """Load issues with a given label.
 
@@ -424,6 +355,7 @@ def extract_cwe(alert: dict[str, Any]) -> str | None:
 
 
 def compute_occurrence_fp(commit_sha: str, path: str, start_line: int | None, end_line: int | None) -> str:
+    # Works without git; used to record distinct sightings over time.
     return sha256_hex(f"{commit_sha}|{path}|{start_line or ''}|{end_line or ''}")
 
 
@@ -444,9 +376,9 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
 def find_issue_in_index(
     index: IssueIndex,
     *,
-    alert_hash: str,
+    fingerprint: str,
 ) -> Issue | None:
-    return index.by_fingerprint.get(alert_hash)
+    return index.by_fingerprint.get(fingerprint)
 
 
 def build_issue_title(rule_name: str | None, rule_id: str, canonical_fp: str) -> str:
@@ -488,11 +420,11 @@ def build_body_context(alert: dict[str, Any]) -> str:
 
 
 def ensure_issue(
-    repo: str,
     alert: dict[str, Any],
     issues: dict[int, Issue],
     *,
     dry_run: bool = False,
+    dry_run_details: bool = False,
 ) -> None:
     alert_number = int(alert.get("alert_number"))
 
@@ -514,15 +446,15 @@ def ensure_issue(
             "Expected alert['_message_params'] to be set by load_open_alerts_from_file()."
         )
 
-    alert_hash = str(msg_params.get(AlertMessageKey.ALERT_HASH.value) or "").strip()
+    fingerprint = str(msg_params.get(AlertMessageKey.ALERT_HASH.value) or "").strip()
 
-    if not alert_hash:
+    if not fingerprint:
         raise SystemExit(
             f"ERROR: missing {AlertMessageKey.ALERT_HASH.value!r} in alert message parameters for alert_number={alert_number}. "
             "Ensure the collector/scanner includes an 'Alert hash: ...' line."
         )
 
-    canonical_fp = alert_hash
+    canonical_fp = fingerprint
 
     occurrence_fp = compute_occurrence_fp(commit_sha, path, start_line, end_line)
 
@@ -533,7 +465,7 @@ def ensure_issue(
     index = build_issue_index(issues)
     matched = find_issue_in_index(
         index,
-        alert_hash=alert_hash,
+        fingerprint=fingerprint,
     )
     if matched is None:
         secmeta: dict[str, str] = {
@@ -569,13 +501,14 @@ def ensure_issue(
         if dry_run:
             labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
             print(f"DRY-RUN: would create issue for alert {alert_number} (fp={canonical_fp[:8]})")
-            print("DRY-RUN: --- issue title ---")
-            print(title)
-            print("DRY-RUN: --- issue labels ---")
-            print(", ".join(labels))
-            print("DRY-RUN: --- issue body ---")
-            print(body)
-            print("DRY-RUN: --- end issue ---")
+            print(f"DRY-RUN: title={title!r}")
+            print(f"DRY-RUN: labels={labels}")
+            if dry_run_details:
+                print("DRY-RUN: --- full alert payload ---")
+                print(json.dumps(alert, indent=2, sort_keys=True))
+                print("DRY-RUN: --- full issue body ---")
+                print(body)
+                print("DRY-RUN: --- end details ---")
             return
 
         num = gh_issue_create(repo_full, title, body, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
@@ -651,6 +584,10 @@ def ensure_issue(
     if new_body != issue.body:
         if dry_run:
             print(f"DRY-RUN: would update secmeta/body for issue #{issue.number} (alert {alert_number})")
+            if dry_run_details:
+                print("DRY-RUN: --- full updated issue body ---")
+                print(new_body)
+                print("DRY-RUN: --- end details ---")
         else:
             gh_issue_edit_body(repo_full, issue.number, new_body)
 
@@ -666,6 +603,16 @@ def ensure_issue(
     if reopened:
         if dry_run:
             print(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {alert_number})")
+            if dry_run_details:
+                print("DRY-RUN: --- comment body ---")
+                print(
+                    "[sec-event]\n"
+                    f"action={SEC_EVENT_REOPEN}\n"
+                    "source=code_scanning\n"
+                    f"gh_alert_number={alert_number}\n"
+                    "[/sec-event]"
+                )
+                print("DRY-RUN: --- end details ---")
         else:
             gh_issue_comment(
                 repo_full,
@@ -679,6 +626,22 @@ def ensure_issue(
     elif new_occurrence:
         if dry_run:
             print(f"DRY-RUN: would comment occurrence event on issue #{issue.number} (alert {alert_number})")
+            if dry_run_details:
+                print("DRY-RUN: --- comment body ---")
+                print(
+                    "[sec-event]\n"
+                    f"action={SEC_EVENT_OCCURRENCE}\n"
+                    "source=code_scanning\n"
+                    f"seen_at={utc_today()}\n"
+                    f"gh_alert_number={alert_number}\n"
+                    f"occurrence_fp={occurrence_fp}\n"
+                    f"commit_sha={commit_sha}\n"
+                    f"path={path}\n"
+                    f"start_line={start_line or ''}\n"
+                    f"end_line={end_line or ''}\n"
+                    "[/sec-event]"
+                )
+                print("DRY-RUN: --- end details ---")
         else:
             gh_issue_comment(
                 repo_full,
@@ -748,11 +711,11 @@ def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]
 
 
 def sync_alerts_and_issues(
-    repo: str,
     alerts: dict[int, dict[str, Any]],
     issues: dict[int, Issue],
     *,
     dry_run: bool = False,
+    dry_run_details: bool = False,
 ) -> None:
     """Sync open alerts into issues.
 
@@ -760,7 +723,7 @@ def sync_alerts_and_issues(
     """
 
     for alert in alerts.values():
-        ensure_issue(repo, alert, issues, dry_run=dry_run)
+        ensure_issue(alert, issues, dry_run=dry_run, dry_run_details=dry_run_details)
 
 
 def parse_args() -> argparse.Namespace:
@@ -777,6 +740,11 @@ def parse_args() -> argparse.Namespace:
         help="Do not create/edit/comment/label issues; only read and print intended actions",
     )
     p.add_argument(
+        "--dry-run-details",
+        action="store_true",
+        help="In dry-run mode, print full alert payload and issue payload details",
+    )
+    p.add_argument(
         "--issue-label",
         default=LABEL_SCOPE_SECURITY,
         help=f"Only mine issues with this label (default: {LABEL_SCOPE_SECURITY})",
@@ -791,7 +759,12 @@ def main() -> None:
 
     repo_full, open_alerts = load_open_alerts_from_file(args.file)
     issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
-    sync_alerts_and_issues(repo_full, open_alerts, issues, dry_run=bool(args.dry_run))
+    sync_alerts_and_issues(
+        open_alerts,
+        issues,
+        dry_run=bool(args.dry_run),
+        dry_run_details=bool(args.dry_run_details),
+    )
 
 
 if __name__ == "__main__":

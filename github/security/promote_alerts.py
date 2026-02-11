@@ -41,6 +41,8 @@ SEC_EVENT_OPEN = "open"
 SEC_EVENT_REOPEN = "reopen"
 SEC_EVENT_OCCURRENCE = "occurrence"
 
+VERBOSE_ENABLED = False
+
 SECMETA_RE = re.compile(r"```secmeta\n(.*?)\n```", re.S)
 
 
@@ -93,8 +95,27 @@ def parse_alert_message_params(message: str | None) -> dict[str, str]:
         value = value_raw.strip()
         key_norm = " ".join(key.lower().split())
         params[key_norm] = value
-        
+
     return params
+
+
+def _parse_runner_debug() -> bool:
+    raw = os.getenv("RUNNER_DEBUG")
+    if raw is None or raw == "":
+        return False
+    if raw not in {"0", "1"}:
+        raise SystemExit("ERROR: RUNNER_DEBUG must be '0' or '1' when set")
+    return raw == "1"
+
+
+def _set_verbose_enabled(value: bool) -> None:
+    global VERBOSE_ENABLED
+    VERBOSE_ENABLED = bool(value)
+
+
+def vprint(msg: str) -> None:
+    if VERBOSE_ENABLED:
+        print(msg)
 
 
 def utc_today() -> str:
@@ -147,6 +168,51 @@ class Issue:
 @dataclass
 class IssueIndex:
     by_fingerprint: dict[str, Issue]
+    parent_by_rule_id: dict[str, Issue]
+
+
+SECMETA_TYPE_PARENT = "parent"
+SECMETA_TYPE_CHILD = "child"
+
+
+def gh_issue_get_rest_id(repo: str, number: int) -> int | None:
+    res = run_gh(["api", f"repos/{repo}/issues/{number}", "--jq", ".id"])
+    if res.returncode != 0:
+        print(f"WARN: Failed to fetch REST issue id for #{number}: {res.stderr}", file=sys.stderr)
+        return None
+    try:
+        return int((res.stdout or "").strip())
+    except Exception:
+        print(f"WARN: Failed to parse REST issue id for #{number}: {res.stdout!r}", file=sys.stderr)
+        return None
+
+
+def gh_issue_add_sub_issue(repo: str, parent_number: int, sub_issue_id: int) -> bool:
+    # NOTE: sub_issue_id must be an integer (REST issue id), not an issue number.
+    res = run_gh(
+        [
+            "api",
+            "--method",
+            "POST",
+            f"repos/{repo}/issues/{parent_number}/sub_issues",
+            "-F",
+            f"sub_issue_id={int(sub_issue_id)}",
+        ]
+    )
+    if res.returncode != 0:
+        print(
+            f"WARN: Failed to add sub-issue link parent=#{parent_number} sub_issue_id={sub_issue_id}: {res.stderr}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def gh_issue_add_sub_issue_by_number(repo: str, parent_number: int, child_number: int) -> bool:
+    child_id = gh_issue_get_rest_id(repo, child_number)
+    if child_id is None:
+        return False
+    return gh_issue_add_sub_issue(repo, parent_number, child_id)
 def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
     """Load issues with a given label.
 
@@ -361,15 +427,23 @@ def compute_occurrence_fp(commit_sha: str, path: str, start_line: int | None, en
 
 def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
     by_fingerprint: dict[str, Issue] = {}
+    parent_by_rule_id: dict[str, Issue] = {}
 
     for issue in issues.values():
         secmeta = load_secmeta(issue.body)
+        secmeta_type = (secmeta.get("type") or "").strip().lower()
+        if secmeta_type == SECMETA_TYPE_PARENT:
+            rule_id = (secmeta.get("rule_id") or "").strip()
+            if rule_id:
+                parent_by_rule_id.setdefault(rule_id, issue)
+
         fp = (secmeta.get("fingerprint") or "").strip() or (secmeta.get("alert_hash") or "").strip()
-        if fp:
+        if fp and secmeta_type != SECMETA_TYPE_PARENT:
             by_fingerprint.setdefault(fp, issue)
 
     return IssueIndex(
         by_fingerprint=by_fingerprint,
+        parent_by_rule_id=parent_by_rule_id,
     )
 
 
@@ -379,6 +453,81 @@ def find_issue_in_index(
     fingerprint: str,
 ) -> Issue | None:
     return index.by_fingerprint.get(fingerprint)
+
+
+def find_parent_issue(index: IssueIndex, *, rule_id: str) -> Issue | None:
+    return index.parent_by_rule_id.get(rule_id)
+
+
+def build_parent_issue_title(rule_id: str) -> str:
+    return f"Security Alert – {rule_id}".strip()
+
+
+def build_parent_issue_body(alert: dict[str, Any]) -> str:
+    rule_id = str(alert.get("rule_id") or "").strip()
+    rule_name = str(alert.get("rule_name") or "").strip()
+    tool = str(alert.get("tool") or "").strip()
+    severity = str((alert.get("severity") or "unknown")).lower()
+    help_uri = str(alert.get("help_uri") or "").strip()
+    repo_full = str(alert.get("_repo") or "").strip()
+
+    secmeta: dict[str, str] = {
+        "schema": "1",
+        "type": SECMETA_TYPE_PARENT,
+        "repo": repo_full,
+        "source": "code_scanning",
+        "tool": tool,
+        "severity": severity,
+        "rule_id": rule_id,
+        "first_seen": iso_date(alert.get("created_at")),
+        "last_seen": iso_date(alert.get("updated_at")),
+        "postponed_until": "",
+    }
+
+    lines: list[str] = [render_secmeta(secmeta), "", f"# {build_parent_issue_title(rule_id)}", ""]
+    if rule_name:
+        lines.append(f"Rule name: {rule_name}")
+    if help_uri:
+        lines.append(f"Help: {help_uri}")
+    lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+def ensure_parent_issue(
+    alert: dict[str, Any],
+    issues: dict[int, Issue],
+    index: IssueIndex,
+    *,
+    dry_run: bool,
+) -> Issue | None:
+    rule_id = str(alert.get("rule_id") or "").strip()
+    if not rule_id:
+        return None
+
+    repo_full = str(alert.get("_repo") or "")
+    existing = find_parent_issue(index, rule_id=rule_id)
+    if existing is not None:
+        return existing
+
+    title = build_parent_issue_title(rule_id)
+    body = build_parent_issue_body(alert)
+    labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
+    if dry_run:
+        print(f"DRY-RUN: create parent rule_id={rule_id} title={title!r} labels={labels}")
+        if VERBOSE_ENABLED:
+            print("DRY-RUN: body_preview_begin")
+            print(body)
+            print("DRY-RUN: body_preview_end")
+        return None
+
+    num = gh_issue_create(repo_full, title, body, labels)
+    if num is None:
+        return None
+    created = Issue(number=num, state="open", title=title, body=body)
+    issues[num] = created
+    index.parent_by_rule_id[rule_id] = created
+    print(f"Created parent issue #{num} for rule_id={rule_id}")
+    return created
 
 
 def build_issue_title(rule_name: str | None, rule_id: str, canonical_fp: str) -> str:
@@ -422,9 +571,9 @@ def build_body_context(alert: dict[str, Any]) -> str:
 def ensure_issue(
     alert: dict[str, Any],
     issues: dict[int, Issue],
+    index: IssueIndex,
     *,
     dry_run: bool = False,
-    dry_run_details: bool = False,
 ) -> None:
     alert_number = int(alert.get("alert_number"))
 
@@ -462,7 +611,7 @@ def ensure_issue(
     first_seen = iso_date(alert.get("created_at"))
     last_seen = iso_date(alert.get("updated_at"))
 
-    index = build_issue_index(issues)
+    parent_issue = ensure_parent_issue(alert, issues, index, dry_run=dry_run)
     matched = find_issue_in_index(
         index,
         fingerprint=fingerprint,
@@ -470,6 +619,7 @@ def ensure_issue(
     if matched is None:
         secmeta: dict[str, str] = {
             "schema": "1",
+            "type": SECMETA_TYPE_CHILD,
             "fingerprint": canonical_fp,
             "repo": repo_full,
             "source": "code_scanning",
@@ -487,7 +637,11 @@ def ensure_issue(
         if cwe:
             secmeta["cwe"] = cwe
 
-        body = render_secmeta(secmeta) + "\n\n" + build_body_context(alert)
+        parent_hint = ""
+        if parent_issue is not None:
+            parent_hint = f"#{parent_issue.number}"
+
+        body = render_secmeta(secmeta) + "\n\n" + f"> Parent issue: {parent_hint}\n\n" + build_body_context(alert)
         body += (
             "\n[sec-event]\n"
             f"action={SEC_EVENT_OPEN}\n"
@@ -500,23 +654,45 @@ def ensure_issue(
         title = build_issue_title(rule_name, rule_id, canonical_fp)
         if dry_run:
             labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
-            print(f"DRY-RUN: would create issue for alert {alert_number} (fp={canonical_fp[:8]})")
-            print(f"DRY-RUN: title={title!r}")
-            print(f"DRY-RUN: labels={labels}")
-            if dry_run_details:
-                print("DRY-RUN: --- full alert payload ---")
-                print(json.dumps(alert, indent=2, sort_keys=True))
-                print("DRY-RUN: --- full issue body ---")
+
+            loc = f"{path}:{start_line or ''}".rstrip(":")
+            commit_short = commit_sha[:8] if commit_sha else ""
+            print(
+                "DRY-RUN: create child "
+                f"alert={alert_number} rule_id={rule_id} sev={severity} fp={canonical_fp[:8]} tool={tool} "
+                f"commit={commit_short} loc={loc} title={title!r} labels=[{','.join(labels)}] "
+                f"| secmeta:first_seen={first_seen} last_seen={last_seen} occurrence_count=1 gh_alert_numbers=[{alert_number}]"
+            )
+            if parent_issue is None and rule_id:
+                print(f"DRY-RUN: add sub-issue link parent_rule_id={rule_id} child=(new) alert={alert_number}")
+            elif parent_issue is not None:
+                print(
+                    f"DRY-RUN: add sub-issue link parent=#{parent_issue.number} child=(new) alert={alert_number}"
+                )
+            if VERBOSE_ENABLED:
+                print("DRY-RUN: body_preview_begin")
                 print(body)
-                print("DRY-RUN: --- end details ---")
+                print("DRY-RUN: body_preview_end")
             return
 
         num = gh_issue_create(repo_full, title, body, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
         if num is not None:
             print(f"Created issue #{num} for alert {alert_number} (fp={canonical_fp[:8]})")
+
+            created = Issue(number=num, state="open", title=title, body=body)
+            issues[num] = created
+            index.by_fingerprint[canonical_fp] = created
+
+            if parent_issue is not None:
+                print(f"Add sub-issue link parent=#{parent_issue.number} child=#{num} (alert {alert_number})")
+                gh_issue_add_sub_issue_by_number(repo_full, parent_issue.number, num)
         return
 
     issue = matched
+
+    if parent_issue is None and rule_id:
+        # Try to find a parent if it already exists (e.g., created earlier).
+        parent_issue = find_parent_issue(index, rule_id=rule_id)
 
     # Reopen if needed.
     reopened = False
@@ -584,10 +760,10 @@ def ensure_issue(
     if new_body != issue.body:
         if dry_run:
             print(f"DRY-RUN: would update secmeta/body for issue #{issue.number} (alert {alert_number})")
-            if dry_run_details:
-                print("DRY-RUN: --- full updated issue body ---")
+            if VERBOSE_ENABLED:
+                print("DRY-RUN: body_preview_begin")
                 print(new_body)
-                print("DRY-RUN: --- end details ---")
+                print("DRY-RUN: body_preview_end")
         else:
             gh_issue_edit_body(repo_full, issue.number, new_body)
 
@@ -603,16 +779,12 @@ def ensure_issue(
     if reopened:
         if dry_run:
             print(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {alert_number})")
-            if dry_run_details:
-                print("DRY-RUN: --- comment body ---")
-                print(
-                    "[sec-event]\n"
-                    f"action={SEC_EVENT_REOPEN}\n"
-                    "source=code_scanning\n"
-                    f"gh_alert_number={alert_number}\n"
-                    "[/sec-event]"
-                )
-                print("DRY-RUN: --- end details ---")
+            vprint(
+                "DRY-RUN: comment_body="
+                + "[sec-event] "
+                + f"action={SEC_EVENT_REOPEN} source=code_scanning gh_alert_number={alert_number} "
+                + "[/sec-event]"
+            )
         else:
             gh_issue_comment(
                 repo_full,
@@ -626,22 +798,14 @@ def ensure_issue(
     elif new_occurrence:
         if dry_run:
             print(f"DRY-RUN: would comment occurrence event on issue #{issue.number} (alert {alert_number})")
-            if dry_run_details:
-                print("DRY-RUN: --- comment body ---")
-                print(
-                    "[sec-event]\n"
-                    f"action={SEC_EVENT_OCCURRENCE}\n"
-                    "source=code_scanning\n"
-                    f"seen_at={utc_today()}\n"
-                    f"gh_alert_number={alert_number}\n"
-                    f"occurrence_fp={occurrence_fp}\n"
-                    f"commit_sha={commit_sha}\n"
-                    f"path={path}\n"
-                    f"start_line={start_line or ''}\n"
-                    f"end_line={end_line or ''}\n"
-                    "[/sec-event]"
-                )
-                print("DRY-RUN: --- end details ---")
+            vprint(
+                "DRY-RUN: comment_body="
+                + "[sec-event] "
+                + f"action={SEC_EVENT_OCCURRENCE} source=code_scanning seen_at={utc_today()} "
+                + f"gh_alert_number={alert_number} occurrence_fp={occurrence_fp} commit_sha={commit_sha} "
+                + f"path={path} start_line={start_line or ''} end_line={end_line or ''} "
+                + "[/sec-event]"
+            )
         else:
             gh_issue_comment(
                 repo_full,
@@ -715,15 +879,16 @@ def sync_alerts_and_issues(
     issues: dict[int, Issue],
     *,
     dry_run: bool = False,
-    dry_run_details: bool = False,
 ) -> None:
     """Sync open alerts into issues.
 
-    For now this simply runs the per-alert ensure/update logic.
+    Creates/updates child issues (keyed by fingerprint) and ensures a parent issue
+    per rule_id, then links children under the parent via GitHub sub-issues.
     """
 
+    index = build_issue_index(issues)
     for alert in alerts.values():
-        ensure_issue(alert, issues, dry_run=dry_run, dry_run_details=dry_run_details)
+        ensure_issue(alert, issues, index, dry_run=dry_run)
 
 
 def parse_args() -> argparse.Namespace:
@@ -740,9 +905,9 @@ def parse_args() -> argparse.Namespace:
         help="Do not create/edit/comment/label issues; only read and print intended actions",
     )
     p.add_argument(
-        "--dry-run-details",
+        "--verbose",
         action="store_true",
-        help="In dry-run mode, print full alert payload and issue payload details",
+        help="Enable verbose logs (also enabled when RUNNER_DEBUG=1)",
     )
     p.add_argument(
         "--issue-label",
@@ -757,13 +922,14 @@ def main() -> None:
         raise SystemExit("ERROR: gh CLI is required. Install and authenticate (gh auth login).")
     args = parse_args()
 
+    _set_verbose_enabled(bool(args.verbose) or _parse_runner_debug())
+
     repo_full, open_alerts = load_open_alerts_from_file(args.file)
     issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
     sync_alerts_and_issues(
         open_alerts,
         issues,
         dry_run=bool(args.dry_run),
-        dry_run_details=bool(args.dry_run_details),
     )
 
 

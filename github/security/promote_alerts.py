@@ -44,7 +44,165 @@ SEC_EVENT_OCCURRENCE = "occurrence"
 
 VERBOSE_ENABLED = False
 
-SECMETA_RE = re.compile(r"```secmeta\n(.*?)\n```", re.S)
+# `secmeta` is automation-owned metadata. Store it in a hidden HTML comment block
+# at the top of the issue body so humans don't see it by default.
+SECMETA_RE = re.compile(r"<!--\s*secmeta\r?\n(.*?)\r?\n-->", re.S)
+LEGACY_SECMETA_RE = re.compile(r"```secmeta\r?\n(.*?)\r?\n```", re.S)
+
+
+PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
+
+## General Information
+
+- **Category:** {{ category }}
+- **AVD ID:** {{ avd_id }}
+- **Title:** {{ title }}
+- **Severity:** {{ severity }}
+- **Published date:** {{ published_date }}
+- **Vendor scoring:** {{ vendor_scoring }}
+
+## Affected Package
+
+- **Package name:** {{ package_name }}
+- **Fixed version:** {{ fixed_version }}
+
+## Vulnerability Description
+
+- {{ message }}
+
+## Classification
+
+- **CVE:** {{ extraData.cwe }}
+- **OWASP:** {{ extraData.owasp }}
+- **Category:** {{ extraData.category }}
+
+## Risk Assessment
+
+- **Impact:** {{ extraData.impact }}  
+  *(Potential impact if the vulnerability is successfully exploited)*
+- **Likelihood:** {{ extraData.likelihood }}  
+  *(How easily the vulnerability can be exploited in practice)*
+- **Confidence:** {{ extraData.confidence }}  
+  *(How confident the finding is; likelihood of false positive)*
+
+## Recommended Remediation
+
+{{ extraData.remediation }}
+
+## References
+
+{{ extraData.references }}
+"""
+
+
+CHILD_BODY_TEMPLATE = """## General Information
+
+- **AVD ID:** {{ avd_id }}
+- **Title:** {{ title }}
+
+## Location
+
+- **Repository:** {{ repository_full_name }}
+- **File:** {{ scm_file }}
+- **Line:** {{ target_line }}
+
+## Dependency Details
+
+- **Package name:** {{ package_name }}
+- **Installed version:** {{ installed_version }}
+- **Fixed version:** {{ fixed_version }}
+- **Reachable:** {{ reachable }}
+
+## Detection Timeline
+
+- **Scan date:** {{ scan_date }}
+- **First seen:** {{ first_seen }}
+"""
+
+
+PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_\.]+)\s*\}\}")
+
+
+SEC_EVENT_BLOCK_RE = re.compile(r"\[sec-event\]\s*(.*?)\s*\[/sec-event\]", re.S)
+
+
+def parse_sec_event_fields(raw: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for line in (raw or "").splitlines():
+        s = line.strip()
+        if not s or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        fields[k.strip()] = v.strip()
+    return fields
+
+
+def render_sec_event(fields: dict[str, str]) -> str:
+    preferred_order = [
+        "action",
+        "seen_at",
+        "source",
+        "gh_alert_number",
+        "occurrence_fp",
+        "commit_sha",
+        "path",
+        "start_line",
+        "end_line",
+    ]
+    lines: list[str] = ["[sec-event]"]
+    for k in preferred_order:
+        if k in fields and str(fields.get(k, "")).strip() != "":
+            lines.append(f"{k}={fields.get(k, '')}")
+    for k in sorted(k for k in fields.keys() if k not in set(preferred_order)):
+        v = str(fields.get(k, ""))
+        if v.strip() == "":
+            continue
+        lines.append(f"{k}={v}")
+    lines.append("[/sec-event]")
+    return "\n".join(lines) + "\n"
+
+
+def strip_sec_events_from_body(body: str) -> str:
+    """Remove any legacy sec-event content from an issue body.
+
+    - Drops a dedicated '## Security Events' section if present (from previous versions).
+    - Removes any inline [sec-event] blocks.
+    """
+
+    text = body or ""
+    # Drop everything from the header onward (the section was intended to be last).
+    m = re.search(r"\n##\s+Security\s+Events\s*\n", text, flags=re.IGNORECASE)
+    if m:
+        text = text[: m.start()].rstrip() + "\n"
+    # Remove any inline blocks.
+    text = SEC_EVENT_BLOCK_RE.sub("", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
+    return text
+
+
+def _get_nested_value(data: dict[str, Any], dotted_key: str) -> Any:
+    cur: Any = data
+    for part in (dotted_key or "").split("."):
+        if not part:
+            continue
+        if isinstance(cur, dict) and part in cur:
+            cur = cur.get(part)
+        else:
+            return ""
+    if cur is None:
+        return ""
+    return cur
+
+
+def render_markdown_template(template: str, values: dict[str, Any]) -> str:
+    def repl(match: re.Match[str]) -> str:
+        key = match.group(1)
+        v = _get_nested_value(values, key)
+        if isinstance(v, (dict, list)):
+            return json.dumps(v)
+        return str(v)
+
+    return PLACEHOLDER_RE.sub(repl, template)
 
 
 # Alert message parsing
@@ -280,6 +438,7 @@ def gh_issue_edit_body(repo: str, number: int, body: str) -> bool:
     if res.returncode != 0:
         print(f"Failed to edit body for #{number}: {res.stderr}", file=sys.stderr)
         return False
+    print(f"Updated issue #{number} body")
     return True
 
 
@@ -334,10 +493,15 @@ def parse_kv_block(block: str) -> dict[str, str]:
 
 
 def load_secmeta(issue_body: str) -> dict[str, str]:
-    match = SECMETA_RE.search(issue_body or "")
-    if not match:
-        return {}
-    return parse_kv_block(match.group(1))
+    body = issue_body or ""
+    match = SECMETA_RE.search(body)
+    if match:
+        return parse_kv_block(match.group(1))
+    # Back-compat for older issues created with a visible fenced block.
+    legacy = LEGACY_SECMETA_RE.search(body)
+    if legacy:
+        return parse_kv_block(legacy.group(1))
+    return {}
 
 
 def render_secmeta(secmeta: dict[str, str]) -> str:
@@ -365,16 +529,21 @@ def render_secmeta(secmeta: dict[str, str]) -> str:
     # include any additional keys deterministically
     for key in sorted(k for k in secmeta.keys() if k not in set(preferred_order)):
         lines.append(f"{key}={secmeta.get(key, '')}")
-    return "```secmeta\n" + "\n".join(lines) + "\n```"
+    # Hidden metadata block for automation.
+    return "<!--secmeta\n" + "\n".join(lines) + "\n-->"
 
 
 def upsert_secmeta(issue_body: str, secmeta: dict[str, str]) -> str:
     new_block = render_secmeta(secmeta)
-    if SECMETA_RE.search(issue_body or ""):
-        return SECMETA_RE.sub(new_block, issue_body, count=1)
+    body = issue_body or ""
+    if SECMETA_RE.search(body):
+        return SECMETA_RE.sub(new_block, body, count=1)
+    # Migrate legacy fenced metadata into hidden block.
+    if LEGACY_SECMETA_RE.search(body):
+        return LEGACY_SECMETA_RE.sub(new_block, body, count=1)
     # Prepend if absent.
-    if issue_body.strip():
-        return new_block + "\n\n" + issue_body.strip() + "\n"
+    if body.strip():
+        return new_block + "\n\n" + body.strip() + "\n"
     return new_block + "\n"
 
 
@@ -464,13 +633,42 @@ def build_parent_issue_title(rule_id: str) -> str:
     return f"Security Alert – {rule_id}".strip()
 
 
+def _alert_extra_data(alert: dict[str, Any]) -> dict[str, Any]:
+    extra = alert.get("extraData")
+    if isinstance(extra, dict):
+        return extra
+    return {}
+
+
+def _alert_value(alert: dict[str, Any], *keys: str) -> str:
+    for k in keys:
+        if not k:
+            continue
+        v = alert.get(k)
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s:
+            return s
+    return ""
+
+
 def build_parent_issue_body(alert: dict[str, Any]) -> str:
     rule_id = str(alert.get("rule_id") or "").strip()
-    rule_name = str(alert.get("rule_name") or "").strip()
     tool = str(alert.get("tool") or "").strip()
     severity = str((alert.get("severity") or "unknown")).lower()
-    help_uri = str(alert.get("help_uri") or "").strip()
     repo_full = str(alert.get("_repo") or "").strip()
+
+    avd_id = _alert_value(alert, "avd_id", "rule_id") or rule_id
+    title = _alert_value(alert, "title", "rule_name", "rule_id") or rule_id
+    category = _alert_value(alert, "category")
+    published_date = _alert_value(alert, "published_date", "publishedDate", "created_at")
+    vendor_scoring = _alert_value(alert, "vendor_scoring", "vendorScoring")
+    package_name = _alert_value(alert, "package_name", "packageName")
+    fixed_version = _alert_value(alert, "fixed_version", "fixedVersion")
+    message = _alert_value(alert, "message")
+
+    extra = _alert_extra_data(alert)
 
     secmeta: dict[str, str] = {
         "schema": "1",
@@ -485,13 +683,21 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
         "postponed_until": "",
     }
 
-    lines: list[str] = [render_secmeta(secmeta), "", f"# {build_parent_issue_title(rule_id)}", ""]
-    if rule_name:
-        lines.append(f"Rule name: {rule_name}")
-    if help_uri:
-        lines.append(f"Help: {help_uri}")
-    lines.append("")
-    return "\n".join(lines).strip() + "\n"
+    values: dict[str, Any] = {
+        "category": category,
+        "avd_id": avd_id,
+        "title": title,
+        "severity": severity,
+        "published_date": iso_date(published_date),
+        "vendor_scoring": vendor_scoring,
+        "package_name": package_name,
+        "fixed_version": fixed_version,
+        "message": message,
+        "extraData": extra,
+    }
+
+    human_body = render_markdown_template(PARENT_BODY_TEMPLATE, values).strip() + "\n"
+    return render_secmeta(secmeta) + "\n\n" + human_body
 
 
 def ensure_parent_issue(
@@ -508,6 +714,56 @@ def ensure_parent_issue(
     repo_full = str(alert.get("_repo") or "")
     existing = find_parent_issue(index, rule_id=rule_id)
     if existing is not None:
+        # Keep parent issues aligned to the template as alerts evolve.
+        existing_secmeta = load_secmeta(existing.body) or {"schema": "1"}
+        existing_first = existing_secmeta.get("first_seen") or iso_date(alert.get("created_at"))
+        existing_last = existing_secmeta.get("last_seen") or iso_date(alert.get("updated_at"))
+        first_seen_final = min(existing_first, iso_date(alert.get("created_at")))
+        last_seen_final = max(existing_last, iso_date(alert.get("updated_at")))
+
+        existing_secmeta.update(
+            {
+                "schema": existing_secmeta.get("schema") or "1",
+                "type": SECMETA_TYPE_PARENT,
+                "repo": repo_full,
+                "source": existing_secmeta.get("source") or "code_scanning",
+                "tool": str(alert.get("tool") or existing_secmeta.get("tool") or ""),
+                "severity": str((alert.get("severity") or existing_secmeta.get("severity") or "unknown")).lower(),
+                "rule_id": rule_id,
+                "first_seen": first_seen_final,
+                "last_seen": last_seen_final,
+                "postponed_until": existing_secmeta.get("postponed_until", ""),
+            }
+        )
+
+        rebuilt = render_secmeta(existing_secmeta) + "\n\n" + render_markdown_template(
+            PARENT_BODY_TEMPLATE,
+            {
+                "category": _alert_value(alert, "category"),
+                "avd_id": _alert_value(alert, "avd_id", "rule_id") or rule_id,
+                "title": _alert_value(alert, "title", "rule_name", "rule_id") or rule_id,
+                "severity": str((alert.get("severity") or "unknown")).lower(),
+                "published_date": iso_date(_alert_value(alert, "published_date", "publishedDate", "created_at")),
+                "vendor_scoring": _alert_value(alert, "vendor_scoring", "vendorScoring"),
+                "package_name": _alert_value(alert, "package_name", "packageName"),
+                "fixed_version": _alert_value(alert, "fixed_version", "fixedVersion"),
+                "message": _alert_value(alert, "message"),
+                "extraData": _alert_extra_data(alert),
+            },
+        ).strip() + "\n"
+        rebuilt = strip_sec_events_from_body(rebuilt)
+
+        if rebuilt != (existing.body or ""):
+            if dry_run:
+                print(f"DRY-RUN: would update parent issue #{existing.number} body to template (rule_id={rule_id})")
+                if VERBOSE_ENABLED:
+                    print("DRY-RUN: body_preview_begin")
+                    print(rebuilt)
+                    print("DRY-RUN: body_preview_end")
+            else:
+                gh_issue_edit_body(repo_full, existing.number, rebuilt)
+                existing.body = rebuilt
+
         return existing
 
     title = build_parent_issue_title(rule_id)
@@ -568,6 +824,39 @@ def build_body_context(alert: dict[str, Any]) -> str:
         parts.append("Message:")
         parts.append(message)
     return "\n".join(parts).strip() + "\n"
+
+
+def build_child_issue_body(alert: dict[str, Any]) -> str:
+    repo_full = str(alert.get("_repo") or "").strip()
+    avd_id = _alert_value(alert, "avd_id", "rule_id")
+    title = _alert_value(alert, "title", "rule_name", "rule_id")
+    scm_file = _alert_value(alert, "file", "scm_file")
+    target_line = _alert_value(alert, "target_line")
+    if not target_line:
+        target_line = _alert_value(alert, "start_line")
+
+    package_name = _alert_value(alert, "package_name", "packageName")
+    installed_version = _alert_value(alert, "installed_version", "installedVersion")
+    fixed_version = _alert_value(alert, "fixed_version", "fixedVersion")
+    reachable = _alert_value(alert, "reachable")
+
+    scan_date = _alert_value(alert, "scan_date", "scanDate", "updated_at")
+    first_seen = _alert_value(alert, "first_seen", "created_at")
+
+    values: dict[str, Any] = {
+        "avd_id": avd_id,
+        "title": title,
+        "repository_full_name": repo_full,
+        "scm_file": scm_file,
+        "target_line": target_line,
+        "package_name": package_name,
+        "installed_version": installed_version,
+        "fixed_version": fixed_version,
+        "reachable": reachable,
+        "scan_date": iso_date(scan_date),
+        "first_seen": iso_date(first_seen),
+    }
+    return render_markdown_template(CHILD_BODY_TEMPLATE, values).strip() + "\n"
 
 
 def ensure_issue(
@@ -643,15 +932,8 @@ def ensure_issue(
         if parent_issue is not None:
             parent_hint = f"#{parent_issue.number}"
 
-        body = render_secmeta(secmeta) + "\n\n" + f"> Parent issue: {parent_hint}\n\n" + build_body_context(alert)
-        body += (
-            "\n[sec-event]\n"
-            f"action={SEC_EVENT_OPEN}\n"
-            "source=code_scanning\n"
-            f"gh_alert_number={alert_number}\n"
-            f"occurrence_fp={occurrence_fp}\n"
-            "[/sec-event]\n"
-        )
+        human_body = build_child_issue_body(alert)
+        body = render_secmeta(secmeta) + "\n\n" + human_body
 
         title = build_issue_title(rule_name, rule_id, canonical_fp)
         if dry_run:
@@ -688,6 +970,25 @@ def ensure_issue(
             if parent_issue is not None:
                 print(f"Add sub-issue link parent=#{parent_issue.number} child=#{num} (alert {alert_number})")
                 gh_issue_add_sub_issue_by_number(repo_full, parent_issue.number, num)
+
+            # Each security event is recorded as a new comment (human visible).
+            gh_issue_comment(
+                repo_full,
+                num,
+                render_sec_event(
+                    {
+                        "action": SEC_EVENT_OPEN,
+                        "seen_at": first_seen,
+                        "source": "code_scanning",
+                        "gh_alert_number": str(alert_number),
+                        "occurrence_fp": str(occurrence_fp),
+                        "commit_sha": str(commit_sha),
+                        "path": str(path),
+                        "start_line": str(start_line or ""),
+                        "end_line": str(end_line or ""),
+                    }
+                ),
+            )
         return
 
     issue = matched
@@ -712,6 +1013,9 @@ def ensure_issue(
     if not secmeta:
         # If missing, seed it; keep existing content below.
         secmeta = {"schema": "1"}
+
+    # Strip any legacy body-based sec-event content; events now live in comments.
+    _ = strip_sec_events_from_body(issue.body)
 
     # Keep `fingerprint` as the single canonical identifier.
     # Drop legacy `alert_hash` if present to avoid duplication.
@@ -758,16 +1062,59 @@ def ensure_issue(
     if cwe:
         secmeta["cwe"] = cwe
 
-    new_body = upsert_secmeta(issue.body, secmeta)
+    # Rewrite body to match templates (human-first) while keeping hidden secmeta and events.
+    human_body = build_child_issue_body(alert)
+    new_body = render_secmeta(secmeta) + "\n\n" + human_body
+    new_body = strip_sec_events_from_body(new_body)
+
+    # Each security event is recorded as a new comment (human visible).
+    if reopened:
+        if dry_run:
+            print(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {alert_number})")
+        else:
+            gh_issue_comment(
+                repo_full,
+                issue.number,
+                render_sec_event(
+                    {
+                        "action": SEC_EVENT_REOPEN,
+                        "seen_at": utc_today(),
+                        "source": "code_scanning",
+                        "gh_alert_number": str(alert_number),
+                    }
+                ),
+            )
+    elif new_occurrence:
+        if dry_run:
+            print(f"DRY-RUN: would comment occurrence event on issue #{issue.number} (alert {alert_number})")
+        else:
+            gh_issue_comment(
+                repo_full,
+                issue.number,
+                render_sec_event(
+                    {
+                        "action": SEC_EVENT_OCCURRENCE,
+                        "seen_at": utc_today(),
+                        "source": "code_scanning",
+                        "gh_alert_number": str(alert_number),
+                        "occurrence_fp": str(occurrence_fp),
+                        "commit_sha": str(commit_sha),
+                        "path": str(path),
+                        "start_line": str(start_line or ""),
+                        "end_line": str(end_line or ""),
+                    }
+                ),
+            )
     if new_body != issue.body:
         if dry_run:
-            print(f"DRY-RUN: would update secmeta/body for issue #{issue.number} (alert {alert_number})")
+            print(f"DRY-RUN: would update issue #{issue.number} body to template (alert {alert_number})")
             if VERBOSE_ENABLED:
                 print("DRY-RUN: body_preview_begin")
                 print(new_body)
                 print("DRY-RUN: body_preview_end")
         else:
             gh_issue_edit_body(repo_full, issue.number, new_body)
+            issue.body = new_body
 
     # Ensure baseline labels.
     if dry_run:
@@ -778,52 +1125,7 @@ def ensure_issue(
     else:
         gh_issue_add_labels(repo_full, issue.number, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
 
-    if reopened:
-        if dry_run:
-            print(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {alert_number})")
-            vprint(
-                "DRY-RUN: comment_body="
-                + "[sec-event] "
-                + f"action={SEC_EVENT_REOPEN} source=code_scanning gh_alert_number={alert_number} "
-                + "[/sec-event]"
-            )
-        else:
-            gh_issue_comment(
-                repo_full,
-                issue.number,
-                "[sec-event]\n"
-                f"action={SEC_EVENT_REOPEN}\n"
-                "source=code_scanning\n"
-                f"gh_alert_number={alert_number}\n"
-                "[/sec-event]",
-            )
-    elif new_occurrence:
-        if dry_run:
-            print(f"DRY-RUN: would comment occurrence event on issue #{issue.number} (alert {alert_number})")
-            vprint(
-                "DRY-RUN: comment_body="
-                + "[sec-event] "
-                + f"action={SEC_EVENT_OCCURRENCE} source=code_scanning seen_at={utc_today()} "
-                + f"gh_alert_number={alert_number} occurrence_fp={occurrence_fp} commit_sha={commit_sha} "
-                + f"path={path} start_line={start_line or ''} end_line={end_line or ''} "
-                + "[/sec-event]"
-            )
-        else:
-            gh_issue_comment(
-                repo_full,
-                issue.number,
-                "[sec-event]\n"
-                f"action={SEC_EVENT_OCCURRENCE}\n"
-                "source=code_scanning\n"
-                f"seen_at={utc_today()}\n"
-                f"gh_alert_number={alert_number}\n"
-                f"occurrence_fp={occurrence_fp}\n"
-                f"commit_sha={commit_sha}\n"
-                f"path={path}\n"
-                f"start_line={start_line or ''}\n"
-                f"end_line={end_line or ''}\n"
-                "[/sec-event]",
-            )
+    # (dry-run logging handled above for comments)
 
 
 def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]]]:

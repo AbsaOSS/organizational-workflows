@@ -66,10 +66,6 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 - **Package name:** {{ package_name }}
 - **Fixed version:** {{ fixed_version }}
 
-## Vulnerability Description
-
-- {{ message }}
-
 ## Classification
 
 - **CVE:** {{ extraData.cwe }}
@@ -98,7 +94,12 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 CHILD_BODY_TEMPLATE = """## General Information
 
 - **AVD ID:** {{ avd_id }}
+- **Alert hash:** {{ alert_hash }}
 - **Title:** {{ title }}
+
+## Vulnerability Description
+
+{{ message }}
 
 ## Location
 
@@ -462,6 +463,50 @@ def gh_issue_comment(repo: str, number: int, body: str) -> bool:
     return True
 
 
+def maybe_reopen_parent_issue(
+    repo: str,
+    parent_issue: Issue | None,
+    *,
+    rule_id: str,
+    dry_run: bool,
+    context: str,
+    child_issue_number: int | None = None,
+) -> None:
+    if parent_issue is None:
+        return
+
+    if parent_issue.state.lower() != "closed":
+        return
+
+    if dry_run:
+        print(
+            f"DRY-RUN: would reopen parent issue #{parent_issue.number} (rule_id={rule_id}) "
+            f"due_to={context} child={child_issue_number or ''}".rstrip()
+        )
+        print(
+            f"DRY-RUN: would comment parent reopen sec-event on issue #{parent_issue.number} (rule_id={rule_id})"
+        )
+        parent_issue.state = "open"
+        return
+
+    if gh_issue_edit_state(repo, parent_issue.number, "open"):
+        parent_issue.state = "open"
+        gh_issue_comment(
+            repo,
+            parent_issue.number,
+            render_sec_event(
+                {
+                    "action": SEC_EVENT_REOPEN,
+                    "seen_at": utc_today(),
+                    "source": "code_scanning",
+                    "rule_id": rule_id,
+                    "context": context,
+                    "child_issue": str(child_issue_number) if child_issue_number else "",
+                }
+            ),
+        )
+
+
 def gh_issue_create(repo: str, title: str, body: str, labels: list[str]) -> int | None:
     args: list[str] = ["issue", "create", "--repo", repo, "--title", title, "--body", body]
     for label in labels:
@@ -666,7 +711,6 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
     vendor_scoring = _alert_value(alert, "vendor_scoring", "vendorScoring")
     package_name = _alert_value(alert, "package_name", "packageName")
     fixed_version = _alert_value(alert, "fixed_version", "fixedVersion")
-    message = _alert_value(alert, "message")
 
     extra = _alert_extra_data(alert)
 
@@ -692,7 +736,6 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
         "vendor_scoring": vendor_scoring,
         "package_name": package_name,
         "fixed_version": fixed_version,
-        "message": message,
         "extraData": extra,
     }
 
@@ -747,7 +790,6 @@ def ensure_parent_issue(
                 "vendor_scoring": _alert_value(alert, "vendor_scoring", "vendorScoring"),
                 "package_name": _alert_value(alert, "package_name", "packageName"),
                 "fixed_version": _alert_value(alert, "fixed_version", "fixedVersion"),
-                "message": _alert_value(alert, "message"),
                 "extraData": _alert_extra_data(alert),
             },
         ).strip() + "\n"
@@ -861,9 +903,17 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
     scan_date = _alert_value(alert, "scan_date", "scanDate", "updated_at")
     first_seen = _alert_value(alert, "first_seen", "created_at")
 
+    msg_params = alert.get("_message_params")
+    alert_hash = ""
+    if isinstance(msg_params, dict):
+        alert_hash = str(msg_params.get(AlertMessageKey.ALERT_HASH.value) or "").strip()
+    message = _alert_value(alert, "message")
+
     values: dict[str, Any] = {
         "avd_id": avd_id,
+        "alert_hash": alert_hash,
         "title": title,
+        "message": message,
         "repository_full_name": repo_full,
         "scm_file": scm_file,
         "target_line": target_line,
@@ -994,6 +1044,14 @@ def ensure_issue(
             index.by_fingerprint[canonical_fp] = created
 
             if parent_issue is not None:
+                maybe_reopen_parent_issue(
+                    repo_full,
+                    parent_issue,
+                    rule_id=rule_id,
+                    dry_run=dry_run,
+                    context="new_child",
+                    child_issue_number=num,
+                )
                 print(f"Add sub-issue link parent=#{parent_issue.number} child=#{num} (alert {alert_number})")
                 gh_issue_add_sub_issue_by_number(repo_full, parent_issue.number, num)
 
@@ -1034,6 +1092,16 @@ def ensure_issue(
             if gh_issue_edit_state(repo_full, issue.number, "open"):
                 reopened = True
                 print(f"Reopened issue #{issue.number} (alert {alert_number})")
+
+    if reopened:
+        maybe_reopen_parent_issue(
+            repo_full,
+            parent_issue,
+            rule_id=rule_id,
+            dry_run=dry_run,
+            context="reopen_child",
+            child_issue_number=issue.number,
+        )
 
     secmeta = load_secmeta(issue.body)
     if not secmeta:

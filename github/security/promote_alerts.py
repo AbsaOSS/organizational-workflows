@@ -781,6 +781,24 @@ def ensure_parent_issue(
     if num is None:
         return None
 
+    # Parent lifecycle event (human visible): opened/created.
+    if dry_run:
+        print(f"DRY-RUN: would comment parent open sec-event on issue #{num} (rule_id={rule_id})")
+    else:
+        gh_issue_comment(
+            repo_full,
+            num,
+            render_sec_event(
+                {
+                    "action": SEC_EVENT_OPEN,
+                    "seen_at": iso_date(alert.get("created_at")),
+                    "source": "code_scanning",
+                    "rule_id": rule_id,
+                    "severity": str((alert.get("severity") or "unknown")).lower(),
+                }
+            ),
+        )
+
     created = Issue(number=num, state="open", title=title, body=body)
     issues[num] = created
     index.parent_by_rule_id[rule_id] = created
@@ -868,6 +886,13 @@ def ensure_issue(
 ) -> None:
     alert_number = int(alert.get("alert_number"))
 
+    alert_state = str(alert.get("state") or "").lower().strip()
+    if alert_state and alert_state != "open":
+        # This script is designed to process open alerts only.
+        # Input is typically produced by collect_alert.sh with --state open (default).
+        vprint(f"Skip alert {alert_number}: state={alert_state!r} (only 'open' processed)")
+        return
+
     tool = str(alert.get("tool") or "")
     rule_id = str(alert.get("rule_id") or "")
     rule_name = alert.get("rule_name")
@@ -907,6 +932,7 @@ def ensure_issue(
         index,
         fingerprint=fingerprint,
     )
+
     if matched is None:
         secmeta: dict[str, str] = {
             "schema": "1",

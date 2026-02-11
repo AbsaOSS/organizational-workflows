@@ -13,9 +13,10 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 ## Contents
 
 | Script | Purpose | Requires |
-|---|---|---|
+| --- | --- | --- |
+| `run-all.sh` | Main entrypoint: collect alerts then promote to Issues (local or Actions) | `gh`, `jq`, `python3` |
 | `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
-| `promote_alerts.py` | Create/reopen Issues from `alerts.json` | `gh` |
+| `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
 | `sync_issue_labels.py` | React to `sec:*` label changes and emit `[sec-event]` comments | `PyGithub`, `GITHUB_TOKEN` |
 | `process_sec_events.py` | Parse `[sec-event]` comments and apply state/side-effects | `PyGithub`, `GITHUB_TOKEN` |
 | `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
@@ -24,17 +25,40 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 ## Quick start (local)
 
 Prereqs:
+
 - Install and authenticate GitHub CLI: `gh auth login`
 - Install `jq`
 - Python 3.11+ recommended
 
-1) Collect open alerts:
+### Recommended (expected): `run-all.sh`
+
+This is the normal entrypoint for day-to-day use. It runs `collect_alert.sh` and then `promote_alerts.py`.
+
+1. Collect + promote in one command:
+
+```bash
+./run-all.sh --owner <org> --repo <repo>
+```
+
+To do a safe preview (no issue writes):
+
+```bash
+./run-all.sh --owner <org> --repo <repo> --dry-run
+```
+
+To see full body previews in dry-run, use `--verbose` (or set `RUNNER_DEBUG=1`).
+
+### Advanced (expert): individual steps
+
+You can run the individual steps when you need finer control or want to debug the pipeline:
+
+1. Collect open alerts:
 
 ```bash
 ./collect_alert.sh --owner <org> --repo <repo> --state open --out alerts.json
 ```
 
-2) Promote alerts to Issues:
+1. Promote alerts to Issues:
 
 ```bash
 python3 promote_alerts.py --file alerts.json
@@ -43,6 +67,8 @@ python3 promote_alerts.py --file alerts.json
 ## Run in GitHub Actions (minimal example)
 
 This is the simplest “after SARIF upload, sync issues” job.
+
+The expected entrypoint is `run-all.sh` (the individual scripts are still available when you need finer control).
 
 ```yaml
 name: Promote code scanning alerts to issues
@@ -66,45 +92,45 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Collect open alerts
+      - name: Collect + promote
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          OWNER="${GITHUB_REPOSITORY%/*}"
-          REPO="${GITHUB_REPOSITORY#*/}"
-          ./github/security/collect_alert.sh --owner "$OWNER" --repo "$REPO" --state open --out alerts.json
-
-      - name: Promote alerts to issues
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python3 github/security/promote_alerts.py --file alerts.json
+          ./github/security/run-all.sh --state open --out alerts.json
 ```
 
 ## Labels (contract)
 
-Automation only reacts to Issues that contain at least one `sec:*` label.
+This repository contains multiple scripts with different “label contracts”:
+
+- `promote_alerts.py` mines existing issues by `--issue-label` (default: `scope:Security`) and ensures baseline labels `scope:Security` and `type:Tech-debt` on child/parent issues it creates/updates.
+- `sync_issue_labels.py` and `process_sec_events.py` are intended to react to `sec:*` label changes and `[sec-event]` comments.
 
 ### Source
+
 - `sec:src/aquasec-sarif`
 
 ### State
+
 - `sec:state/postponed`
 - `sec:state/needs-review`
 
 ### Severity
+
 - `sec:sev/critical`
 - `sec:sev/high`
 - `sec:sev/medium`
 - `sec:sev/low`
 
 ### Closure reasons
+
 - `sec:close/fixed`
 - `sec:close/false-positive`
 - `sec:close/accepted-risk`
 - `sec:close/not-applicable`
 
 ### Postpone reasons
+
 - `sec:postpone/vendor`
 - `sec:postpone/platform`
 - `sec:postpone/roadmap`
@@ -114,10 +140,11 @@ Automation only reacts to Issues that contain at least one `sec:*` label.
 
 Each security Issue contains exactly one fenced `secmeta` block.
 
-Minimum recommended keys:
+Minimum recommended keys (child issue):
 
 ```secmeta
 schema=1
+type=child
 fingerprint=<finding_fingerprint>
 repo=org/repo
 source=code_scanning
@@ -129,6 +156,21 @@ last_seen=YYYY-MM-DD
 postponed_until=
 gh_alert_numbers=["123"]
 occurrence_count=1
+```
+
+Minimum recommended keys (parent issue):
+
+```secmeta
+schema=1
+type=parent
+repo=org/repo
+source=code_scanning
+tool=AquaSec
+severity=high
+rule_id=...
+first_seen=YYYY-MM-DD
+last_seen=YYYY-MM-DD
+postponed_until=
 ```
 
 The `secmeta` block is automation-owned (humans express intent via labels and `[sec-event]` comments).
@@ -144,6 +186,7 @@ Recommended example (fingerprint-first):
 ```
 
 Rules:
+
 - `FP=` is a short prefix of the canonical `finding_fingerprint` (8 chars is enough)
 - `POSTPONE=` exists only if postponed
 - Severity is expressed via labels, not the title
@@ -154,7 +197,7 @@ All lifecycle changes are logged via structured comments.
 
 Example close event:
 
-```
+```text
 [sec-event]
 action=close
 reason=fixed
@@ -165,13 +208,14 @@ evidence=PR#123
 
 Example postpone event:
 
-```
+```text
 [sec-event]
 action=postpone
 postponed_until=2026-03-15
 reason=vendor
 [/sec-event]
 ```
+
 ## How you “say duplicate / grouped / dismissed / reopened”
 
 Use Issue comments to express intent, and have automation translate that intent into labels / state changes / (optionally) GitHub alert actions.
@@ -188,41 +232,31 @@ Implementation note: the command parsing/side-effects depend on how [github/secu
 
 ## Design: fingerprints and matching
 
-### Why you need your own fingerprint
+### Current fingerprint source
 
-GitHub Code Scanning uses fingerprints internally to deduplicate alerts, but those fingerprints are not exposed as a stable field in the alert API response.
-
-Therefore you maintain your own Issue identity.
-
-### Identifiers you maintain
-
-You need three identifiers, each with a different purpose:
-
-1) `gh_alert_key` (operational pointer)
-   - Store `gh_alert_number` + `tool` + `rule_id` (+ optional config/category fields)
-2) `finding_fingerprint` (stable identity → one Issue per finding)
-   - Compute from rule + code context (not from alert numbers)
-3) `occurrence_fingerprint` (history)
-   - Compute from commit + (path/start/end)
-
-### Practical fingerprint algorithm
-
-Two levels, with a clear fallback:
+The current `promote_alerts.py` implementation expects the scanner to embed a stable fingerprint in the alert instance message text as a line in the form:
 
 ```text
-fast_fp = sha256(tool_name + "|" + rule_id + "|" + normalize(path) + "|" + start_line)
+Alert hash: <value>
 ```
 
-Preferred (more stable): snippet-based logical fingerprint:
+That `Alert hash` value is treated as the canonical `fingerprint` and is used to match Issues.
+
+### Identifiers stored in secmeta
+
+`promote_alerts.py` stores:
+
+- `fingerprint`: canonical finding identity (from `Alert hash`)
+- `gh_alert_numbers`: list of GitHub alert numbers observed for this finding
+- `occurrence_count` and `last_occurrence_fp`: best-effort occurrence tracking over time
+
+### Occurrence fingerprint
+
+For tracking repeat sightings, `promote_alerts.py` computes an occurrence fingerprint from:
 
 ```text
-snippet_hash = sha256(normalize_snippet(file_at(commit_sha, path, start_line-3, end_line+3)))
-logical_fp   = sha256(tool_name + "|" + rule_id + "|" + snippet_hash)
+commit_sha + path + start_line + end_line
 ```
-
-Rule:
-- Prefer `logical_fp` when you can compute the snippet.
-- Otherwise fall back to `fast_fp`.
 
 ### SARIF normalization to reduce duplicate GitHub alerts
 
@@ -236,9 +270,9 @@ Even with your own Issue fingerprint, you want GitHub alerts to remain stable:
 
 As of 2026-02, [github/security/promote_alerts.py](promote_alerts.py) implements the fingerprint-based sync loop described above:
 
-- Computes `fast_fp` for every alert and attempts `logical_fp` using `git show <commit_sha>:<path>` (falls back cleanly when snippet lookup fails)
-- Matches issues in order: `logical_fp` → `fast_fp` → legacy alert token in title (migration fallback)
-- Writes/updates `secmeta` with `fingerprint` (canonical), `logical_fp`, `fast_fp`, `gh_alert_numbers`, and lifecycle fields (`first_seen`, `last_seen`, `last_seen_commit`)
+- Matches issues strictly by `secmeta.fingerprint` (from the alert message `Alert hash: ...`)
+- Ensures a parent issue per `rule_id` (`secmeta.type=parent`) and links child issues under the parent using GitHub sub-issues
+- Writes/updates `secmeta` on child issues, including `gh_alert_numbers`, `first_seen`, `last_seen`, `last_seen_commit`, and occurrence tracking
 - Reopens a closed matching Issue when an alert is open again
 - Adds `[sec-event]` comments only for meaningful events (reopen, new occurrence)
 
@@ -247,6 +281,8 @@ As of 2026-02, [github/security/promote_alerts.py](promote_alerts.py) implements
 - `gh: command not found`: install GitHub CLI and ensure it’s on `PATH`.
 - `gh auth status` fails: run `gh auth login` locally, or set `GH_TOKEN` in Actions.
 - Permission errors in Actions: ensure the workflow has `security-events: read` and `issues: write` permissions.
+- `Output file alerts.json exists`: `collect_alert.sh` refuses to overwrite output; delete the file or pass a different `--out` path.
+- `missing 'alert hash' in alert message`: the scanner/collector needs to include an `Alert hash: ...` line in the alert instance message text.
 
 ## References
 

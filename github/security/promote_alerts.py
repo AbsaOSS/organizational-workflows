@@ -37,6 +37,7 @@ from typing import Any
 
 LABEL_SCOPE_SECURITY = "scope:Security"
 LABEL_TYPE_TECH_DEBT = "type:Tech-debt"
+LABEL_EPIC = "epic"
 SEC_EVENT_OPEN = "open"
 SEC_EVENT_REOPEN = "reopen"
 SEC_EVENT_OCCURRENCE = "occurrence"
@@ -511,7 +512,7 @@ def ensure_parent_issue(
 
     title = build_parent_issue_title(rule_id)
     body = build_parent_issue_body(alert)
-    labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
+    labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT, LABEL_EPIC]
     if dry_run:
         print(f"DRY-RUN: create parent rule_id={rule_id} title={title!r} labels={labels}")
         if VERBOSE_ENABLED:
@@ -523,6 +524,7 @@ def ensure_parent_issue(
     num = gh_issue_create(repo_full, title, body, labels)
     if num is None:
         return None
+
     created = Issue(number=num, state="open", title=title, body=body)
     issues[num] = created
     index.parent_by_rule_id[rule_id] = created

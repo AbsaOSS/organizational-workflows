@@ -15,6 +15,8 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [Shared workflows](#shared-workflows)
   - [Available reusable workflows](#available-reusable-workflows)
   - [How to adopt a shared workflow](#how-to-adopt-a-shared-workflow)
+    - [Aquasec Night Scan](#aquasec-night-scan)
+    - [Remove sec:adept-to-close on close](#remove-secadept-to-close-on-close)
 - [Labels (contract)](#labels-contract)
 - [Issue metadata (secmeta)](#issue-metadata-secmeta)
 - [Issue structure](#issue-structure)
@@ -132,12 +134,58 @@ The `worklows/` directory contains ready-to-copy **example caller workflows** th
 
 | Workflow | Trigger (caller) | Purpose |
 | --- | --- | --- |
+| `aquasec-night-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `run-all.sh` |
 | `remove-adept-to-close-on-issue-close.yml` | `issues: [closed]` | Removes the `sec:adept-to-close` label from security issues when they are closed |
 
 ### How to adopt a shared workflow
 
 1. Pick a workflow from the table above.
 2. Copy the matching example caller from `worklows/` into your application repository at `.github/workflows/`.
+
+#### Aquasec Night Scan
+
+The caller needs the following **repository secrets** configured:
+
+| Secret | Required | Purpose |
+| --- | --- | --- |
+| `AQUA_KEY` | yes | AquaSec API key |
+| `AQUA_SECRET` | yes | AquaSec API secret |
+| `AQUA_GROUP_ID` | yes | AquaSec group identifier |
+| `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
+| `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
+
+Example caller (already available in `worklows/aquasec-night-scan.yml`):
+
+```yaml
+name: Aquasec Night Scan
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: aquasec-night-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  security-events: write
+
+jobs:
+  scan:
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-night-scan.yml@master
+    secrets:
+      AQUA_KEY: ${{ secrets.AQUA_KEY }}
+      AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
+      AQUA_GROUP_ID: ${{ secrets.AQUA_GROUP_ID }}
+      AQUA_REPOSITORY_ID: ${{ secrets.AQUA_REPOSITORY_ID }}
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+```
+
+#### Remove sec:adept-to-close on close
 
 Example caller (already available in `worklows/remove-adept-to-close-on-issue-close.yml`):
 

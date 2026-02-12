@@ -22,6 +22,8 @@ REPO=""
 STATE="open"            # open | dismissed | fixed | all
 OUT_FILE="alerts.json"
 ISSUE_LABEL="scope:Security"
+TEAMS_WEBHOOK_URL="${TEAMS_WEBHOOK_URL:-}"
+SKIP_LABEL_CHECK="0"
 DRY_RUN="0"
 VERBOSE="0"
 FORCE="0"
@@ -31,8 +33,9 @@ usage() {
 Usage: run-all.sh [options]
 
 This is a thin wrapper that runs:
-  1) collect_alert.sh  -> writes alerts.json
-  2) promote_alerts.py -> creates/updates Issues from alerts.json
+  1) check_labels.py   -> verify required labels exist
+  2) collect_alert.sh  -> writes alerts.json
+  3) promote_alerts.py -> creates/updates Issues from alerts.json
 
 Repo selection:
   Provide --owner/--repo OR set GITHUB_REPOSITORY="<owner>/<repo>".
@@ -45,6 +48,8 @@ Options:
   --issue-label <label> Mine existing issues with this label (default: scope:Security)
   --dry-run             Do not write issues; only print intended actions
   --verbose             Verbose logs (also enabled by RUNNER_DEBUG=1)
+  --teams-webhook-url <url>  Teams Incoming Webhook URL (default: \$TEAMS_WEBHOOK_URL)
+  --skip-label-check    Skip the label existence check
   --force               Overwrite --out file if it exists
   -h, --help            Show this help
 
@@ -100,6 +105,14 @@ while [[ $# -gt 0 ]]; do
       VERBOSE="1"
       shift
       ;;
+    --teams-webhook-url)
+      TEAMS_WEBHOOK_URL="$2"
+      shift 2
+      ;;
+    --skip-label-check)
+      SKIP_LABEL_CHECK="1"
+      shift
+      ;;
     --force)
       FORCE="1"
       shift
@@ -139,6 +152,10 @@ esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+if [[ "$SKIP_LABEL_CHECK" != "1" ]]; then
+  python3 "$SCRIPT_DIR/check_labels.py" --repo "$OWNER/$REPO"
+fi
+
 if [[ -f "$OUT_FILE" ]]; then
   if [[ "$FORCE" == "1" ]]; then
     rm -f "$OUT_FILE"
@@ -156,6 +173,9 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 if [[ "$VERBOSE" == "1" ]]; then
   PROMOTE_ARGS+=(--verbose)
+fi
+if [[ -n "$TEAMS_WEBHOOK_URL" ]]; then
+  PROMOTE_ARGS+=(--teams-webhook-url "$TEAMS_WEBHOOK_URL")
 fi
 
 python3 "${PROMOTE_ARGS[@]}"

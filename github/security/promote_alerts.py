@@ -38,6 +38,7 @@ from typing import Any
 LABEL_SCOPE_SECURITY = "scope:Security"
 LABEL_TYPE_TECH_DEBT = "type:Tech-debt"
 LABEL_EPIC = "epic"
+LABEL_SEC_ADEPT_TO_CLOSE = "sec:adept-to-close"
 SEC_EVENT_OPEN = "open"
 SEC_EVENT_REOPEN = "reopen"
 SEC_EVENT_OCCURRENCE = "occurrence"
@@ -1287,6 +1288,42 @@ def sync_alerts_and_issues(
     index = build_issue_index(issues)
     for alert in alerts.values():
         ensure_issue(alert, issues, index, dry_run=dry_run)
+
+    # Detect child issues that have no matching open alert and label for closure.
+    alert_fingerprints: set[str] = set()
+    for alert in alerts.values():
+        msg_params = alert.get("_message_params")
+        if isinstance(msg_params, dict):
+            fp = str(msg_params.get(AlertMessageKey.ALERT_HASH.value) or "").strip()
+            if fp:
+                alert_fingerprints.add(fp)
+
+    open_issue_fps = {fp for fp, issue in index.by_fingerprint.items() if issue.state.lower() == "open"}
+    orphan_fps = open_issue_fps - alert_fingerprints
+
+    if not orphan_fps:
+        vprint("No orphan child issues detected – skipping sec:adept-to-close labelling")
+        return
+
+    print(f"Detected {len(orphan_fps)} orphan child issue(s) (open issue without matching alert)")
+
+    for fp in orphan_fps:
+        issue = index.by_fingerprint[fp]
+        repo = load_secmeta(issue.body).get("repo", "")
+        if not repo:
+            vprint(f"Skip orphan labelling for issue #{issue.number}: no repo in secmeta")
+            continue
+        if dry_run:
+            print(
+                f"DRY-RUN: would add label {LABEL_SEC_ADEPT_TO_CLOSE!r} "
+                f"to issue #{issue.number} (fingerprint={fp[:12]}…) – no matching open alert"
+            )
+        else:
+            print(
+                f"Adding label {LABEL_SEC_ADEPT_TO_CLOSE!r} to issue #{issue.number} "
+                f"(fingerprint={fp[:12]}…) – no matching open alert"
+            )
+            gh_issue_add_labels(repo, issue.number, [LABEL_SEC_ADEPT_TO_CLOSE])
 
 
 def parse_args() -> argparse.Namespace:

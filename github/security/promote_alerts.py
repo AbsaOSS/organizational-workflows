@@ -45,9 +45,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from enum import Enum
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -296,7 +297,7 @@ def vprint(msg: str) -> None:
 
 
 def utc_today() -> str:
-    return datetime.utcnow().date().isoformat()
+    return datetime.now(timezone.utc).date().isoformat()
 
 
 def iso_date(iso_dt: str | None) -> str:
@@ -334,6 +335,7 @@ def run_gh(args: list[str], *, capture_output: bool = True) -> subprocess.Comple
         print("ERROR: gh CLI not found. Install and authenticate gh.", file=sys.stderr)
         raise SystemExit(1)
 
+
 @dataclass
 class Issue:
     number: int
@@ -346,6 +348,17 @@ class Issue:
 class IssueIndex:
     by_fingerprint: dict[str, Issue]
     parent_by_rule_id: dict[str, Issue]
+
+
+@dataclass
+class NotifiedIssue:
+    """Tracks a new or reopened child issue for Teams notification."""
+    repo: str
+    issue_number: int
+    severity: str
+    category: str
+    state: str          # "new" or "reopen"
+    tool: str
 
 
 SECMETA_TYPE_PARENT = "parent"
@@ -390,6 +403,8 @@ def gh_issue_add_sub_issue_by_number(repo: str, parent_number: int, child_number
     if child_id is None:
         return False
     return gh_issue_add_sub_issue(repo, parent_number, child_id)
+
+
 def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
     """Load issues with a given label.
 
@@ -444,9 +459,35 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
 
 
 def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
-    res = run_gh(["issue", "edit", str(number), "--repo", repo, "--state", state])
-    if res.returncode != 0:
+    desired = (state or "").strip().lower()
+    if desired not in {"open", "closed"}:
+        raise ValueError(f"Unsupported issue state: {state!r}")
+
+    # Preferred (newer gh): `gh issue edit --state open|closed`
+    res = run_gh(["issue", "edit", str(number), "--repo", repo, "--state", desired])
+    if res.returncode == 0:
+        return True
+
+    stderr = (res.stderr or "") + (res.stdout or "")
+    if "unknown flag: --state" not in stderr:
         print(f"Failed to edit state for #{number}: {res.stderr}", file=sys.stderr)
+        return False
+
+    # Fallback for older gh versions that don't support `issue edit --state`.
+    if desired == "open":
+        res2 = run_gh(["issue", "reopen", str(number), "--repo", repo])
+    else:
+        res2 = run_gh(["issue", "close", str(number), "--repo", repo])
+    if res2.returncode == 0:
+        return True
+
+    # Last resort: REST API.
+    res3 = run_gh(["api", "--method", "PATCH", f"repos/{repo}/issues/{number}", "-f", f"state={desired}"])
+    if res3.returncode != 0:
+        print(
+            f"Failed to edit state for #{number}: {res2.stderr or res2.stdout or res.stderr}",
+            file=sys.stderr,
+        )
         return False
     return True
 
@@ -575,6 +616,7 @@ def render_secmeta(secmeta: dict[str, str]) -> str:
         "tool",
         "severity",
         "cwe",
+        "category",
         "rule_id",
         "first_seen",
         "last_seen",
@@ -944,12 +986,17 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
     return render_markdown_template(CHILD_BODY_TEMPLATE, values).strip() + "\n"
 
 
+def _classify_category(alert: dict[str, Any]) -> str:
+    """Derive a category from ``rule_name`` (left side of ``category/name``)."""
+    return str(alert.get("rule_name") or "").strip()
+
 def ensure_issue(
     alert: dict[str, Any],
     issues: dict[int, Issue],
     index: IssueIndex,
     *,
     dry_run: bool = False,
+    notifications: list[NotifiedIssue] | None = None,
 ) -> None:
     alert_number = int(alert.get("alert_number"))
 
@@ -1001,6 +1048,7 @@ def ensure_issue(
     )
 
     if matched is None:
+        category = _classify_category(alert)
         secmeta: dict[str, str] = {
             "schema": "1",
             "type": SECMETA_TYPE_CHILD,
@@ -1009,6 +1057,7 @@ def ensure_issue(
             "source": "code_scanning",
             "tool": tool,
             "severity": severity,
+            "category": category,
             "rule_id": rule_id,
             "first_seen": first_seen,
             "last_seen": last_seen,
@@ -1020,10 +1069,6 @@ def ensure_issue(
         }
         if cwe:
             secmeta["cwe"] = cwe
-
-        parent_hint = ""
-        if parent_issue is not None:
-            parent_hint = f"#{parent_issue.number}"
 
         human_body = build_child_issue_body(alert)
         body = render_secmeta(secmeta) + "\n\n" + human_body
@@ -1050,6 +1095,12 @@ def ensure_issue(
                 print("DRY-RUN: body_preview_begin")
                 print(body)
                 print("DRY-RUN: body_preview_end")
+            if notifications is not None:
+                notifications.append(NotifiedIssue(
+                    repo=repo_full, issue_number=0,
+                    severity=severity, category=category,
+                    state="new", tool=tool,
+                ))
             return
 
         num = gh_issue_create(repo_full, title, body, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
@@ -1059,6 +1110,13 @@ def ensure_issue(
             created = Issue(number=num, state="open", title=title, body=body)
             issues[num] = created
             index.by_fingerprint[canonical_fp] = created
+
+            if notifications is not None:
+                notifications.append(NotifiedIssue(
+                    repo=repo_full, issue_number=num,
+                    severity=severity, category=category,
+                    state="new", tool=tool,
+                ))
 
             if parent_issue is not None:
                 maybe_reopen_parent_issue(
@@ -1119,14 +1177,19 @@ def ensure_issue(
             context="reopen_child",
             child_issue_number=issue.number,
         )
+        if notifications is not None:
+            existing_secmeta = load_secmeta(issue.body)
+            reopen_category = (existing_secmeta.get("category") or "").strip() or _classify_category(alert)
+            notifications.append(NotifiedIssue(
+                repo=repo_full, issue_number=issue.number,
+                severity=severity, category=reopen_category,
+                state="reopen", tool=tool,
+            ))
 
     secmeta = load_secmeta(issue.body)
     if not secmeta:
         # If missing, seed it; keep existing content below.
         secmeta = {"schema": "1"}
-
-    # Strip any legacy body-based sec-event content; events now live in comments.
-    _ = strip_sec_events_from_body(issue.body)
 
     # Keep `fingerprint` as the single canonical identifier.
     # Drop legacy `alert_hash` if present to avoid duplication.
@@ -1161,6 +1224,7 @@ def ensure_issue(
             "source": secmeta.get("source") or "code_scanning",
             "tool": tool or secmeta.get("tool", ""),
             "severity": severity,
+            "category": _classify_category(alert) or secmeta.get("category", ""),
             "rule_id": rule_id or secmeta.get("rule_id", ""),
             "first_seen": first_seen_final,
             "last_seen": last_seen_final,
@@ -1294,16 +1358,19 @@ def sync_alerts_and_issues(
     issues: dict[int, Issue],
     *,
     dry_run: bool = False,
-) -> None:
+) -> list[NotifiedIssue]:
     """Sync open alerts into issues.
 
     Creates/updates child issues (keyed by fingerprint) and ensures a parent issue
     per rule_id, then links children under the parent via GitHub sub-issues.
+
+    Returns a list of NotifiedIssue entries for new or reopened child issues.
     """
 
+    notifications: list[NotifiedIssue] = []
     index = build_issue_index(issues)
     for alert in alerts.values():
-        ensure_issue(alert, issues, index, dry_run=dry_run)
+        ensure_issue(alert, issues, index, dry_run=dry_run, notifications=notifications)
 
     # Detect child issues that have no matching open alert and label for closure.
     alert_fingerprints: set[str] = set()
@@ -1319,7 +1386,7 @@ def sync_alerts_and_issues(
 
     if not orphan_fps:
         vprint("No orphan child issues detected – skipping sec:adept-to-close labelling")
-        return
+        return notifications
 
     print(f"Detected {len(orphan_fps)} orphan child issue(s) (open issue without matching alert)")
 
@@ -1340,6 +1407,100 @@ def sync_alerts_and_issues(
                 f"(fingerprint={fp[:12]}…) – no matching open alert"
             )
             gh_issue_add_labels(repo, issue.number, [LABEL_SEC_ADEPT_TO_CLOSE])
+
+    return notifications
+
+
+# ---------------------------------------------------------------------------
+# Teams notification
+# ---------------------------------------------------------------------------
+
+def build_teams_notification_body(notifications: list[NotifiedIssue]) -> str:
+    """Build a Markdown body summarising new / reopened issues for Teams."""
+    new_issues = [n for n in notifications if n.state == "new"]
+    reopened_issues = [n for n in notifications if n.state == "reopen"]
+
+    lines: list[str] = []
+    lines.append(f"**{len(new_issues)}** new, **{len(reopened_issues)}** reopened\n")
+
+    for n in notifications:
+        state_tag = "new" if n.state == "new" else "reopen"
+        link = f"https://github.com/{n.repo}/issues/{n.issue_number}"
+        issue_ref = f"[Issue #{n.issue_number}]({link})" if n.issue_number else "(pending)"
+        lines.append(f"- **[{state_tag}]** *{n.severity}* - {n.category} - {issue_ref} ({n.repo})\n")
+
+    return "\n".join(lines)
+
+
+def notify_teams(
+    webhook_url: str,
+    notifications: list[NotifiedIssue],
+    *,
+    dry_run: bool = False,
+) -> None:
+    """Send a Teams message about new / reopened issues via send_to_teams.py."""
+    if not notifications:
+        print("No new or reopened issues – skipping Teams notification")
+        return
+
+    if dry_run:
+        if webhook_url:
+            print("DRY-RUN: Teams webhook configured; no delivery will occur")
+        else:
+            print(
+                "DRY-RUN: no Teams Incoming Webhook URL configured (TEAMS_WEBHOOK_URL/--teams-webhook-url). "
+                "No post to Teams will be made."
+            )
+
+    body = build_teams_notification_body(notifications)
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    send_script = os.path.join(script_dir, "send_to_teams.py")
+
+    if not os.path.exists(send_script):
+        print(
+            f"WARN: send_to_teams.py not found at {send_script} – skipping Teams notification",
+            file=sys.stderr,
+        )
+        return
+
+    tmp: tempfile.NamedTemporaryFile[str] | None = None
+    try:
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="teams_notification_",
+            suffix=".md",
+            delete=False,
+        )
+        tmp.write(body)
+        tmp.flush()
+        body_file = tmp.name
+
+        cmd = [
+            sys.executable, send_script,
+            "--body-file", body_file,
+            "--title", "Aquasec - New/Reopened Security Issues",
+        ]
+        if dry_run:
+            cmd.append("--dry-run")
+        else:
+            cmd.extend(["--webhook-url", webhook_url])
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"WARN: Teams notification failed: {result.stderr}", file=sys.stderr)
+        else:
+            if dry_run:
+                print("DRY-RUN: send_to_teams.py output:")
+                print(result.stdout)
+            else:
+                print("Teams notification sent successfully")
+    finally:
+        try:
+            os.remove(body_file)
+        except OSError:
+            pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -1365,6 +1526,12 @@ def parse_args() -> argparse.Namespace:
         default=LABEL_SCOPE_SECURITY,
         help=f"Only mine issues with this label (default: {LABEL_SCOPE_SECURITY})",
     )
+    p.add_argument(
+        "--teams-webhook-url",
+        default=os.environ.get("TEAMS_WEBHOOK_URL"),
+        help="Teams Incoming Webhook URL for new/reopened issue alerts (default: $TEAMS_WEBHOOK_URL). "
+             "If not set, Teams notification is skipped.",
+    )
     return p.parse_args()
 
 
@@ -1377,11 +1544,21 @@ def main() -> None:
 
     repo_full, open_alerts = load_open_alerts_from_file(args.file)
     issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
-    sync_alerts_and_issues(
+    notifications = sync_alerts_and_issues(
         open_alerts,
         issues,
         dry_run=bool(args.dry_run),
     )
+
+    webhook_url = args.teams_webhook_url
+    if bool(args.dry_run):
+        # Still generate the payload for visibility.
+        notify_teams(webhook_url or "", notifications, dry_run=True)
+    else:
+        if webhook_url:
+            notify_teams(webhook_url, notifications, dry_run=False)
+        elif notifications:
+            vprint("Teams webhook URL not configured – skipping notification")
 
 
 if __name__ == "__main__":

@@ -104,6 +104,10 @@ def issue_has_sec_label(issue):
 # --------------------
 
 def main():
+    # TODO decide about changes related to this script
+    print("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
+    return
+
     ensure_dirs()
 
     gh = Github(GITHUB_TOKEN)

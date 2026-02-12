@@ -93,6 +93,10 @@ def _severity_from_labels(labels: List[str]) -> str:
 
 
 def main() -> None:
+    # TODO decide about changes related to this script
+    print("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
+    return
+
     cur = _load_json(SNAPSHOT_CUR)
     if cur is None:
         raise SystemExit(f"Missing current snapshot: {SNAPSHOT_CUR}")

@@ -14,6 +14,12 @@
 # limitations under the License.
 #
 
+# Example caller workflow – add this to your application repository as
+# .github/workflows/remove-adept-to-close-on-issue-close.yml
+#
+# It delegates to the reusable workflow in the organizational-workflows repo.
+# Adjust <org> and <default-branch> to match your organization.
+
 name: Remove sec:adept-to-close on close
 
 on:
@@ -24,44 +30,5 @@ permissions:
   issues: write
 
 jobs:
-  cleanup-label:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Remove label when conditions match
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
-        with:
-          script: |
-            const issue = context.payload.issue;
-
-            // Safety: ignore PRs (they can appear as issues in GitHub UI)
-            if (issue.pull_request) {
-              return;
-            }
-
-            const labels = (issue.labels || []).map(l => {
-              if (!l) return '';
-              if (typeof l === 'string') return l;
-              return String(l.name || '');
-            });
-
-            const hasScopeSecurity = labels.includes('scope:Security');
-            const hasTechDebt = labels.includes('type:Tech-debt');
-
-            if (!hasScopeSecurity || !hasTechDebt) {
-              return;
-            }
-
-            try {
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                name: 'sec:adept-to-close',
-              });
-            } catch (err) {
-              // If the label isn't present, GitHub returns 404. Don't fail the workflow.
-              if (err && err.status === 404) {
-                return;
-              }
-              throw err;
-            }
+  remove-label:
+    uses: AbsaOSS/organizational-workflows/.github/workflows/remove-adept-to-close-on-issue-close.yml@master

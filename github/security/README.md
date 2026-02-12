@@ -4,6 +4,26 @@ This folder contains the scripts and conventions to turn GitHub **Code Scanning 
 
 In one sentence: SARIF uploads create alerts; these scripts sync alerts into Issues; labels + structured comments drive lifecycle; reporting is derived from Issues.
 
+## Table of contents
+
+- [What this is (and what it isn’t)](#what-this-is-and-what-it-isnt)
+- [Contents](#contents)
+- [Quick start (local)](#quick-start-local)
+  - [Recommended (expected): `run-all.sh`](#recommended-expected-run-allsh)
+  - [Advanced (expert): individual steps](#advanced-expert-individual-steps)
+- [Run in GitHub Actions (minimal example)](#run-in-github-actions-minimal-example)
+- [Shared workflows](#shared-workflows)
+  - [Available reusable workflows](#available-reusable-workflows)
+  - [How to adopt a shared workflow](#how-to-adopt-a-shared-workflow)
+- [Labels (contract)](#labels-contract)
+- [Issue metadata (secmeta)](#issue-metadata-secmeta)
+- [Issue structure](#issue-structure)
+- [How you “say duplicate / grouped / dismissed / reopened”](#how-you-say-duplicate--grouped--dismissed--reopened)
+- [Design: fingerprints and matching](#design-fingerprints-and-matching)
+- [Current implementation status](#current-implementation-status)
+- [Troubleshooting](#troubleshooting)
+- [References](#references)
+
 ## What this is (and what it isn’t)
 
 - This is an **organizational toolkit**: copy the scripts (or vendor them) into an application repository and wire them into Actions.
@@ -14,9 +34,11 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 
 | Script | Purpose | Requires |
 | --- | --- | --- |
-| `run-all.sh` | Main entrypoint: collect alerts then promote to Issues (local or Actions) | `gh`, `jq`, `python3` |
+| `run-all.sh` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `jq`, `python3` |
+| `check_labels.py` | Verify that all labels required by the automation exist in the repository | `gh` |
 | `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
 | `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
+| `send_to_teams.py` | Send a Markdown message to a Microsoft Teams channel via Incoming Webhook | `requests` |
 | `sync_issue_labels.py` | React to `sec:*` label changes and emit `[sec-event]` comments | `PyGithub`, `GITHUB_TOKEN` |
 | `process_sec_events.py` | Parse `[sec-event]` comments and apply state/side-effects | `PyGithub`, `GITHUB_TOKEN` |
 | `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
@@ -32,7 +54,7 @@ Prereqs:
 
 ### Recommended (expected): `run-all.sh`
 
-This is the normal entrypoint for day-to-day use. It runs `collect_alert.sh` and then `promote_alerts.py`.
+This is the normal entrypoint for day-to-day use. It runs `check_labels.py`, `collect_alert.sh`, and then `promote_alerts.py`.
 
 1. Collect + promote in one command:
 
@@ -98,6 +120,43 @@ jobs:
         run: |
           ./github/security/run-all.sh --state open --out alerts.json
 ```
+
+## Shared workflows
+
+This repository provides **reusable GitHub Actions workflows** in `.github/workflows/`.
+Application repositories call them with a short caller workflow instead of duplicating the logic.
+
+The `worklows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
+
+### Available reusable workflows
+
+| Workflow | Trigger (caller) | Purpose |
+| --- | --- | --- |
+| `remove-adept-to-close-on-issue-close.yml` | `issues: [closed]` | Removes the `sec:adept-to-close` label from security issues when they are closed |
+
+### How to adopt a shared workflow
+
+1. Pick a workflow from the table above.
+2. Copy the matching example caller from `worklows/` into your application repository at `.github/workflows/`.
+
+Example caller (already available in `worklows/remove-adept-to-close-on-issue-close.yml`):
+
+```yaml
+name: Remove sec:adept-to-close on close
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  remove-label:
+    uses: AbsaOSS/organizational-workflows/.github/workflows/remove-adept-to-close-on-issue-close.yml@master
+```
+
+> **Note:** The calling repository must grant the permissions the reusable workflow needs (listed in each workflow file). For cross-organization calls the reusable workflow repository must be set to "Accessible from repositories in the organization" under **Settings → Actions → General**.
 
 ## Labels (contract)
 

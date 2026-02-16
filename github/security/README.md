@@ -210,7 +210,7 @@ jobs:
 
 This repository contains multiple scripts with different “label contracts”:
 
-- `promote_alerts.py` mines existing issues by `--issue-label` (default: `scope:Security`) and ensures baseline labels `scope:Security` and `type:Tech-debt` on child/parent issues it creates/updates.
+- `promote_alerts.py` mines existing issues by `--issue-label` (default: `scope:security`) and ensures baseline labels `scope:security` and `type:tech-debt` on child/parent issues it creates/updates.
 - `sync_issue_labels.py` and `process_sec_events.py` are intended to react to `sec:*` label changes and `[sec-event]` comments.
 
 ### Source

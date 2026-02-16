@@ -49,13 +49,13 @@ jobs:
               .map(l => (typeof l === 'string' ? l : l?.name))
               .filter(Boolean);
 
-            const hasScopeSecurity = labels.includes('scope:Security');
-            const hasTechDebt = labels.includes('type:Tech-debt');
+            const hasScopeSecurity = labels.includes('scope:security');
+            const hasTechDebt = labels.includes('type:tech-debt');
             const hasAdeptToClose = labels.includes('sec:adept-to-close');
-
+          
             if (!hasScopeSecurity || !hasTechDebt) {
               core.info(
-                `Skipping: required labels missing (scope:Security=${hasScopeSecurity}, type:Tech-debt=${hasTechDebt}).`
+                `Skipping: required labels missing (scope:security=${hasScopeSecurity}, type:tech-debt=${hasTechDebt}).`
               );
               return;
             }

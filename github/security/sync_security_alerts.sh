@@ -21,7 +21,7 @@ OWNER=""
 REPO=""
 STATE="open"            # open | dismissed | fixed | all
 OUT_FILE="alerts.json"
-ISSUE_LABEL="scope:Security"
+ISSUE_LABEL="scope:security"
 TEAMS_WEBHOOK_URL="${TEAMS_WEBHOOK_URL:-}"
 SKIP_LABEL_CHECK="0"
 DRY_RUN="0"
@@ -45,7 +45,7 @@ Options:
   --repo <repo>         GitHub repository name
   --state <state>       open | dismissed | fixed | all (default: open)
   --out <file>          Output file for alerts JSON (default: alerts.json)
-  --issue-label <label> Mine existing issues with this label (default: scope:Security)
+  --issue-label <label> Mine existing issues with this label (default: scope:security)
   --dry-run             Do not write issues; only print intended actions
   --verbose             Verbose logs (also enabled by RUNNER_DEBUG=1)
   --teams-webhook-url <url>  Teams Incoming Webhook URL (default: \$TEAMS_WEBHOOK_URL)

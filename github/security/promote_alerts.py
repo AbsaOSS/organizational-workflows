@@ -32,7 +32,7 @@ Requirements:
 
 Draft / debug (no writes):
 - Run in dry-run mode to use alert hash, build secmeta, and show intended actions without creating/editing Issues:
-    `python3 promote_alerts.py --file alerts.json --issue-label scope:Security --dry-run`
+    `python3 promote_alerts.py --file alerts.json --issue-label scope:security --dry-run`
 """
 
 from __future__ import annotations
@@ -52,8 +52,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-LABEL_SCOPE_SECURITY = "scope:Security"
-LABEL_TYPE_TECH_DEBT = "type:Tech-debt"
+LABEL_SCOPE_SECURITY = "scope:security"
+LABEL_TYPE_TECH_DEBT = "type:tech-debt"
 LABEL_EPIC = "epic"
 LABEL_SEC_ADEPT_TO_CLOSE = "sec:adept-to-close"
 SEC_EVENT_OPEN = "open"

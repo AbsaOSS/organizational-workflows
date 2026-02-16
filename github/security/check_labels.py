@@ -20,8 +20,8 @@
 Required labels (referenced by promote_alerts.py and the remove-adept-to-close workflow):
 
   epic
-  scope:Security
-  type:Tech-debt
+  scope:security
+  type:tech-debt
   sec:adept-to-close
 
 Usage:
@@ -37,8 +37,8 @@ import sys
 
 
 REQUIRED_LABELS: list[str] = [
-    "scope:Security",
-    "type:Tech-debt",
+    "scope:security",
+    "type:tech-debt",
     "epic",
     "sec:adept-to-close",
 ]

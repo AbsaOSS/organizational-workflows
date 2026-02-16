@@ -76,6 +76,7 @@ jobs:
 
   security-alerts-to-issues:
     name: Security Alerts to Issues
+    needs: aquasec-scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout security scripts

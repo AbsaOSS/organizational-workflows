@@ -27,7 +27,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: aquasec-night-scan-${{ github.ref }}
+  group: aquasec-night-scan-${{ github.repository }}
   cancel-in-progress: true
 
 permissions:

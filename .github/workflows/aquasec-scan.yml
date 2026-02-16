@@ -102,4 +102,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
         run: |
-          org-workflows/github/security/run-all.sh
+          org-workflows/github/security/sync_security_alerts.sh

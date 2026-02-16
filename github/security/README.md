@@ -397,3 +397,6 @@ As of 2026-02, [github/security/promote_alerts.py](promote_alerts.py) implements
 - [SARIF support for code scanning - GitHub Docs](https://docs.github.com/en/code-security/reference/code-scanning/sarif-support-for-code-scanning)
 - [upload-sarif: Adding fingerprints discussion](https://github.com/github/codeql-action/issues/2386)
 
+
+
+

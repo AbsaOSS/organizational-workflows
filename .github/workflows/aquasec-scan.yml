@@ -14,12 +14,12 @@
 # limitations under the License.
 #
 
-# Reusable workflow – Aquasec Night Scan + Security Alerts to Issues.
+# Reusable workflow – Aquasec Scan + Security Alerts to Issues.
 #
 # Called from application repositories via workflow_call.
 # The caller triggers on schedule / workflow_dispatch and passes the required secrets.
 
-name: Aquasec Night Scan
+name: Aquasec Scan
 
 on:
   workflow_call:
@@ -27,8 +27,8 @@ on:
       verbose-logging:
         description: 'Enable verbose logging for AquaSec scan'
         required: false
-        type: string
-        default: 'false'
+        type: boolean
+        default: false
     secrets:
       AQUA_KEY:
         required: true
@@ -60,7 +60,7 @@ jobs:
 
       - name: Fetch AquaSec Scan Results
         id: aquasec
-        uses: AbsaOSS/aquasec-scan-results@master
+        uses: AbsaOSS/aquasec-scan-results@master # TODO - pin to specific sha when possible
         with:
           aqua-key: ${{ secrets.AQUA_KEY }}
           aqua-secret: ${{ secrets.AQUA_SECRET }}

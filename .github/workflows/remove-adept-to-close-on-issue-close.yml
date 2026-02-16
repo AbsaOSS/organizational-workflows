@@ -17,7 +17,9 @@
 # Reusable workflow – Remove sec:adept-to-close label when an issue is closed.
 #
 # Called from application repositories via workflow_call.
-# The caller must trigger on `issues: [closed]` and forward the event context.
+# The caller must trigger on `issues: [closed]`.
+# Note: for `workflow_call`, the called workflow receives the same event payload as the caller,
+# so `context.payload` (aka `github.event`) is populated without needing to "forward" it via inputs.
 
 name: Remove sec:adept-to-close on close
 
@@ -39,33 +41,33 @@ jobs:
 
             // Safety: ignore PRs (they can appear as issues in GitHub UI)
             if (issue.pull_request) {
+              core.info('Skipping: payload refers to a pull request, not an issue.');
               return;
             }
 
-            const labels = (issue.labels || []).map(l => {
-              if (!l) return '';
-              if (typeof l === 'string') return l;
-              return String(l.name || '');
-            });
+            const labels = (issue.labels ?? [])
+              .map(l => (typeof l === 'string' ? l : l?.name))
+              .filter(Boolean);
 
             const hasScopeSecurity = labels.includes('scope:Security');
             const hasTechDebt = labels.includes('type:Tech-debt');
+            const hasAdeptToClose = labels.includes('sec:adept-to-close');
 
             if (!hasScopeSecurity || !hasTechDebt) {
+              core.info(
+                `Skipping: required labels missing (scope:Security=${hasScopeSecurity}, type:Tech-debt=${hasTechDebt}).`
+              );
               return;
             }
 
-            try {
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                name: 'sec:adept-to-close',
-              });
-            } catch (err) {
-              // If the label isn't present, GitHub returns 404. Don't fail the workflow.
-              if (err && err.status === 404) {
-                return;
-              }
-              throw err;
+            if (!hasAdeptToClose) {
+              core.info('No-op: label sec:adept-to-close is not present on the issue.');
+              return;
             }
+
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              name: 'sec:adept-to-close',
+            });

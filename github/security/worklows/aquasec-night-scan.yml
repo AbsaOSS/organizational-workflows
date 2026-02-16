@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@master
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@master # TODO - pin to specific sha when possible
     secrets:
       AQUA_KEY: ${{ secrets.AQUA_KEY }}
       AQUA_SECRET: ${{ secrets.AQUA_SECRET }}

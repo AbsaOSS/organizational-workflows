@@ -165,8 +165,6 @@ if [[ -f "$OUT_FILE" ]]; then
   fi
 fi
 
-exit 0
-
 "$SCRIPT_DIR/collect_alert.sh" --owner "$OWNER" --repo "$REPO" --state "$STATE" --out "$OUT_FILE"
 
 PROMOTE_ARGS=("$SCRIPT_DIR/promote_alerts.py" --file "$OUT_FILE" --issue-label "$ISSUE_LABEL")

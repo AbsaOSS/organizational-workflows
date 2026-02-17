@@ -37,7 +37,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 | Script | Purpose | Requires |
 | --- | --- | --- |
 | `run-all.sh` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `jq`, `python3` |
-| `check_labels.py` | Verify that all labels required by the automation exist in the repository | `gh` |
+| `check_labels.sh` | Verify that all labels required by the automation exist in the repository | `gh` |
 | `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
 | `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
 | `send_to_teams.py` | Send a Markdown message to a Microsoft Teams channel via Incoming Webhook | `requests` |
@@ -52,11 +52,11 @@ Prereqs:
 
 - Install and authenticate GitHub CLI: `gh auth login`
 - Install `jq`
-- Python 3.11+ recommended
+- Python 3.14+ recommended
 
 ### Recommended (expected): `run-all.sh`
 
-This is the normal entrypoint for day-to-day use. It runs `check_labels.py`, `collect_alert.sh`, and then `promote_alerts.py`.
+This is the normal entrypoint for day-to-day use. It runs `check_labels.sh`, `collect_alert.sh`, and then `promote_alerts.py`.
 
 1. Collect + promote in one command:
 
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Collect + promote
         env:

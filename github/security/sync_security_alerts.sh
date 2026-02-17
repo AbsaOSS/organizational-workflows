@@ -30,10 +30,10 @@ FORCE="0"
 
 usage() {
   cat <<EOF
-Usage: run-all.sh [options]
+Usage: sync_security_alerts.sh [options]
 
 This is a thin wrapper that runs:
-  1) check_labels.py   -> verify required labels exist
+  1) check_labels.sh   -> verify required labels exist
   2) collect_alert.sh  -> writes alerts.json
   3) promote_alerts.py -> creates/updates Issues from alerts.json
 
@@ -55,23 +55,23 @@ Options:
 
 Examples:
   # Local run (explicit repo selection; required)
-  run-all.sh --owner <org-or-user> --repo <repo>
+  sync_security_alerts.sh --owner <org-or-user> --repo <repo>
 
   # Local run (explicit repo selection + typical flags)
-  run-all.sh --owner <org-or-user> --repo <repo> --state open --out alerts.json
+  sync_security_alerts.sh --owner <org-or-user> --repo <repo> --state open --out alerts.json
 
   # Dry-run with verbose body previews
-  run-all.sh --owner <org-or-user> --repo <repo> --dry-run --verbose
+  sync_security_alerts.sh --owner <org-or-user> --repo <repo> --dry-run --verbose
 
   # Overwrite output file if it already exists
-  run-all.sh --owner <org-or-user> --repo <repo> --out alerts.json --force
+  sync_security_alerts.sh --owner <org-or-user> --repo <repo> --out alerts.json --force
 
   # GitHub Actions style (repo inferred from GITHUB_REPOSITORY)
   # (GITHUB_REPOSITORY is already set automatically in Actions)
-  run-all.sh --state open --out alerts.json
+  sync_security_alerts.sh --state open --out alerts.json
 
   # If you run outside Actions but still want inference:
-  GITHUB_REPOSITORY="<org-or-user>/<repo>" run-all.sh
+  GITHUB_REPOSITORY="<org-or-user>/<repo>" sync_security_alerts.sh
 EOF
 }
 
@@ -153,7 +153,7 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$SKIP_LABEL_CHECK" != "1" ]]; then
-  python3 "$SCRIPT_DIR/check_labels.py" --repo "$OWNER/$REPO"
+  "$SCRIPT_DIR/check_labels.sh" --repo "$OWNER/$REPO"
 fi
 
 if [[ -f "$OUT_FILE" ]]; then
@@ -164,6 +164,8 @@ if [[ -f "$OUT_FILE" ]]; then
     exit 1
   fi
 fi
+
+exit 0
 
 "$SCRIPT_DIR/collect_alert.sh" --owner "$OWNER" --repo "$REPO" --state "$STATE" --out "$OUT_FILE"
 

@@ -9,7 +9,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [What this is (and what it isn’t)](#what-this-is-and-what-it-isnt)
 - [Contents](#contents)
 - [Quick start (local)](#quick-start-local)
-  - [Recommended (expected): `run-all.sh`](#recommended-expected-run-allsh)
+  - [Recommended (expected): `sync_security_alerts.sh`](#recommended-expected-sync_security_alertssh)
   - [Advanced (expert): individual steps](#advanced-expert-individual-steps)
 - [Run in GitHub Actions (minimal example)](#run-in-github-actions-minimal-example)
 - [Shared workflows](#shared-workflows)
@@ -36,7 +36,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 
 | Script | Purpose | Requires |
 | --- | --- | --- |
-| `run-all.sh` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `jq`, `python3` |
+| `sync_security_alerts.sh` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `jq`, `python3` |
 | `check_labels.sh` | Verify that all labels required by the automation exist in the repository | `gh` |
 | `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
 | `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
@@ -54,20 +54,20 @@ Prereqs:
 - Install `jq`
 - Python 3.14+ recommended
 
-### Recommended (expected): `run-all.sh`
+### Recommended (expected): `sync_security_alerts.sh`
 
 This is the normal entrypoint for day-to-day use. It runs `check_labels.sh`, `collect_alert.sh`, and then `promote_alerts.py`.
 
 1. Collect + promote in one command:
 
 ```bash
-./run-all.sh --owner <org> --repo <repo>
+./sync_security_alerts.sh --repo <owner/repo>
 ```
 
 To do a safe preview (no issue writes):
 
 ```bash
-./run-all.sh --owner <org> --repo <repo> --dry-run
+./sync_security_alerts.sh --repo <owner/repo> --dry-run
 ```
 
 To see full body previews in dry-run, use `--verbose` (or set `RUNNER_DEBUG=1`).
@@ -79,7 +79,7 @@ You can run the individual steps when you need finer control or want to debug th
 1. Collect open alerts:
 
 ```bash
-./collect_alert.sh --owner <org> --repo <repo> --state open --out alerts.json
+./collect_alert.sh --repo <owner/repo> --state open --out alerts.json
 ```
 
 1. Promote alerts to Issues:
@@ -92,7 +92,7 @@ python3 promote_alerts.py --file alerts.json
 
 This is the simplest “after SARIF upload, sync issues” job.
 
-The expected entrypoint is `run-all.sh` (the individual scripts are still available when you need finer control).
+The expected entrypoint is `sync_security_alerts.sh` (the individual scripts are still available when you need finer control).
 
 ```yaml
 name: Promote code scanning alerts to issues
@@ -120,7 +120,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./github/security/run-all.sh --state open --out alerts.json
+          ./github/security/sync_security_alerts.sh --state open --out alerts.json
 ```
 
 ## Shared workflows
@@ -134,7 +134,7 @@ The `worklows/` directory contains ready-to-copy **example caller workflows** th
 
 | Workflow | Trigger (caller) | Purpose |
 | --- | --- | --- |
-| `aquasec-night-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `run-all.sh` |
+| `aquasec-night-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `sync_security_alerts.sh` |
 | `remove-adept-to-close-on-issue-close.yml` | `issues: [closed]` | Removes the `sec:adept-to-close` label from security issues when they are closed |
 
 ### How to adopt a shared workflow

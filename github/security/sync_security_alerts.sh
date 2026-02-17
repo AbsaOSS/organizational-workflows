@@ -17,7 +17,6 @@
 
 set -euo pipefail
 
-OWNER=""
 REPO=""
 STATE="open"            # open | dismissed | fixed | all
 OUT_FILE="alerts.json"
@@ -30,7 +29,7 @@ FORCE="0"
 
 usage() {
   cat <<EOF
-Usage: sync_security_alerts.sh [options]
+Usage: sync_security_alerts.sh --repo <owner/repo> [options]
 
 This is a thin wrapper that runs:
   1) check_labels.sh   -> verify required labels exist
@@ -38,11 +37,10 @@ This is a thin wrapper that runs:
   3) promote_alerts.py -> creates/updates Issues from alerts.json
 
 Repo selection:
-  Provide --owner/--repo OR set GITHUB_REPOSITORY="<owner>/<repo>".
+  Provide --repo owner/repo OR set GITHUB_REPOSITORY="<owner>/<repo>".
 
 Options:
-  --owner <org>         GitHub organization or user
-  --repo <repo>         GitHub repository name
+  --repo <owner/repo>   GitHub repository (e.g. my-org/my-repo)
   --state <state>       open | dismissed | fixed | all (default: open)
   --out <file>          Output file for alerts JSON (default: alerts.json)
   --issue-label <label> Mine existing issues with this label (default: scope:security)
@@ -54,33 +52,29 @@ Options:
   -h, --help            Show this help
 
 Examples:
-  # Local run (explicit repo selection; required)
-  sync_security_alerts.sh --owner <org-or-user> --repo <repo>
+  # Local run
+  sync_security_alerts.sh --repo my-org/my-repo
 
-  # Local run (explicit repo selection + typical flags)
-  sync_security_alerts.sh --owner <org-or-user> --repo <repo> --state open --out alerts.json
+  # Local run with typical flags
+  sync_security_alerts.sh --repo my-org/my-repo --state open --out alerts.json
 
   # Dry-run with verbose body previews
-  sync_security_alerts.sh --owner <org-or-user> --repo <repo> --dry-run --verbose
+  sync_security_alerts.sh --repo my-org/my-repo --dry-run --verbose
 
   # Overwrite output file if it already exists
-  sync_security_alerts.sh --owner <org-or-user> --repo <repo> --out alerts.json --force
+  sync_security_alerts.sh --repo my-org/my-repo --out alerts.json --force
 
   # GitHub Actions style (repo inferred from GITHUB_REPOSITORY)
   # (GITHUB_REPOSITORY is already set automatically in Actions)
   sync_security_alerts.sh --state open --out alerts.json
 
   # If you run outside Actions but still want inference:
-  GITHUB_REPOSITORY="<org-or-user>/<repo>" sync_security_alerts.sh
+  GITHUB_REPOSITORY="my-org/my-repo" sync_security_alerts.sh
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --owner)
-      OWNER="$2"
-      shift 2
-      ;;
     --repo)
       REPO="$2"
       shift 2
@@ -129,15 +123,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$OWNER" || -z "$REPO" ]]; then
-  if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
-    OWNER="${GITHUB_REPOSITORY%/*}"
-    REPO="${GITHUB_REPOSITORY#*/}"
-  fi
+if [[ -z "$REPO" ]]; then
+  REPO="${GITHUB_REPOSITORY:-}"
 fi
 
-if [[ -z "$OWNER" || -z "$REPO" ]]; then
-  echo "ERROR: repo not specified. Use --owner/--repo or set GITHUB_REPOSITORY=<owner>/<repo>." >&2
+if [[ -z "$REPO" || "$REPO" != */* ]]; then
+  echo "ERROR: repo not specified or invalid. Use --repo owner/repo or set GITHUB_REPOSITORY=owner/repo." >&2
   usage
   exit 1
 fi
@@ -153,7 +144,7 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$SKIP_LABEL_CHECK" != "1" ]]; then
-  "$SCRIPT_DIR/check_labels.sh" --repo "$OWNER/$REPO"
+  "$SCRIPT_DIR/check_labels.sh" --repo "$REPO"
 fi
 
 if [[ -f "$OUT_FILE" ]]; then
@@ -165,7 +156,7 @@ if [[ -f "$OUT_FILE" ]]; then
   fi
 fi
 
-"$SCRIPT_DIR/collect_alert.sh" --owner "$OWNER" --repo "$REPO" --state "$STATE" --out "$OUT_FILE"
+"$SCRIPT_DIR/collect_alert.sh" --repo "$REPO" --state "$STATE" --out "$OUT_FILE"
 
 PROMOTE_ARGS=("$SCRIPT_DIR/promote_alerts.py" --file "$OUT_FILE" --issue-label "$ISSUE_LABEL")
 if [[ "$DRY_RUN" == "1" ]]; then

@@ -19,18 +19,16 @@ set -euo pipefail
 
 # Configuration + arguments
 
-OWNER=""
 REPO=""
 STATE="open"              # open | dismissed | fixed | all
 OUT_FILE="alerts.json"
 
 usage() {
   cat <<EOF
-Usage: $0 --owner <org> --repo <repo> [options]
+Usage: $0 --repo <owner/repo> [options]
 
 Required:
-  --owner <org>           GitHub organization or user
-  --repo <repo>           GitHub repository name
+  --repo <owner/repo>     GitHub repository (e.g. my-org/my-repo)
 
 Options:
   --state <state>         open | dismissed | fixed | all (default: open)
@@ -38,18 +36,14 @@ Options:
   -h, --help              Show this help
 
 Examples:
-  $0 --owner my-org --repo my-repo
-  $0 --owner my-org --repo my-repo --state all
-  $0 --owner my-org --repo my-repo --state dismissed --out dismissed.json
+  $0 --repo my-org/my-repo
+  $0 --repo my-org/my-repo --state all
+  $0 --repo my-org/my-repo --state dismissed --out dismissed.json
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --owner)
-      OWNER="$2"
-      shift 2
-      ;;
     --repo)
       REPO="$2"
       shift 2
@@ -74,11 +68,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$OWNER" || -z "$REPO" ]]; then
-  echo "ERROR: --owner and --repo are required" >&2
+if [[ -z "$REPO" || "$REPO" != */* ]]; then
+  echo "ERROR: --repo owner/repo is required" >&2
   usage
   exit 1
 fi
+
+OWNER="${REPO%/*}"
+REPO_NAME="${REPO#*/}"
 
 case "$STATE" in
   open|dismissed|fixed|all) ;;
@@ -119,18 +116,18 @@ trap 'rm -f "$TMP_ALERTS" "$TMP_REPO"' EXIT
 
 # Fetch repository metadata
 
-echo "Fetching repository metadata for $OWNER/$REPO..."
+echo "Fetching repository metadata for $REPO..."
 
 gh api \
   -H "Accept: application/vnd.github+json" \
-  "/repos/$OWNER/$REPO" \
+  "/repos/$OWNER/$REPO_NAME" \
   > "$TMP_REPO"
 
 # Fetch alerts
 
 echo "Fetching code scanning alerts (state=$STATE)..."
 
-ALERTS_ENDPOINT="/repos/$OWNER/$REPO/code-scanning/alerts?per_page=100"
+ALERTS_ENDPOINT="/repos/$OWNER/$REPO_NAME/code-scanning/alerts?per_page=100"
 
 if [[ "$STATE" != "all" ]]; then
   ALERTS_ENDPOINT="$ALERTS_ENDPOINT&state=$STATE"
@@ -203,7 +200,7 @@ jq -n \
 COUNT="$(jq '.alerts | length' "$OUT_FILE")"
 
 echo "Done."
-echo "Repository : $OWNER/$REPO"
+echo "Repository : $REPO"
 echo "State      : $STATE"
 echo "Alerts     : $COUNT"
 echo "Output     : $OUT_FILE"

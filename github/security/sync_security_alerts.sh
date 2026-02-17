@@ -23,8 +23,8 @@ OUT_FILE="alerts.json"
 ISSUE_LABEL="scope:security"
 TEAMS_WEBHOOK_URL="${TEAMS_WEBHOOK_URL:-}"
 SKIP_LABEL_CHECK="0"
-DRY_RUN="0"
-VERBOSE="0"
+DRY_RUN=0
+VERBOSE=0
 FORCE="0"
 
 usage() {
@@ -92,11 +92,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --dry-run)
-      DRY_RUN="1"
+      DRY_RUN=1
       shift
       ;;
     --verbose)
-      VERBOSE="1"
+      VERBOSE=1
       shift
       ;;
     --teams-webhook-url)
@@ -159,10 +159,10 @@ fi
 "$SCRIPT_DIR/collect_alert.sh" --repo "$REPO" --state "$STATE" --out "$OUT_FILE"
 
 PROMOTE_ARGS=("$SCRIPT_DIR/promote_alerts.py" --file "$OUT_FILE" --issue-label "$ISSUE_LABEL")
-if [[ "$DRY_RUN" == "1" ]]; then
+if (( DRY_RUN )); then
   PROMOTE_ARGS+=(--dry-run)
 fi
-if [[ "$VERBOSE" == "1" ]]; then
+if (( VERBOSE )); then
   PROMOTE_ARGS+=(--verbose)
 fi
 if [[ -n "$TEAMS_WEBHOOK_URL" ]]; then

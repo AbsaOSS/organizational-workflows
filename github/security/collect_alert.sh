@@ -74,9 +74,6 @@ if [[ -z "$REPO" || "$REPO" != */* ]]; then
   exit 1
 fi
 
-OWNER="${REPO%/*}"
-REPO_NAME="${REPO#*/}"
-
 case "$STATE" in
   open|dismissed|fixed|all) ;;
   *)
@@ -120,14 +117,14 @@ echo "Fetching repository metadata for $REPO..."
 
 gh api \
   -H "Accept: application/vnd.github+json" \
-  "/repos/$OWNER/$REPO_NAME" \
+  "/repos/$REPO" \
   > "$TMP_REPO"
 
 # Fetch alerts
 
 echo "Fetching code scanning alerts (state=$STATE)..."
 
-ALERTS_ENDPOINT="/repos/$OWNER/$REPO_NAME/code-scanning/alerts?per_page=100"
+ALERTS_ENDPOINT="/repos/$REPO/code-scanning/alerts?per_page=100"
 
 if [[ "$STATE" != "all" ]]; then
   ALERTS_ENDPOINT="$ALERTS_ENDPOINT&state=$STATE"

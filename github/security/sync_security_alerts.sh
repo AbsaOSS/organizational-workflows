@@ -22,10 +22,10 @@ STATE="open"            # open | dismissed | fixed | all
 OUT_FILE="alerts.json"
 ISSUE_LABEL="scope:security"
 TEAMS_WEBHOOK_URL="${TEAMS_WEBHOOK_URL:-}"
-SKIP_LABEL_CHECK="0"
+SKIP_LABEL_CHECK=0
 DRY_RUN=0
 VERBOSE=0
-FORCE="0"
+FORCE=0
 
 usage() {
   cat <<EOF
@@ -104,11 +104,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --skip-label-check)
-      SKIP_LABEL_CHECK="1"
+      SKIP_LABEL_CHECK=1
       shift
       ;;
     --force)
-      FORCE="1"
+      FORCE=1
       shift
       ;;
     -h|--help)
@@ -143,12 +143,12 @@ esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ "$SKIP_LABEL_CHECK" != "1" ]]; then
+if (( ! SKIP_LABEL_CHECK )); then
   "$SCRIPT_DIR/check_labels.sh" --repo "$REPO"
 fi
 
 if [[ -f "$OUT_FILE" ]]; then
-  if [[ "$FORCE" == "1" ]]; then
+  if (( FORCE )); then
     rm -f "$OUT_FILE"
   else
     echo "ERROR: Output file '$OUT_FILE' exists. Delete it, choose a different --out, or pass --force." >&2

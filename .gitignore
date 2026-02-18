@@ -1,0 +1,11 @@
+.DS_Store
+github/security/__pycache__/
+**/__pycache__/
+*.pyc
+/.idea
+target
+.bsp
+.idea
+*.iml
+.vscode
+github/security/alerts*.json

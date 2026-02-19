@@ -614,6 +614,7 @@ def set_issue_priority_on_project(
     severity_priority_map: dict[str, str],
     project_number: int,
     *,
+    project_org: str = "",
     dry_run: bool = False,
 ) -> None:
     """Resolve severity → priority and set the value on the GitHub Project field.
@@ -631,9 +632,9 @@ def set_issue_priority_on_project(
         vprint(f"  No priority mapping for severity={severity!r} – skipping project field")
         return
 
-    org = repo.split("/", 1)[0] if "/" in repo else ""
+    org = project_org or (repo.split("/", 1)[0] if "/" in repo else "")
     if not org:
-        vprint("WARN: Cannot determine org from repo – skipping project priority")
+        vprint("WARN: Cannot determine org from repo or --project-org – skipping project priority")
         return
 
     pf = gh_project_get_priority_field(org, project_number)
@@ -1085,6 +1086,7 @@ def ensure_parent_issue(
     dry_run: bool,
     severity_priority_map: dict[str, str] | None = None,
     project_number: int | None = None,
+    project_org: str = "",
 ) -> Issue | None:
     rule_id = str(alert.get("rule_id") or "").strip()
     if not rule_id:
@@ -1187,7 +1189,8 @@ def ensure_parent_issue(
     # Set Priority on the GitHub Project.
     set_issue_priority_on_project(
         repo_full, num, str((alert.get("severity") or "unknown")).lower(),
-        severity_priority_map or {}, project_number or 0, dry_run=dry_run,
+        severity_priority_map or {}, project_number or 0,
+        project_org=project_org, dry_run=dry_run,
     )
 
     return created
@@ -1287,6 +1290,7 @@ def ensure_issue(
     notifications: list[NotifiedIssue] | None = None,
     severity_priority_map: dict[str, str] | None = None,
     project_number: int | None = None,
+    project_org: str = "",
 ) -> None:
     alert_number = int(alert.get("alert_number"))
 
@@ -1336,6 +1340,7 @@ def ensure_issue(
     parent_issue = ensure_parent_issue(
         alert, issues, index, dry_run=dry_run,
         severity_priority_map=_spm, project_number=project_number,
+        project_org=project_org,
     )
     matched = find_issue_in_index(
         index,
@@ -1398,7 +1403,8 @@ def ensure_issue(
                 ))
             # show what project priority would be set.
             set_issue_priority_on_project(
-                repo_full, 0, severity, _spm, project_number or 0, dry_run=True,
+                repo_full, 0, severity, _spm, project_number or 0,
+                project_org=project_org, dry_run=True,
             )
             return
 
@@ -1450,7 +1456,8 @@ def ensure_issue(
 
             # Set Priority on the GitHub Project.
             set_issue_priority_on_project(
-                repo_full, num, severity, _spm, project_number or 0, dry_run=dry_run,
+                repo_full, num, severity, _spm, project_number or 0,
+                project_org=project_org, dry_run=dry_run,
             )
         return
 
@@ -1492,7 +1499,8 @@ def ensure_issue(
 
         # Re-apply Priority on the GitHub Project after reopen.
         set_issue_priority_on_project(
-            repo_full, issue.number, severity, _spm, project_number or 0, dry_run=dry_run,
+            repo_full, issue.number, severity, _spm, project_number or 0,
+            project_org=project_org, dry_run=dry_run,
         )
 
     secmeta = load_secmeta(issue.body)
@@ -1609,6 +1617,12 @@ def ensure_issue(
     else:
         gh_issue_add_labels(repo_full, issue.number, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
 
+    # Ensure Priority on the GitHub Project (idempotent – always sync).
+    set_issue_priority_on_project(
+        repo_full, issue.number, severity, _spm, project_number or 0,
+        project_org=project_org, dry_run=dry_run,
+    )
+
     # (dry-run logging handled above for comments)
 
 
@@ -1669,6 +1683,7 @@ def sync_alerts_and_issues(
     dry_run: bool = False,
     severity_priority_map: dict[str, str] | None = None,
     project_number: int | None = None,
+    project_org: str = "",
 ) -> list[NotifiedIssue]:
     """Sync open alerts into issues.
 
@@ -1686,6 +1701,7 @@ def sync_alerts_and_issues(
             dry_run=dry_run, notifications=notifications,
             severity_priority_map=severity_priority_map,
             project_number=project_number,
+            project_org=project_org,
         )
 
     # Detect child issues that have no matching open alert and label for closure.
@@ -1864,6 +1880,14 @@ def parse_args() -> argparse.Namespace:
              "Default: $PROJECT_NUMBER env var.",
     )
     p.add_argument(
+        "--project-org",
+        default=os.environ.get("PROJECT_ORG", ""),
+        help="GitHub organisation that owns the Projects V2 board.  "
+             "Use this when the project lives in a different org than the scanned repo. "
+             "When omitted, the org is derived from the repo name. "
+             "Default: $PROJECT_ORG env var.",
+    )
+    p.add_argument(
         "--teams-webhook-url",
         default=os.environ.get("TEAMS_WEBHOOK_URL"),
         help="Teams Incoming Webhook URL for new/reopened issue alerts (default: $TEAMS_WEBHOOK_URL). "
@@ -1891,6 +1915,7 @@ def main() -> None:
         dry_run=bool(args.dry_run),
         severity_priority_map=spm,
         project_number=args.project_number,
+        project_org=str(args.project_org or ""),
     )
 
     webhook_url = args.teams_webhook_url

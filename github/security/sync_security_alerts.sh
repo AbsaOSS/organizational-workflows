@@ -23,6 +23,7 @@ OUT_FILE="alerts.json"
 ISSUE_LABEL="scope:security"
 SEVERITY_PRIORITY_MAP="${SEVERITY_PRIORITY_MAP:-}"
 PROJECT_NUMBER="${PROJECT_NUMBER:-}"
+PROJECT_ORG="${PROJECT_ORG:-}"
 TEAMS_WEBHOOK_URL="${TEAMS_WEBHOOK_URL:-}"
 SKIP_LABEL_CHECK=0
 DRY_RUN=0
@@ -59,6 +60,10 @@ Options:
                         Required together with --severity-priority-map.
                         When omitted, project-level priority is skipped.
                         (default: \$PROJECT_NUMBER)
+  --project-org <org>   GitHub organisation that owns the Projects V2 board.
+                        Use when the project lives in a different org than the
+                        scanned repo. When omitted, derived from the repo name.
+                        (default: \$PROJECT_ORG)
   --dry-run             Do not write issues; only print intended actions
   --verbose             Verbose logs (also enabled by RUNNER_DEBUG=1)
   --teams-webhook-url <url>  Teams Incoming Webhook URL (default: \$TEAMS_WEBHOOK_URL)
@@ -90,6 +95,10 @@ Examples:
   sync_security_alerts.sh --repo my-org/my-repo --project-number 42 \\
     --severity-priority-map 'Critical=🌋 Urgent,High=High,Medium=Medium,Low=Low,Unknown=Medium'
 
+  # Project in a different org than the scanned repo
+  sync_security_alerts.sh --repo my-org/my-repo --project-number 42 --project-org other-org \\
+    --severity-priority-map 'Critical=🌋 Urgent,High=Important'
+
   # Only set priority for Critical and High; Medium, Low and Unknown will have no priority
   sync_security_alerts.sh --repo my-org/my-repo --project-number 42 \\
     --severity-priority-map 'Critical=🌋 Urgent,High=Important'
@@ -120,6 +129,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --project-number)
       PROJECT_NUMBER="$2"
+      shift 2
+      ;;
+    --project-org)
+      PROJECT_ORG="$2"
       shift 2
       ;;
     --dry-run)
@@ -204,6 +217,9 @@ if [[ -n "$SEVERITY_PRIORITY_MAP" ]]; then
 fi
 if [[ -n "$PROJECT_NUMBER" ]]; then
   PROMOTE_ARGS+=(--project-number "$PROJECT_NUMBER")
+fi
+if [[ -n "$PROJECT_ORG" ]]; then
+  PROMOTE_ARGS+=(--project-org "$PROJECT_ORG")
 fi
 
 python3 "${PROMOTE_ARGS[@]}"

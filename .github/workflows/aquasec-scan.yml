@@ -47,6 +47,14 @@ on:
         required: false
         type: number
         default: 0
+      project-org:
+        description: >
+          GitHub organisation that owns the Projects V2 board. Use when the
+          project lives in a different org than the scanned repo. When omitted,
+          the org is derived from the repo name.
+        required: false
+        type: string
+        default: ''
     secrets:
       AQUA_KEY:
         required: true
@@ -121,5 +129,6 @@ jobs:
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
           SEVERITY_PRIORITY_MAP: ${{ inputs.severity-priority-map }}
           PROJECT_NUMBER: ${{ inputs.project-number }}
+          PROJECT_ORG: ${{ inputs.project-org }}
         run: |
           org-workflows/github/security/sync_security_alerts.sh

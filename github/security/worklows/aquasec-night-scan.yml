@@ -41,7 +41,8 @@ jobs:
     uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@master # TODO - pin to specific sha when possible
     with:
       severity-priority-map: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor'
-      project-number: 42  # Replace with your org's GitHub Project number for priority tracking
+      project-number: 42   # Replace with your org's GitHub Project number for priority tracking
+      project-org: 'my-org'  # Replace with the org that owns the project (if different from repo org)
     secrets:
       AQUA_KEY: ${{ secrets.AQUA_KEY }}
       AQUA_SECRET: ${{ secrets.AQUA_SECRET }}

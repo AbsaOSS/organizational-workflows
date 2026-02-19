@@ -254,6 +254,333 @@ def ensure_parent_issue(
     return created
 
 
+def _append_notification(
+    notifications: list[NotifiedIssue] | None,
+    *,
+    repo: str,
+    issue_number: int,
+    severity: str,
+    category: str,
+    state: str,
+    tool: str,
+) -> None:
+    if notifications is not None:
+        notifications.append(
+            NotifiedIssue(
+                repo=repo,
+                issue_number=issue_number,
+                severity=severity,
+                category=category,
+                state=state,
+                tool=tool,
+            )
+        )
+
+
+def _handle_new_child_issue(
+    *,
+    alert: dict[str, Any],
+    alert_number: int,
+    issues: dict[int, Issue],
+    index: IssueIndex,
+    parent_issue: Issue | None,
+    fingerprint: str,
+    occurrence_fp: str,
+    repo_full: str,
+    first_seen: str,
+    last_seen: str,
+    dry_run: bool,
+    notifications: list[NotifiedIssue] | None,
+    severity_priority_map: dict[str, str],
+    priority_sync: ProjectPrioritySync | None,
+    tool: str,
+    rule_id: str,
+    rule_name: str,
+    severity: str,
+    cwe: str,
+    path: str,
+    start_line: Any,
+    end_line: Any,
+    commit_sha: str,
+) -> None:
+    category = classify_category(alert)
+    secmeta: dict[str, str] = {
+        "schema": "1",
+        "type": SECMETA_TYPE_CHILD,
+        "fingerprint": fingerprint,
+        "repo": repo_full,
+        "source": "code_scanning",
+        "tool": tool,
+        "severity": severity,
+        "category": category,
+        "rule_id": rule_id,
+        "first_seen": first_seen,
+        "last_seen": last_seen,
+        "last_seen_commit": commit_sha,
+        "postponed_until": "",
+        "gh_alert_numbers": json_list([str(alert_number)]),
+        "occurrence_count": "1",
+        "last_occurrence_fp": occurrence_fp,
+    }
+    if cwe:
+        secmeta["cwe"] = cwe
+
+    human_body = build_child_issue_body(alert)
+    body = render_secmeta(secmeta) + "\n\n" + human_body
+    title = build_issue_title(rule_name, rule_id, fingerprint)
+
+    if dry_run:
+        labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
+        loc = f"{path}:{start_line or ''}".rstrip(":")
+        commit_short = commit_sha[:8] if commit_sha else ""
+        print(
+            "DRY-RUN: create child "
+            f"alert={alert_number} rule_id={rule_id} sev={severity} fp={fingerprint[:8]} tool={tool} "
+            f"commit={commit_short} loc={loc} title={title!r} labels=[{','.join(labels)}] "
+            f"| secmeta:first_seen={first_seen} last_seen={last_seen} occurrence_count=1 gh_alert_numbers=[{alert_number}]"
+        )
+        if parent_issue is None and rule_id:
+            print(f"DRY-RUN: add sub-issue link parent_rule_id={rule_id} child=(new) alert={alert_number}")
+        elif parent_issue is not None:
+            print(f"DRY-RUN: add sub-issue link parent=#{parent_issue.number} child=(new) alert={alert_number}")
+        if is_verbose():
+            print("DRY-RUN: body_preview_begin")
+            print(body)
+            print("DRY-RUN: body_preview_end")
+
+        _append_notification(
+            notifications,
+            repo=repo_full,
+            issue_number=0,
+            severity=severity,
+            category=category,
+            state="new",
+            tool=tool,
+        )
+        if priority_sync is not None:
+            priority_sync.enqueue(repo_full, 0, severity, severity_priority_map)
+        return
+
+    num = gh_issue_create(repo_full, title, body, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
+    if num is None:
+        return
+
+    print(f"Created issue #{num} for alert {alert_number} (fp={fingerprint[:8]})")
+    created = Issue(number=num, state="open", title=title, body=body)
+    issues[num] = created
+    index.by_fingerprint[fingerprint] = created
+
+    _append_notification(
+        notifications,
+        repo=repo_full,
+        issue_number=num,
+        severity=severity,
+        category=category,
+        state="new",
+        tool=tool,
+    )
+
+    if parent_issue is not None:
+        maybe_reopen_parent_issue(
+            repo_full,
+            parent_issue,
+            rule_id=rule_id,
+            dry_run=dry_run,
+            context="new_child",
+            child_issue_number=num,
+        )
+        print(f"Add sub-issue link parent=#{parent_issue.number} child=#{num} (alert {alert_number})")
+        gh_issue_add_sub_issue_by_number(repo_full, parent_issue.number, num)
+
+    gh_issue_comment(
+        repo_full,
+        num,
+        render_sec_event(
+            {
+                "action": SEC_EVENT_OPEN,
+                "seen_at": first_seen,
+                "source": "code_scanning",
+                "gh_alert_number": str(alert_number),
+                "occurrence_fp": str(occurrence_fp),
+                "commit_sha": str(commit_sha),
+                "path": str(path),
+                "start_line": str(start_line or ""),
+                "end_line": str(end_line or ""),
+            }
+        ),
+    )
+
+    if priority_sync is not None:
+        priority_sync.enqueue(repo_full, num, severity, severity_priority_map)
+
+
+def _handle_existing_child_issue(
+    *,
+    alert: dict[str, Any],
+    alert_number: int,
+    issue: Issue,
+    index: IssueIndex,
+    parent_issue: Issue | None,
+    dry_run: bool,
+    notifications: list[NotifiedIssue] | None,
+    severity_priority_map: dict[str, str],
+    priority_sync: ProjectPrioritySync | None,
+    fingerprint: str,
+    occurrence_fp: str,
+    repo_full: str,
+    first_seen: str,
+    last_seen: str,
+    tool: str,
+    rule_id: str,
+    severity: str,
+    cwe: str,
+    path: str,
+    start_line: Any,
+    end_line: Any,
+    commit_sha: str,
+) -> None:
+    if parent_issue is None and rule_id:
+        parent_issue = find_parent_issue(index, rule_id=rule_id)
+
+    reopened = False
+    if issue.state.lower() == "closed":
+        if dry_run:
+            reopened = True
+            print(f"DRY-RUN: would reopen issue #{issue.number} (alert {alert_number})")
+        elif gh_issue_edit_state(repo_full, issue.number, "open"):
+            reopened = True
+            print(f"Reopened issue #{issue.number} (alert {alert_number})")
+
+    if reopened:
+        maybe_reopen_parent_issue(
+            repo_full,
+            parent_issue,
+            rule_id=rule_id,
+            dry_run=dry_run,
+            context="reopen_child",
+            child_issue_number=issue.number,
+        )
+        existing_secmeta = load_secmeta(issue.body)
+        reopen_category = (existing_secmeta.get("category") or "").strip() or classify_category(alert)
+        _append_notification(
+            notifications,
+            repo=repo_full,
+            issue_number=issue.number,
+            severity=severity,
+            category=reopen_category,
+            state="reopen",
+            tool=tool,
+        )
+        if priority_sync is not None:
+            priority_sync.enqueue(repo_full, issue.number, severity, severity_priority_map)
+
+    secmeta = load_secmeta(issue.body) or {"schema": "1"}
+    secmeta.pop("alert_hash", None)
+
+    existing_alerts = parse_json_list(secmeta.get("gh_alert_numbers"))
+    if not existing_alerts and secmeta.get("related_alert_ids"):
+        existing_alerts = parse_json_list(secmeta.get("related_alert_ids"))
+    if str(alert_number) not in existing_alerts:
+        existing_alerts.append(str(alert_number))
+
+    last_occ_fp = secmeta.get("last_occurrence_fp") or ""
+    occurrence_count = int(secmeta.get("occurrence_count") or "0" or 0)
+    new_occurrence = bool(occurrence_fp and occurrence_fp != last_occ_fp)
+    if occurrence_count <= 0:
+        occurrence_count = 1
+    if new_occurrence:
+        occurrence_count += 1
+
+    existing_first = secmeta.get("first_seen") or first_seen
+    existing_last = secmeta.get("last_seen") or last_seen
+    first_seen_final = min(existing_first, first_seen)
+    last_seen_final = max(existing_last, last_seen)
+
+    secmeta.update(
+        {
+            "fingerprint": fingerprint,
+            "repo": repo_full,
+            "source": secmeta.get("source") or "code_scanning",
+            "tool": tool or secmeta.get("tool", ""),
+            "severity": severity,
+            "category": classify_category(alert) or secmeta.get("category", ""),
+            "rule_id": rule_id or secmeta.get("rule_id", ""),
+            "first_seen": first_seen_final,
+            "last_seen": last_seen_final,
+            "last_seen_commit": commit_sha or secmeta.get("last_seen_commit", ""),
+            "gh_alert_numbers": json_list(existing_alerts),
+            "occurrence_count": str(occurrence_count),
+            "last_occurrence_fp": occurrence_fp or last_occ_fp,
+        }
+    )
+    if cwe:
+        secmeta["cwe"] = cwe
+
+    human_body = build_child_issue_body(alert)
+    new_body = render_secmeta(secmeta) + "\n\n" + human_body
+    new_body = strip_sec_events_from_body(new_body)
+
+    if reopened:
+        if dry_run:
+            print(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {alert_number})")
+        else:
+            gh_issue_comment(
+                repo_full,
+                issue.number,
+                render_sec_event(
+                    {
+                        "action": SEC_EVENT_REOPEN,
+                        "seen_at": utc_today(),
+                        "source": "code_scanning",
+                        "gh_alert_number": str(alert_number),
+                    }
+                ),
+            )
+    elif new_occurrence:
+        if dry_run:
+            print(f"DRY-RUN: would comment occurrence event on issue #{issue.number} (alert {alert_number})")
+        else:
+            gh_issue_comment(
+                repo_full,
+                issue.number,
+                render_sec_event(
+                    {
+                        "action": SEC_EVENT_OCCURRENCE,
+                        "seen_at": utc_today(),
+                        "source": "code_scanning",
+                        "gh_alert_number": str(alert_number),
+                        "occurrence_fp": str(occurrence_fp),
+                        "commit_sha": str(commit_sha),
+                        "path": str(path),
+                        "start_line": str(start_line or ""),
+                        "end_line": str(end_line or ""),
+                    }
+                ),
+            )
+
+    if new_body != issue.body:
+        if dry_run:
+            print(f"DRY-RUN: would update issue #{issue.number} body to template (alert {alert_number})")
+            if is_verbose():
+                print("DRY-RUN: body_preview_begin")
+                print(new_body)
+                print("DRY-RUN: body_preview_end")
+        else:
+            gh_issue_edit_body(repo_full, issue.number, new_body)
+            issue.body = new_body
+
+    if dry_run:
+        print(
+            f"DRY-RUN: would ensure labels on issue #{issue.number}: "
+            f"[{LABEL_SCOPE_SECURITY}, {LABEL_TYPE_TECH_DEBT}]"
+        )
+    else:
+        gh_issue_add_labels(repo_full, issue.number, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
+
+    if priority_sync is not None:
+        priority_sync.enqueue(repo_full, issue.number, severity, severity_priority_map)
+
+
 def ensure_issue(
     alert: dict[str, Any],
     issues: dict[int, Issue],
@@ -317,274 +644,57 @@ def ensure_issue(
     )
 
     if matched is None:
-        category = classify_category(alert)
-        secmeta: dict[str, str] = {
-            "schema": "1",
-            "type": SECMETA_TYPE_CHILD,
-            "fingerprint": fingerprint,
-            "repo": repo_full,
-            "source": "code_scanning",
-            "tool": tool,
-            "severity": severity,
-            "category": category,
-            "rule_id": rule_id,
-            "first_seen": first_seen,
-            "last_seen": last_seen,
-            "last_seen_commit": commit_sha,
-            "postponed_until": "",
-            "gh_alert_numbers": json_list([str(alert_number)]),
-            "occurrence_count": "1",
-            "last_occurrence_fp": occurrence_fp,
-        }
-        if cwe:
-            secmeta["cwe"] = cwe
-
-        human_body = build_child_issue_body(alert)
-        body = render_secmeta(secmeta) + "\n\n" + human_body
-
-        title = build_issue_title(rule_name, rule_id, fingerprint)
-        if dry_run:
-            labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
-
-            loc = f"{path}:{start_line or ''}".rstrip(":")
-            commit_short = commit_sha[:8] if commit_sha else ""
-            print(
-                "DRY-RUN: create child "
-                f"alert={alert_number} rule_id={rule_id} sev={severity} fp={fingerprint[:8]} tool={tool} "
-                f"commit={commit_short} loc={loc} title={title!r} labels=[{','.join(labels)}] "
-                f"| secmeta:first_seen={first_seen} last_seen={last_seen} occurrence_count=1 gh_alert_numbers=[{alert_number}]"
-            )
-            if parent_issue is None and rule_id:
-                print(f"DRY-RUN: add sub-issue link parent_rule_id={rule_id} child=(new) alert={alert_number}")
-            elif parent_issue is not None:
-                print(
-                    f"DRY-RUN: add sub-issue link parent=#{parent_issue.number} child=(new) alert={alert_number}"
-                )
-            if is_verbose():
-                print("DRY-RUN: body_preview_begin")
-                print(body)
-                print("DRY-RUN: body_preview_end")
-            if notifications is not None:
-                notifications.append(NotifiedIssue(
-                    repo=repo_full, issue_number=0,
-                    severity=severity, category=category,
-                    state="new", tool=tool,
-                ))
-            # show what project priority would be set.
-            if priority_sync is not None:
-                priority_sync.enqueue(repo_full, 0, severity, _spm)
-            return
-
-        num = gh_issue_create(repo_full, title, body, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
-        if num is not None:
-            print(f"Created issue #{num} for alert {alert_number} (fp={fingerprint[:8]})")
-
-            created = Issue(number=num, state="open", title=title, body=body)
-            issues[num] = created
-            index.by_fingerprint[fingerprint] = created
-
-            if notifications is not None:
-                notifications.append(NotifiedIssue(
-                    repo=repo_full, issue_number=num,
-                    severity=severity, category=category,
-                    state="new", tool=tool,
-                ))
-
-            if parent_issue is not None:
-                maybe_reopen_parent_issue(
-                    repo_full,
-                    parent_issue,
-                    rule_id=rule_id,
-                    dry_run=dry_run,
-                    context="new_child",
-                    child_issue_number=num,
-                )
-                print(f"Add sub-issue link parent=#{parent_issue.number} child=#{num} (alert {alert_number})")
-                gh_issue_add_sub_issue_by_number(repo_full, parent_issue.number, num)
-
-            # Each security event is recorded as a new comment (human visible).
-            gh_issue_comment(
-                repo_full,
-                num,
-                render_sec_event(
-                    {
-                        "action": SEC_EVENT_OPEN,
-                        "seen_at": first_seen,
-                        "source": "code_scanning",
-                        "gh_alert_number": str(alert_number),
-                        "occurrence_fp": str(occurrence_fp),
-                        "commit_sha": str(commit_sha),
-                        "path": str(path),
-                        "start_line": str(start_line or ""),
-                        "end_line": str(end_line or ""),
-                    }
-                ),
-            )
-
-            # Enqueue priority sync (bulk – resolved + flushed later).
-            if priority_sync is not None:
-                priority_sync.enqueue(repo_full, num, severity, _spm)
+        _handle_new_child_issue(
+            alert=alert,
+            alert_number=alert_number,
+            issues=issues,
+            index=index,
+            parent_issue=parent_issue,
+            fingerprint=fingerprint,
+            occurrence_fp=occurrence_fp,
+            repo_full=repo_full,
+            first_seen=first_seen,
+            last_seen=last_seen,
+            dry_run=dry_run,
+            notifications=notifications,
+            severity_priority_map=_spm,
+            priority_sync=priority_sync,
+            tool=tool,
+            rule_id=rule_id,
+            rule_name=str(rule_name or ""),
+            severity=severity,
+            cwe=cwe,
+            path=path,
+            start_line=start_line,
+            end_line=end_line,
+            commit_sha=commit_sha,
+        )
         return
 
-    issue = matched
-
-    if parent_issue is None and rule_id:
-        # Try to find a parent if it already exists (e.g., created earlier).
-        parent_issue = find_parent_issue(index, rule_id=rule_id)
-
-    # Reopen if needed.
-    reopened = False
-    needs_reopen = issue.state.lower() == "closed"
-    if needs_reopen:
-        if dry_run:
-            reopened = True
-            print(f"DRY-RUN: would reopen issue #{issue.number} (alert {alert_number})")
-        else:
-            if gh_issue_edit_state(repo_full, issue.number, "open"):
-                reopened = True
-                print(f"Reopened issue #{issue.number} (alert {alert_number})")
-
-    if reopened:
-        maybe_reopen_parent_issue(
-            repo_full,
-            parent_issue,
-            rule_id=rule_id,
-            dry_run=dry_run,
-            context="reopen_child",
-            child_issue_number=issue.number,
-        )
-        if notifications is not None:
-            existing_secmeta = load_secmeta(issue.body)
-            reopen_category = (existing_secmeta.get("category") or "").strip() or classify_category(alert)
-            notifications.append(NotifiedIssue(
-                repo=repo_full, issue_number=issue.number,
-                severity=severity, category=reopen_category,
-                state="reopen", tool=tool,
-            ))
-
-        # Enqueue priority sync after reopen.
-        if priority_sync is not None:
-            priority_sync.enqueue(repo_full, issue.number, severity, _spm)
-
-    secmeta = load_secmeta(issue.body)
-    if not secmeta:
-        # If missing, seed it; keep existing content below.
-        secmeta = {"schema": "1"}
-
-    # Keep `fingerprint` as the single canonical identifier.
-    # Drop legacy `alert_hash` if present to avoid duplication.
-    secmeta.pop("alert_hash", None)
-
-    # Merge/migrate legacy keys.
-    existing_alerts = parse_json_list(secmeta.get("gh_alert_numbers"))
-    if not existing_alerts and secmeta.get("related_alert_ids"):
-        existing_alerts = parse_json_list(secmeta.get("related_alert_ids"))
-    if str(alert_number) not in existing_alerts:
-        existing_alerts.append(str(alert_number))
-
-    # Occurrence tracking (best-effort, low-noise): only increment when the last_occurrence changes.
-    last_occ_fp = secmeta.get("last_occurrence_fp") or ""
-    occurrence_count = int(secmeta.get("occurrence_count") or "0" or 0)
-    new_occurrence = bool(occurrence_fp and occurrence_fp != last_occ_fp)
-    if occurrence_count <= 0:
-        occurrence_count = 1
-    if new_occurrence:
-        occurrence_count += 1
-
-    # first/last seen (best effort)
-    existing_first = secmeta.get("first_seen") or first_seen
-    existing_last = secmeta.get("last_seen") or last_seen
-    first_seen_final = min(existing_first, first_seen)
-    last_seen_final = max(existing_last, last_seen)
-
-    secmeta.update(
-        {
-            "fingerprint": fingerprint,
-            "repo": repo_full,
-            "source": secmeta.get("source") or "code_scanning",
-            "tool": tool or secmeta.get("tool", ""),
-            "severity": severity,
-            "category": classify_category(alert) or secmeta.get("category", ""),
-            "rule_id": rule_id or secmeta.get("rule_id", ""),
-            "first_seen": first_seen_final,
-            "last_seen": last_seen_final,
-            "last_seen_commit": commit_sha or secmeta.get("last_seen_commit", ""),
-            "gh_alert_numbers": json_list(existing_alerts),
-            "occurrence_count": str(occurrence_count),
-            "last_occurrence_fp": occurrence_fp or last_occ_fp,
-        }
+    _handle_existing_child_issue(
+        alert=alert,
+        alert_number=alert_number,
+        issue=matched,
+        index=index,
+        parent_issue=parent_issue,
+        dry_run=dry_run,
+        notifications=notifications,
+        severity_priority_map=_spm,
+        priority_sync=priority_sync,
+        fingerprint=fingerprint,
+        occurrence_fp=occurrence_fp,
+        repo_full=repo_full,
+        first_seen=first_seen,
+        last_seen=last_seen,
+        tool=tool,
+        rule_id=rule_id,
+        severity=severity,
+        cwe=cwe,
+        path=path,
+        start_line=start_line,
+        end_line=end_line,
+        commit_sha=commit_sha,
     )
-    if cwe:
-        secmeta["cwe"] = cwe
-
-    # Rewrite body to match templates (human-first) while keeping hidden secmeta and events.
-    human_body = build_child_issue_body(alert)
-    new_body = render_secmeta(secmeta) + "\n\n" + human_body
-    new_body = strip_sec_events_from_body(new_body)
-
-    # Each security event is recorded as a new comment (human visible).
-    if reopened:
-        if dry_run:
-            print(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {alert_number})")
-        else:
-            gh_issue_comment(
-                repo_full,
-                issue.number,
-                render_sec_event(
-                    {
-                        "action": SEC_EVENT_REOPEN,
-                        "seen_at": utc_today(),
-                        "source": "code_scanning",
-                        "gh_alert_number": str(alert_number),
-                    }
-                ),
-            )
-    elif new_occurrence:
-        if dry_run:
-            print(f"DRY-RUN: would comment occurrence event on issue #{issue.number} (alert {alert_number})")
-        else:
-            gh_issue_comment(
-                repo_full,
-                issue.number,
-                render_sec_event(
-                    {
-                        "action": SEC_EVENT_OCCURRENCE,
-                        "seen_at": utc_today(),
-                        "source": "code_scanning",
-                        "gh_alert_number": str(alert_number),
-                        "occurrence_fp": str(occurrence_fp),
-                        "commit_sha": str(commit_sha),
-                        "path": str(path),
-                        "start_line": str(start_line or ""),
-                        "end_line": str(end_line or ""),
-                    }
-                ),
-            )
-    if new_body != issue.body:
-        if dry_run:
-            print(f"DRY-RUN: would update issue #{issue.number} body to template (alert {alert_number})")
-            if is_verbose():
-                print("DRY-RUN: body_preview_begin")
-                print(new_body)
-                print("DRY-RUN: body_preview_end")
-        else:
-            gh_issue_edit_body(repo_full, issue.number, new_body)
-            issue.body = new_body
-
-    # Ensure baseline labels.
-    if dry_run:
-        print(
-            f"DRY-RUN: would ensure labels on issue #{issue.number}: "
-            f"[{LABEL_SCOPE_SECURITY}, {LABEL_TYPE_TECH_DEBT}]"
-        )
-    else:
-        gh_issue_add_labels(repo_full, issue.number, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
-
-    # Enqueue priority sync (bulk – resolved + flushed later).
-    if priority_sync is not None:
-        priority_sync.enqueue(repo_full, issue.number, severity, _spm)
-
-    # (dry-run logging handled above for comments)
 
 
 def sync_alerts_and_issues(

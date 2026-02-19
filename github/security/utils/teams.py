@@ -25,7 +25,8 @@ import subprocess
 import sys
 import tempfile
 
-from .models import NotifiedIssue
+from .common import vprint
+from .models import NotifiedIssue, SeverityChange, severity_direction
 
 
 def build_teams_notification_body(notifications: list[NotifiedIssue]) -> str:
@@ -43,6 +44,94 @@ def build_teams_notification_body(notifications: list[NotifiedIssue]) -> str:
         lines.append(f"- **[{state_tag}]** *{n.severity}* - {n.category} - {issue_ref} ({n.repo})\n")
 
     return "\n".join(lines)
+
+
+def build_severity_change_body(changes: list[SeverityChange]) -> str:
+    """Build a Markdown body summarising parent-issue severity changes."""
+    lines: list[str] = []
+    lines.append(f"**{len(changes)}** parent issue(s) with severity change\n")
+
+    for ch in changes:
+        direction = severity_direction(ch.old_severity, ch.new_severity)
+        link = f"https://github.com/{ch.repo}/issues/{ch.issue_number}"
+        issue_ref = f"[Issue #{ch.issue_number}]({link})"
+        lines.append(
+            f"- {issue_ref} \u2013 **{ch.old_severity}** \u2192 **{ch.new_severity}** ({direction}) "
+            f"\u2013 rule_id=`{ch.rule_id}`\n"
+        )
+
+    return "\n".join(lines)
+
+
+def notify_teams_severity_changes(
+    webhook_url: str,
+    changes: list[SeverityChange],
+    *,
+    dry_run: bool = False,
+) -> None:
+    """Send a Teams message about parent severity changes via send_to_teams.py."""
+    if not changes:
+        vprint("No severity changes – skipping Teams severity-change notification")
+        return
+
+    if dry_run:
+        if webhook_url:
+            print("DRY-RUN: Teams severity-change webhook configured; no delivery will occur")
+        else:
+            print(
+                "DRY-RUN: no Teams Incoming Webhook URL configured. "
+                "No severity-change post to Teams will be made."
+            )
+
+    body = build_severity_change_body(changes)
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    send_script = os.path.join(os.path.dirname(script_dir), "send_to_teams.py")
+
+    if not os.path.exists(send_script):
+        print(
+            f"WARN: send_to_teams.py not found at {send_script} \u2013 skipping Teams severity-change notification",
+            file=sys.stderr,
+        )
+        return
+
+    tmp: tempfile.NamedTemporaryFile[str] | None = None
+    try:
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="teams_severity_change_",
+            suffix=".md",
+            delete=False,
+        )
+        tmp.write(body)
+        tmp.flush()
+        body_file = tmp.name
+
+        cmd = [
+            sys.executable, send_script,
+            "--body-file", body_file,
+            "--title", "Aquasec - Parent Severity Changes",
+        ]
+        if dry_run:
+            cmd.append("--dry-run")
+        else:
+            cmd.extend(["--webhook-url", webhook_url])
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"WARN: Teams severity-change notification failed: {result.stderr}", file=sys.stderr)
+        else:
+            if dry_run:
+                print("DRY-RUN: send_to_teams.py severity-change output:")
+                print(result.stdout)
+            else:
+                print("Teams severity-change notification sent successfully")
+    finally:
+        try:
+            os.remove(body_file)
+        except OSError:
+            pass
 
 
 def notify_teams(

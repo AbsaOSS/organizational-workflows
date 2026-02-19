@@ -45,3 +45,41 @@ class NotifiedIssue:
     category: str
     state: str          # "new" or "reopen"
     tool: str
+
+
+@dataclass
+class SeverityChange:
+    """Records a parent issue whose severity changed between syncs."""
+    repo: str
+    issue_number: int
+    rule_id: str
+    old_severity: str
+    new_severity: str
+
+
+# Ordered from lowest to highest so we can compute direction.
+SEVERITY_ORDER: dict[str, int] = {
+    "unknown": 0,
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
+
+
+def severity_direction(old: str, new: str) -> str:
+    """Return a human-readable arrow indicating the change direction."""
+    old_rank = SEVERITY_ORDER.get(old.lower(), -1)
+    new_rank = SEVERITY_ORDER.get(new.lower(), -1)
+    if new_rank > old_rank:
+        return "⬆️ escalated"
+    if new_rank < old_rank:
+        return "⬇️ de-escalated"
+    return "↔️ unchanged"
+
+
+@dataclass
+class SyncResult:
+    """Aggregated output of a full sync run."""
+    notifications: list[NotifiedIssue]
+    severity_changes: list[SeverityChange]

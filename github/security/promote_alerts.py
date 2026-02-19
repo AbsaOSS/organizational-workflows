@@ -51,7 +51,7 @@ from utils.constants import LABEL_SCOPE_SECURITY
 from utils.github_issues import gh_issue_list_by_label
 from utils.issue_sync import sync_alerts_and_issues
 from utils.priority import parse_severity_priority_map
-from utils.teams import notify_teams
+from utils.teams import notify_teams, notify_teams_severity_changes
 
 
 def parse_args() -> argparse.Namespace:
@@ -129,7 +129,7 @@ def main() -> None:
     # Build severity → priority map from user input; empty by default (priority skipped).
     spm = parse_severity_priority_map(str(args.severity_priority_map or ""))
 
-    notifications = sync_alerts_and_issues(
+    result = sync_alerts_and_issues(
         open_alerts,
         issues,
         dry_run=dry_run,
@@ -137,12 +137,15 @@ def main() -> None:
         project_number=args.project_number,
         project_org=str(args.project_org or ""),
     )
+    notifications = result.notifications
+    severity_changes = result.severity_changes
 
     webhook_url = str(args.teams_webhook_url or "")
-    if notifications and not webhook_url:
-        vprint("Teams webhook URL not configured – skipping notification")
+    if (notifications or severity_changes) and not webhook_url:
+        vprint("Teams webhook URL not configured - skipping notification")
     else:
         notify_teams(webhook_url, notifications, dry_run=dry_run)
+        notify_teams_severity_changes(webhook_url, severity_changes, dry_run=dry_run)
 
 
 if __name__ == "__main__":

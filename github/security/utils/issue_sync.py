@@ -60,7 +60,7 @@ from .issue_builder import (
     build_parent_template_values,
     classify_category,
 )
-from .models import Issue, IssueIndex, NotifiedIssue
+from .models import Issue, IssueIndex, NotifiedIssue, SeverityChange, SyncResult
 from .sec_events import render_sec_event, strip_sec_events_from_body
 from .secmeta import json_list, load_secmeta, parse_json_list, render_secmeta
 from .templates import PARENT_BODY_TEMPLATE, render_markdown_template
@@ -152,6 +152,7 @@ def ensure_parent_issue(
     dry_run: bool,
     severity_priority_map: dict[str, str] | None = None,
     priority_sync: ProjectPrioritySync | None = None,
+    severity_changes: list[SeverityChange] | None = None,
 ) -> Issue | None:
     rule_id = str(alert.get("rule_id") or "").strip()
     if not rule_id:
@@ -167,7 +168,27 @@ def ensure_parent_issue(
         first_seen_final = min(existing_first, iso_date(alert.get("created_at")))
         last_seen_final = max(existing_last, iso_date(alert.get("updated_at")))
 
-        _severity = str((alert.get("severity") or existing_secmeta.get("severity") or "unknown")).lower()
+        existing_severity = str(existing_secmeta.get("severity") or "unknown").lower()
+        incoming_severity_raw = str(alert.get("severity") or "").strip().lower()
+        _severity = incoming_severity_raw or existing_severity
+
+        # Detect severity change on existing parent only when alert provides severity.
+        old_severity = existing_severity
+        if incoming_severity_raw and old_severity != _severity:
+            change = SeverityChange(
+                repo=repo_full,
+                issue_number=existing.number,
+                rule_id=rule_id,
+                old_severity=old_severity,
+                new_severity=_severity,
+            )
+            if dry_run:
+                print(
+                    f"DRY-RUN: severity change on parent #{existing.number} "
+                    f"(rule_id={rule_id}): {old_severity} \u2192 {_severity}"
+                )
+            if severity_changes is not None:
+                severity_changes.append(change)
 
         existing_secmeta.update(
             {
@@ -616,6 +637,7 @@ def ensure_issue(
     notifications: list[NotifiedIssue] | None = None,
     severity_priority_map: dict[str, str] | None = None,
     priority_sync: ProjectPrioritySync | None = None,
+    severity_changes: list[SeverityChange] | None = None,
 ) -> None:
     alert_number = int(alert.get("alert_number"))
 
@@ -663,6 +685,7 @@ def ensure_issue(
     parent_issue = ensure_parent_issue(
         alert, issues, index, dry_run=dry_run,
         severity_priority_map=_spm, priority_sync=priority_sync,
+        severity_changes=severity_changes,
     )
     matched = find_issue_in_index(
         index,
@@ -731,16 +754,17 @@ def sync_alerts_and_issues(
     severity_priority_map: dict[str, str] | None = None,
     project_number: int | None = None,
     project_org: str = "",
-) -> list[NotifiedIssue]:
+) -> SyncResult:
     """Sync open alerts into issues.
 
     Creates/updates child issues (keyed by fingerprint) and ensures a parent issue
     per rule_id, then links children under the parent via GitHub sub-issues.
 
-    Returns a list of NotifiedIssue entries for new or reopened child issues.
+    Returns a SyncResult with notifications and severity changes.
     """
 
     notifications: list[NotifiedIssue] = []
+    severity_changes: list[SeverityChange] = []
     index = build_issue_index(issues)
 
     # Initialise bulk priority sync (one-time prefetch of project items).
@@ -769,6 +793,7 @@ def sync_alerts_and_issues(
             dry_run=dry_run, notifications=notifications,
             severity_priority_map=severity_priority_map,
             priority_sync=priority_sync,
+            severity_changes=severity_changes,
         )
 
     # Flush all pending priority mutations in bulk.
@@ -789,7 +814,7 @@ def sync_alerts_and_issues(
 
     if not orphan_fps:
         vprint("No orphan child issues detected – skipping sec:adept-to-close labelling")
-        return notifications
+        return SyncResult(notifications=notifications, severity_changes=severity_changes)
 
     print(f"Detected {len(orphan_fps)} orphan child issue(s) (open issue without matching alert)")
 
@@ -818,4 +843,4 @@ def sync_alerts_and_issues(
             )
             gh_issue_add_labels(repo, issue.number, [LABEL_SEC_ADEPT_TO_CLOSE])
 
-    return notifications
+    return SyncResult(notifications=notifications, severity_changes=severity_changes)

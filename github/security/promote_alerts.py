@@ -1146,6 +1146,13 @@ def ensure_parent_issue(
                 gh_issue_edit_body(repo_full, existing.number, rebuilt)
                 existing.body = rebuilt
 
+        # Ensure Priority on the GitHub Project (idempotent – always sync).
+        set_issue_priority_on_project(
+            repo_full, existing.number, _severity,
+            severity_priority_map or {}, project_number or 0,
+            project_org=project_org, dry_run=dry_run,
+        )
+
         return existing
 
     title = build_parent_issue_title(rule_id)

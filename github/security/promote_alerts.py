@@ -62,6 +62,47 @@ SEC_EVENT_OCCURRENCE = "occurrence"
 
 VERBOSE_ENABLED = False
 
+# ---------------------------------------------------------------------------
+# Severity → Priority mapping
+# ---------------------------------------------------------------------------
+# Each severity coming from the scanner (Critical, High, Medium, Low, Unknown)
+# can be mapped to a user-defined priority string via --severity-priority-map.
+# When no mapping is supplied the priority field is left empty (skipped).
+
+
+def parse_severity_priority_map(raw: str) -> dict[str, str]:
+    """Parse a comma-separated ``severity=priority`` string into a dict.
+
+    Keys are normalised to lowercase; values are kept as-is so the user
+    controls the exact priority string that ends up on issues.
+
+    Example input:  ``"Critical=P1,High=P2,Medium=P3,Low=P4,Unknown=P3"``
+    """
+    mapping: dict[str, str] = {}
+    for pair in (raw or "").split(","):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        sev, pri = pair.split("=", 1)
+        sev = sev.strip().lower()
+        pri = pri.strip()
+        if sev and pri:
+            mapping[sev] = pri
+    return mapping
+
+
+def resolve_priority(
+    severity: str,
+    severity_priority_map: dict[str, str],
+) -> str:
+    """Return the priority for *severity*.
+
+    Looks up *severity* (case-insensitive) in *severity_priority_map*.
+    Returns the mapped value, or an empty string when no mapping exists.
+    """
+    return severity_priority_map.get(severity.lower(), "")
+
+
 # `secmeta` is automation-owned metadata. Store it in a hidden HTML comment block
 # at the top of the issue body so humans don't see it by default.
 SECMETA_RE = re.compile(r"<!--\s*secmeta\r?\n(.*?)\r?\n-->", re.S)
@@ -403,6 +444,238 @@ def gh_issue_add_sub_issue_by_number(repo: str, parent_number: int, child_number
     if child_id is None:
         return False
     return gh_issue_add_sub_issue(repo, parent_number, child_id)
+
+
+# ---------------------------------------------------------------------------
+# GitHub Projects V2 – set Priority field via GraphQL
+# ---------------------------------------------------------------------------
+# The "Priority" value is a single-select field on a GitHub Project (V2).
+# To set it we need:
+#   1. The project's GraphQL node-id           → gh_project_get_id()
+#   2. The field id + option ids for "Priority" → gh_project_get_priority_field()
+#   3. Add the issue to the project             → gh_project_add_item()
+#   4. Set the field value                      → gh_project_set_priority()
+#
+# All calls go through `gh api graphql`.
+
+@dataclass
+class ProjectPriorityField:
+    """Caches the IDs required to set a single-select "Priority" field."""
+    project_id: str
+    field_id: str
+    options: dict[str, str]   # option name (lowercase) → option node-id
+
+
+_project_priority_cache: dict[str, ProjectPriorityField | None] = {}
+
+
+def _run_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Execute a GraphQL query via ``gh api graphql`` and return parsed JSON."""
+    args = ["api", "graphql", "-f", f"query={query}"]
+    for k, v in (variables or {}).items():
+        args += ["-F", f"{k}={v}"]
+    res = run_gh(args)
+    if res.returncode != 0:
+        vprint(f"WARN: GraphQL call failed: {res.stderr}")
+        return None
+    try:
+        return json.loads(res.stdout)
+    except Exception:
+        vprint(f"WARN: Could not parse GraphQL response: {res.stdout!r}")
+        return None
+
+
+def gh_project_get_priority_field(
+    org: str,
+    project_number: int,
+    field_name: str = "Priority",
+) -> ProjectPriorityField | None:
+    """Fetch the project node-id and the Priority single-select field metadata.
+
+    Results are cached per ``(org, project_number)`` so repeated calls are free.
+    """
+    cache_key = f"{org}/{project_number}"
+    if cache_key in _project_priority_cache:
+        return _project_priority_cache[cache_key]
+
+    query = """
+    query($org: String!, $num: Int!) {
+      organization(login: $org) {
+        projectV2(number: $num) {
+          id
+          fields(first: 50) {
+            nodes {
+              ... on ProjectV2SingleSelectField {
+                id
+                name
+                options { id name }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    data = _run_graphql(query, {"org": org, "num": project_number})
+    if data is None:
+        _project_priority_cache[cache_key] = None
+        return None
+
+    project = (data.get("data") or {}).get("organization", {}).get("projectV2")
+    if project is None:
+        vprint(f"WARN: Project #{project_number} not found in org {org}")
+        _project_priority_cache[cache_key] = None
+        return None
+
+    project_id = project["id"]
+    for node in project.get("fields", {}).get("nodes", []):
+        if not isinstance(node, dict):
+            continue
+        if node.get("name") == field_name and "options" in node:
+            options = {
+                opt["name"].lower(): opt["id"]
+                for opt in node["options"]
+            }
+            result = ProjectPriorityField(
+                project_id=project_id,
+                field_id=node["id"],
+                options=options,
+            )
+            _project_priority_cache[cache_key] = result
+            vprint(
+                f"Project #{project_number}: field '{field_name}' id={node['id']} "
+                f"options={list(options.keys())}"
+            )
+            return result
+
+    vprint(f"WARN: No single-select field named '{field_name}' in project #{project_number}")
+    _project_priority_cache[cache_key] = None
+    return None
+
+
+def gh_project_add_item(project_id: str, issue_node_id: str) -> str | None:
+    """Add an issue/PR to a project. Returns the project-item node-id."""
+    query = """
+    mutation($projectId: ID!, $contentId: ID!) {
+      addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+        item { id }
+      }
+    }
+    """
+    data = _run_graphql(query, {"projectId": project_id, "contentId": issue_node_id})
+    if data is None:
+        return None
+    item = ((data.get("data") or {}).get("addProjectV2ItemById") or {}).get("item")
+    return item["id"] if item else None
+
+
+def gh_issue_get_node_id(repo: str, issue_number: int) -> str | None:
+    """Get the GraphQL node-id for a repo issue (required by Projects V2 mutations)."""
+    res = run_gh(["api", f"repos/{repo}/issues/{issue_number}", "--jq", ".node_id"])
+    if res.returncode != 0:
+        vprint(f"WARN: Failed to fetch node_id for #{issue_number}: {res.stderr}")
+        return None
+    node_id = (res.stdout or "").strip()
+    return node_id if node_id else None
+
+
+def gh_project_set_field_value(
+    project_id: str,
+    item_id: str,
+    field_id: str,
+    option_id: str,
+) -> bool:
+    """Set a single-select field value on a project item."""
+    query = """
+    mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+      updateProjectV2ItemFieldValue(input: {
+        projectId: $projectId
+        itemId: $itemId
+        fieldId: $fieldId
+        value: { singleSelectOptionId: $optionId }
+      }) {
+        projectV2Item { id }
+      }
+    }
+    """
+    data = _run_graphql(query, {
+        "projectId": project_id,
+        "itemId": item_id,
+        "fieldId": field_id,
+        "optionId": option_id,
+    })
+    return data is not None and "errors" not in data
+
+
+def set_issue_priority_on_project(
+    repo: str,
+    issue_number: int,
+    severity: str,
+    severity_priority_map: dict[str, str],
+    project_number: int,
+    *,
+    dry_run: bool = False,
+) -> None:
+    """Resolve severity → priority and set the value on the GitHub Project field.
+
+    Does nothing when:
+    - ``project_number`` is not provided (0 / None)
+    - ``severity_priority_map`` has no entry for this severity
+    - The project's Priority field has no matching option
+    """
+    if not project_number:
+        return
+
+    priority_value = resolve_priority(severity, severity_priority_map)
+    if not priority_value:
+        vprint(f"  No priority mapping for severity={severity!r} – skipping project field")
+        return
+
+    org = repo.split("/", 1)[0] if "/" in repo else ""
+    if not org:
+        vprint("WARN: Cannot determine org from repo – skipping project priority")
+        return
+
+    pf = gh_project_get_priority_field(org, project_number)
+    if pf is None:
+        vprint(f"WARN: Could not load project #{project_number} metadata – skipping project priority")
+        return
+
+    option_id = pf.options.get(priority_value.lower())
+    if option_id is None:
+        print(
+            f"WARN: Priority value {priority_value!r} (from severity={severity!r}) "
+            f"does not match any option in project #{project_number}. "
+            f"Available options: {list(pf.options.keys())}",
+            file=sys.stderr,
+        )
+        return
+
+    if dry_run:
+        print(
+            f"DRY-RUN: would set Priority={priority_value!r} on issue #{issue_number} "
+            f"in project #{project_number}"
+        )
+        return
+
+    node_id = gh_issue_get_node_id(repo, issue_number)
+    if node_id is None:
+        vprint(f"WARN: Could not fetch node_id for issue #{issue_number} – skipping project priority")
+        return
+
+    item_id = gh_project_add_item(pf.project_id, node_id)
+    if item_id is None:
+        vprint(f"WARN: Could not add issue #{issue_number} to project #{project_number}")
+        return
+
+    ok = gh_project_set_field_value(pf.project_id, item_id, pf.field_id, option_id)
+    if ok:
+        print(f"Set Priority={priority_value!r} on issue #{issue_number} in project #{project_number}")
+    else:
+        print(
+            f"WARN: Failed to set Priority={priority_value!r} on issue #{issue_number}",
+            file=sys.stderr,
+        )
 
 
 def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
@@ -757,7 +1030,9 @@ def _alert_value(alert: dict[str, Any], *keys: str) -> str:
     return ""
 
 
-def build_parent_issue_body(alert: dict[str, Any]) -> str:
+def build_parent_issue_body(
+    alert: dict[str, Any],
+) -> str:
     rule_id = str(alert.get("rule_id") or "").strip()
     tool = str(alert.get("tool") or "").strip()
     severity = str((alert.get("severity") or "unknown")).lower()
@@ -808,6 +1083,8 @@ def ensure_parent_issue(
     index: IssueIndex,
     *,
     dry_run: bool,
+    severity_priority_map: dict[str, str] | None = None,
+    project_number: int | None = None,
 ) -> Issue | None:
     rule_id = str(alert.get("rule_id") or "").strip()
     if not rule_id:
@@ -823,6 +1100,8 @@ def ensure_parent_issue(
         first_seen_final = min(existing_first, iso_date(alert.get("created_at")))
         last_seen_final = max(existing_last, iso_date(alert.get("updated_at")))
 
+        _severity = str((alert.get("severity") or existing_secmeta.get("severity") or "unknown")).lower()
+
         existing_secmeta.update(
             {
                 "schema": existing_secmeta.get("schema") or "1",
@@ -830,7 +1109,7 @@ def ensure_parent_issue(
                 "repo": repo_full,
                 "source": existing_secmeta.get("source") or "code_scanning",
                 "tool": str(alert.get("tool") or existing_secmeta.get("tool") or ""),
-                "severity": str((alert.get("severity") or existing_secmeta.get("severity") or "unknown")).lower(),
+                "severity": _severity,
                 "rule_id": rule_id,
                 "first_seen": first_seen_final,
                 "last_seen": last_seen_final,
@@ -844,7 +1123,7 @@ def ensure_parent_issue(
                 "category": _alert_value(alert, "category"),
                 "avd_id": _alert_value(alert, "avd_id", "rule_id") or rule_id,
                 "title": _alert_value(alert, "title", "rule_name", "rule_id") or rule_id,
-                "severity": str((alert.get("severity") or "unknown")).lower(),
+                "severity": _severity,
                 "published_date": iso_date(_alert_value(alert, "published_date", "publishedDate", "created_at")),
                 "vendor_scoring": _alert_value(alert, "vendor_scoring", "vendorScoring"),
                 "package_name": _alert_value(alert, "package_name", "packageName"),
@@ -904,6 +1183,13 @@ def ensure_parent_issue(
     issues[num] = created
     index.parent_by_rule_id[rule_id] = created
     print(f"Created parent issue #{num} for rule_id={rule_id}")
+
+    # Set Priority on the GitHub Project.
+    set_issue_priority_on_project(
+        repo_full, num, str((alert.get("severity") or "unknown")).lower(),
+        severity_priority_map or {}, project_number or 0, dry_run=dry_run,
+    )
+
     return created
 
 
@@ -945,7 +1231,9 @@ def build_body_context(alert: dict[str, Any]) -> str:
     return "\n".join(parts).strip() + "\n"
 
 
-def build_child_issue_body(alert: dict[str, Any]) -> str:
+def build_child_issue_body(
+    alert: dict[str, Any],
+) -> str:
     repo_full = str(alert.get("_repo") or "").strip()
     avd_id = _alert_value(alert, "avd_id", "rule_id")
     title = _alert_value(alert, "title", "rule_name", "rule_id")
@@ -997,6 +1285,8 @@ def ensure_issue(
     *,
     dry_run: bool = False,
     notifications: list[NotifiedIssue] | None = None,
+    severity_priority_map: dict[str, str] | None = None,
+    project_number: int | None = None,
 ) -> None:
     alert_number = int(alert.get("alert_number"))
 
@@ -1041,7 +1331,12 @@ def ensure_issue(
     first_seen = iso_date(alert.get("created_at"))
     last_seen = iso_date(alert.get("updated_at"))
 
-    parent_issue = ensure_parent_issue(alert, issues, index, dry_run=dry_run)
+    _spm = severity_priority_map or {}
+
+    parent_issue = ensure_parent_issue(
+        alert, issues, index, dry_run=dry_run,
+        severity_priority_map=_spm, project_number=project_number,
+    )
     matched = find_issue_in_index(
         index,
         fingerprint=fingerprint,
@@ -1101,6 +1396,10 @@ def ensure_issue(
                     severity=severity, category=category,
                     state="new", tool=tool,
                 ))
+            # show what project priority would be set.
+            set_issue_priority_on_project(
+                repo_full, 0, severity, _spm, project_number or 0, dry_run=True,
+            )
             return
 
         num = gh_issue_create(repo_full, title, body, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
@@ -1148,6 +1447,11 @@ def ensure_issue(
                     }
                 ),
             )
+
+            # Set Priority on the GitHub Project.
+            set_issue_priority_on_project(
+                repo_full, num, severity, _spm, project_number or 0, dry_run=dry_run,
+            )
         return
 
     issue = matched
@@ -1185,6 +1489,11 @@ def ensure_issue(
                 severity=severity, category=reopen_category,
                 state="reopen", tool=tool,
             ))
+
+        # Re-apply Priority on the GitHub Project after reopen.
+        set_issue_priority_on_project(
+            repo_full, issue.number, severity, _spm, project_number or 0, dry_run=dry_run,
+        )
 
     secmeta = load_secmeta(issue.body)
     if not secmeta:
@@ -1358,6 +1667,8 @@ def sync_alerts_and_issues(
     issues: dict[int, Issue],
     *,
     dry_run: bool = False,
+    severity_priority_map: dict[str, str] | None = None,
+    project_number: int | None = None,
 ) -> list[NotifiedIssue]:
     """Sync open alerts into issues.
 
@@ -1370,7 +1681,12 @@ def sync_alerts_and_issues(
     notifications: list[NotifiedIssue] = []
     index = build_issue_index(issues)
     for alert in alerts.values():
-        ensure_issue(alert, issues, index, dry_run=dry_run, notifications=notifications)
+        ensure_issue(
+            alert, issues, index,
+            dry_run=dry_run, notifications=notifications,
+            severity_priority_map=severity_priority_map,
+            project_number=project_number,
+        )
 
     # Detect child issues that have no matching open alert and label for closure.
     alert_fingerprints: set[str] = set()
@@ -1527,6 +1843,27 @@ def parse_args() -> argparse.Namespace:
         help=f"Only mine issues with this label (default: {LABEL_SCOPE_SECURITY})",
     )
     p.add_argument(
+        "--severity-priority-map",
+        default=os.environ.get("SEVERITY_PRIORITY_MAP", ""),
+        help="Comma-separated severity=priority pairs that define which priority string "
+             "to assign for each alert severity. Severities: Critical, High, Medium, Low, Unknown. "
+             "Example: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor,Unknown=Normal'. "
+             "Only listed severities get a priority; unlisted ones are left empty. "
+             "When not set at all, priority is skipped for every severity. "
+             "Priority values must match the option names of the Priority single-select field "
+             "in the target GitHub Project. "
+             "Default: $SEVERITY_PRIORITY_MAP env var.",
+    )
+    p.add_argument(
+        "--project-number",
+        type=int,
+        default=int(os.environ.get("PROJECT_NUMBER", "0")) or None,
+        help="GitHub Projects V2 number (org-level) where a Priority single-select field "
+             "will be set for each promoted issue.  Required together with --severity-priority-map. "
+             "When omitted, project-level priority is skipped. "
+             "Default: $PROJECT_NUMBER env var.",
+    )
+    p.add_argument(
         "--teams-webhook-url",
         default=os.environ.get("TEAMS_WEBHOOK_URL"),
         help="Teams Incoming Webhook URL for new/reopened issue alerts (default: $TEAMS_WEBHOOK_URL). "
@@ -1544,10 +1881,16 @@ def main() -> None:
 
     repo_full, open_alerts = load_open_alerts_from_file(args.file)
     issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
+
+    # Build severity → priority map from user input; empty by default (priority skipped).
+    spm = parse_severity_priority_map(str(args.severity_priority_map or ""))
+
     notifications = sync_alerts_and_issues(
         open_alerts,
         issues,
         dry_run=bool(args.dry_run),
+        severity_priority_map=spm,
+        project_number=args.project_number,
     )
 
     webhook_url = args.teams_webhook_url

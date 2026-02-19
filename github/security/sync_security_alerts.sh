@@ -21,6 +21,8 @@ REPO=""
 STATE="open"            # open | dismissed | fixed | all
 OUT_FILE="alerts.json"
 ISSUE_LABEL="scope:security"
+SEVERITY_PRIORITY_MAP="${SEVERITY_PRIORITY_MAP:-}"
+PROJECT_NUMBER="${PROJECT_NUMBER:-}"
 TEAMS_WEBHOOK_URL="${TEAMS_WEBHOOK_URL:-}"
 SKIP_LABEL_CHECK=0
 DRY_RUN=0
@@ -44,6 +46,19 @@ Options:
   --state <state>       open | dismissed | fixed | all (default: open)
   --out <file>          Output file for alerts JSON (default: alerts.json)
   --issue-label <label> Mine existing issues with this label (default: scope:security)
+  --severity-priority-map <map>
+                        Comma-separated severity=priority pairs, e.g.
+                        'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor,Unknown=Normal'
+                        Only listed severities get a priority; unlisted ones are left empty.
+                        When not set at all, priority is skipped for every severity.
+                        Priority values must match the option names of the Priority
+                        single-select field in the target GitHub Project.
+                        (default: \$SEVERITY_PRIORITY_MAP)
+  --project-number <N>  GitHub Projects V2 number (org-level) where a Priority
+                        single-select field will be set for each promoted issue.
+                        Required together with --severity-priority-map.
+                        When omitted, project-level priority is skipped.
+                        (default: \$PROJECT_NUMBER)
   --dry-run             Do not write issues; only print intended actions
   --verbose             Verbose logs (also enabled by RUNNER_DEBUG=1)
   --teams-webhook-url <url>  Teams Incoming Webhook URL (default: \$TEAMS_WEBHOOK_URL)
@@ -70,6 +85,14 @@ Examples:
 
   # If you run outside Actions but still want inference:
   GITHUB_REPOSITORY="my-org/my-repo" sync_security_alerts.sh
+
+  # Assign user-defined priority strings per severity (requires a project)
+  sync_security_alerts.sh --repo my-org/my-repo --project-number 42 \\
+    --severity-priority-map 'Critical=🌋 Urgent,High=High,Medium=Medium,Low=Low,Unknown=Medium'
+
+  # Only set priority for Critical and High; Medium, Low and Unknown will have no priority
+  sync_security_alerts.sh --repo my-org/my-repo --project-number 42 \\
+    --severity-priority-map 'Critical=🌋 Urgent,High=Important'
 EOF
 }
 
@@ -89,6 +112,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --issue-label)
       ISSUE_LABEL="$2"
+      shift 2
+      ;;
+    --severity-priority-map)
+      SEVERITY_PRIORITY_MAP="$2"
+      shift 2
+      ;;
+    --project-number)
+      PROJECT_NUMBER="$2"
       shift 2
       ;;
     --dry-run)
@@ -167,6 +198,12 @@ if (( VERBOSE )); then
 fi
 if [[ -n "$TEAMS_WEBHOOK_URL" ]]; then
   PROMOTE_ARGS+=(--teams-webhook-url "$TEAMS_WEBHOOK_URL")
+fi
+if [[ -n "$SEVERITY_PRIORITY_MAP" ]]; then
+  PROMOTE_ARGS+=(--severity-priority-map "$SEVERITY_PRIORITY_MAP")
+fi
+if [[ -n "$PROJECT_NUMBER" ]]; then
+  PROMOTE_ARGS+=(--project-number "$PROJECT_NUMBER")
 fi
 
 python3 "${PROMOTE_ARGS[@]}"

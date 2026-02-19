@@ -46,6 +46,7 @@ from .github_issues import (
     gh_issue_create,
     gh_issue_edit_body,
     gh_issue_edit_state,
+    gh_issue_edit_title,
 )
 from .github_projects import (
     ProjectPrioritySync,
@@ -200,13 +201,25 @@ def ensure_parent_issue(
                 gh_issue_edit_body(repo_full, existing.number, rebuilt)
                 existing.body = rebuilt
 
+        # Detect parent title drift and update when needed.
+        expected_title = build_parent_issue_title(rule_id, _severity)
+        if expected_title != (existing.title or ""):
+            if dry_run:
+                print(
+                    f"DRY-RUN: would update parent issue #{existing.number} title "
+                    f"from {existing.title!r} to {expected_title!r}"
+                )
+            else:
+                if gh_issue_edit_title(repo_full, existing.number, expected_title):
+                    existing.title = expected_title
+
         # Enqueue priority sync (bulk – resolved + flushed later).
         if priority_sync is not None:
             priority_sync.enqueue(repo_full, existing.number, _severity, severity_priority_map or {})
 
         return existing
 
-    title = build_parent_issue_title(rule_id)
+    title = build_parent_issue_title(rule_id, str((alert.get("severity") or "unknown")).lower())
     body = build_parent_issue_body(alert)
     labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT, LABEL_EPIC]
     if dry_run:
@@ -331,6 +344,7 @@ def _handle_new_child_issue(
 
     if dry_run:
         labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
+
         loc = f"{path}:{start_line or ''}".rstrip(":")
         commit_short = commit_sha[:8] if commit_sha else ""
         print(
@@ -568,6 +582,18 @@ def _handle_existing_child_issue(
         else:
             gh_issue_edit_body(repo_full, issue.number, new_body)
             issue.body = new_body
+
+    # Detect child title drift and update when needed.
+    expected_title = build_issue_title(str(alert.get("rule_name") or ""), rule_id, fingerprint)
+    if expected_title != (issue.title or ""):
+        if dry_run:
+            print(
+                f"DRY-RUN: would update issue #{issue.number} title "
+                f"from {issue.title!r} to {expected_title!r}"
+            )
+        else:
+            if gh_issue_edit_title(repo_full, issue.number, expected_title):
+                issue.title = expected_title
 
     if dry_run:
         print(

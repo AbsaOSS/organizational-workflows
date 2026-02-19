@@ -58,8 +58,9 @@ def classify_category(alert: dict[str, Any]) -> str:
     return str(alert.get("rule_name") or "").strip()
 
 
-def build_parent_issue_title(rule_id: str) -> str:
-    return f"Security Alert – {rule_id}".strip()
+def build_parent_issue_title(rule_id: str, severity: str = "") -> str:
+    sev_tag = f"[{severity.upper()}] " if severity else ""
+    return f"{sev_tag}Security Alert – {rule_id}".strip()
 
 
 def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severity: str) -> dict[str, Any]:

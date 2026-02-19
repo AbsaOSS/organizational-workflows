@@ -166,6 +166,17 @@ def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
     return True
 
 
+def gh_issue_edit_title(repo: str, number: int, title: str) -> bool:
+    res = run_gh(["issue", "edit", str(number), "--repo", repo, "--title", title])
+
+    if res.returncode != 0:
+        print(f"Failed to edit title for #{number}: {res.stderr}", file=sys.stderr)
+        return False
+
+    print(f"Updated issue #{number} title")
+    return True
+
+
 def gh_issue_edit_body(repo: str, number: int, body: str) -> bool:
     res = run_gh(["issue", "edit", str(number), "--repo", repo, "--body", body])
 

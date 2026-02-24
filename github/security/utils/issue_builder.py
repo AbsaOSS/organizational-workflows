@@ -19,15 +19,13 @@
 
 from typing import Any
 
+from shared.common import iso_date
+from shared.templates import render_markdown_template
+
 from .alert_parser import AlertMessageKey
-from .common import iso_date
 from .constants import SECMETA_TYPE_PARENT
 from .secmeta import render_secmeta
-from .templates import (
-    CHILD_BODY_TEMPLATE,
-    PARENT_BODY_TEMPLATE,
-    render_markdown_template,
-)
+from .templates import CHILD_BODY_TEMPLATE, PARENT_BODY_TEMPLATE
 
 
 def alert_extra_data(alert: dict[str, Any]) -> dict[str, Any]:

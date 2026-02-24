@@ -24,7 +24,8 @@ import subprocess
 import sys
 import tempfile
 
-from .common import vprint
+from shared.common import vprint
+
 from .models import NotifiedIssue, SeverityChange, severity_direction
 
 

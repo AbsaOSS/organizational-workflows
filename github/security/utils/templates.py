@@ -14,12 +14,7 @@
 # limitations under the License.
 #
 
-"""Markdown templates and ``{{ placeholder }}`` rendering engine."""
-
-
-import json
-import re
-from typing import Any
+"""Security-specific Markdown body templates."""
 
 
 PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
@@ -93,29 +88,4 @@ CHILD_BODY_TEMPLATE = """## General Information
 """
 
 
-PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_\.]+)\s*\}\}")
 
-
-def _get_nested_value(data: dict[str, Any], dotted_key: str) -> Any:
-    cur: Any = data
-    for part in (dotted_key or "").split("."):
-        if not part:
-            continue
-        if isinstance(cur, dict) and part in cur:
-            cur = cur.get(part)
-        else:
-            return ""
-    if cur is None:
-        return ""
-    return cur
-
-
-def render_markdown_template(template: str, values: dict[str, Any]) -> str:
-    def repl(match: re.Match[str]) -> str:
-        key = match.group(1)
-        v = _get_nested_value(values, key)
-        if isinstance(v, (dict, list)):
-            return json.dumps(v)
-        return str(v)
-
-    return PLACEHOLDER_RE.sub(repl, template)

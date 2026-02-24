@@ -14,10 +14,9 @@
 # limitations under the License.
 #
 
-"""Shared low-level utilities – logging control, date helpers, hashing,
+"""Low-level utilities – logging control, date helpers, hashing,
 path normalisation, and subprocess wrappers for the ``gh`` CLI.
 """
-
 
 import hashlib
 import os

@@ -42,13 +42,20 @@ Implementation:
 import argparse
 import os
 import shutil
+import sys
+
+# Ensure the github/ root is on sys.path so `shared.*` is importable.
+_github_root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+if _github_root not in sys.path:
+    sys.path.insert(0, _github_root)
+
+from shared.common import parse_runner_debug, set_verbose_enabled, vprint
+from shared.github_issues import gh_issue_list_by_label
+from shared.priority import parse_severity_priority_map
 
 from utils.alert_parser import load_open_alerts_from_file
-from utils.common import parse_runner_debug, set_verbose_enabled, vprint
 from utils.constants import LABEL_SCOPE_SECURITY
-from utils.github_issues import gh_issue_list_by_label
 from utils.issue_sync import sync_alerts_and_issues
-from utils.priority import parse_severity_priority_map
 from utils.teams import notify_teams, notify_teams_severity_changes
 
 

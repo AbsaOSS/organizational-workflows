@@ -14,3 +14,15 @@
 # limitations under the License.
 #
 
+"""Generic data models reusable across workflow solutions."""
+
+from dataclasses import dataclass
+
+
+@dataclass
+class Issue:
+    number: int
+    state: str
+    title: str
+    body: str
+    labels: list[str] | None = None

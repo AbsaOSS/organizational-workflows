@@ -28,7 +28,7 @@ from enum import Enum
 from typing import Any
 from enum import StrEnum
 
-from .common import sha256_hex
+from shared.common import sha256_hex
 
 # ---------------------------------------------------------------------------
 # AlertMessageKey enum

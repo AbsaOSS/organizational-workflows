@@ -25,8 +25,21 @@ This is the main business-logic module that ties together all other
 
 from typing import Any
 
+from shared.common import is_verbose, iso_date, normalize_path, utc_today, vprint
+from shared.github_issues import (
+    gh_issue_add_labels,
+    gh_issue_add_sub_issue_by_number,
+    gh_issue_comment,
+    gh_issue_create,
+    gh_issue_edit_body,
+    gh_issue_edit_state,
+    gh_issue_edit_title,
+)
+from shared.github_projects import ProjectPrioritySync, gh_project_get_priority_field
+from shared.models import Issue
+from shared.templates import render_markdown_template
+
 from .alert_parser import AlertMessageKey, compute_occurrence_fp, extract_cwe
-from .common import is_verbose, iso_date, normalize_path, utc_today, vprint
 from .constants import (
     LABEL_EPIC,
     LABEL_SCOPE_SECURITY,
@@ -38,19 +51,6 @@ from .constants import (
     SECMETA_TYPE_CHILD,
     SECMETA_TYPE_PARENT,
 )
-from .github_issues import (
-    gh_issue_add_labels,
-    gh_issue_add_sub_issue_by_number,
-    gh_issue_comment,
-    gh_issue_create,
-    gh_issue_edit_body,
-    gh_issue_edit_state,
-    gh_issue_edit_title,
-)
-from .github_projects import (
-    ProjectPrioritySync,
-    gh_project_get_priority_field,
-)
 from .issue_builder import (
     build_child_issue_body,
     build_issue_title,
@@ -59,10 +59,10 @@ from .issue_builder import (
     build_parent_template_values,
     classify_category,
 )
-from .models import Issue, IssueIndex, NotifiedIssue, SeverityChange, SyncResult
+from .models import IssueIndex, NotifiedIssue, SeverityChange, SyncResult
 from .sec_events import render_sec_event, strip_sec_events_from_body
 from .secmeta import json_list, load_secmeta, parse_json_list, render_secmeta
-from .templates import PARENT_BODY_TEMPLATE, render_markdown_template
+from .templates import PARENT_BODY_TEMPLATE
 
 
 def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:

@@ -14,19 +14,11 @@
 # limitations under the License.
 #
 
-"""Core data classes – plain dataclass definitions shared across modules."""
-
+"""Security-specific data models."""
 
 from dataclasses import dataclass
 
-
-@dataclass
-class Issue:
-    number: int
-    state: str
-    title: str
-    body: str
-    labels: list[str] | None = None
+from shared.models import Issue
 
 
 @dataclass

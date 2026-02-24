@@ -29,6 +29,32 @@ on:
         required: false
         type: boolean
         default: false
+      severity-priority-map:
+        description: >
+          Comma-separated severity=priority pairs that map alert severities to
+          priority values on the GitHub Project (e.g.
+          'Critical=Blocker,High=Urgent,Medium=Normal'). Only listed severities
+          get a priority; unlisted ones are left empty. When not set, priority
+          is skipped entirely.
+        required: false
+        type: string
+        default: ''
+      project-number:
+        description: >
+          GitHub Projects V2 number (org-level) where a Priority single-select
+          field will be set for each promoted issue. Required together with
+          severity-priority-map. When omitted, project-level priority is skipped.
+        required: false
+        type: number
+        default: 0
+      project-org:
+        description: >
+          GitHub organisation that owns the Projects V2 board. Use when the
+          project lives in a different org than the scanned repo. When omitted,
+          the org is derived from the repo name.
+        required: false
+        type: string
+        default: ''
     secrets:
       AQUA_KEY:
         required: true
@@ -101,5 +127,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          SEVERITY_PRIORITY_MAP: ${{ inputs.severity-priority-map }}
+          PROJECT_NUMBER: ${{ inputs.project-number }}
+          PROJECT_ORG: ${{ inputs.project-org }}
         run: |
           org-workflows/github/security/sync_security_alerts.sh

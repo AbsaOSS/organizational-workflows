@@ -262,7 +262,7 @@ class ProjectPrioritySync:
         """Resolve severity -> priority and queue an update if needed."""
         priority_value = resolve_priority(severity, severity_priority_map)        
         if not priority_value:
-            vprint(f"  No priority mapping for severity={severity!r} – skipping project field")
+            vprint(f"No priority mapping for severity={severity!r} – skipping project field")
             return
 
         option_id = self.pf.options.get(priority_value.lower())

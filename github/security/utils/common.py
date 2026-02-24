@@ -18,7 +18,6 @@
 path normalisation, and subprocess wrappers for the ``gh`` CLI.
 """
 
-from __future__ import annotations
 
 import hashlib
 import os

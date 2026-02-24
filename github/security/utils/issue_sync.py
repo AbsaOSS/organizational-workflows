@@ -22,7 +22,6 @@ This is the main business-logic module that ties together all other
 ``utils.*`` modules.
 """
 
-from __future__ import annotations
 
 from typing import Any
 

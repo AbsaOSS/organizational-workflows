@@ -39,8 +39,6 @@ Implementation:
 - This file is only the CLI entry-point: argument parsing → wiring → main().
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import shutil

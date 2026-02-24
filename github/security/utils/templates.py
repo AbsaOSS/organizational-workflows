@@ -16,7 +16,6 @@
 
 """Markdown templates and ``{{ placeholder }}`` rendering engine."""
 
-from __future__ import annotations
 
 import json
 import re

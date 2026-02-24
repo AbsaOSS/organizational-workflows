@@ -18,7 +18,6 @@
 structured lifecycle-event blocks from issue bodies.
 """
 
-from __future__ import annotations
 
 import re
 

@@ -18,7 +18,6 @@
 ``send_to_teams.py`` for new / reopened issues.
 """
 
-from __future__ import annotations
 
 import os
 import subprocess

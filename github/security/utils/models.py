@@ -16,7 +16,6 @@
 
 """Core data classes – plain dataclass definitions shared across modules."""
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 

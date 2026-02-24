@@ -19,8 +19,6 @@ via the ``gh`` CLI: create, edit state/body, comment, add labels,
 sub-issue linking, list-by-label, and node-id lookup.
 """
 
-from __future__ import annotations
-
 import json
 import re
 import sys

@@ -55,7 +55,6 @@ cat reports/summary.md | python3 send_to_teams.py --title "Daily digest"
 python3 send_to_teams.py --body-file reports/summary.md --dry-run
 """
 
-from __future__ import annotations
 
 import argparse
 import json

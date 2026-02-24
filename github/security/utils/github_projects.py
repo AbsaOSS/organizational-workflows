@@ -19,7 +19,6 @@ add/update items, field value read/write, the legacy single-issue wrapper,
 and the bulk :class:`ProjectPrioritySync` class (prefetch -> enqueue -> flush).
 """
 
-from __future__ import annotations
 
 import json
 import sys

@@ -20,7 +20,6 @@ HTML-comment metadata block stored in issue bodies.
 Also hosts generic key-value and JSON-list helpers used for secmeta field values.
 """
 
-from __future__ import annotations
 
 import json
 import re

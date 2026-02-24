@@ -19,8 +19,6 @@
 priority value.
 """
 
-from __future__ import annotations
-
 
 def parse_severity_priority_map(raw: str) -> dict[str, str]:
     """Parse a comma-separated ``severity=priority`` string into a dict.

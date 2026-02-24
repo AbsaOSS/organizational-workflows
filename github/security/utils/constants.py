@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 
-"""Domain constants – label names, event-type strings, and secmeta type identifiers."""
+"""Shared constants used across the security workflow utilities."""
 
 LABEL_SCOPE_SECURITY = "scope:security"
 LABEL_TYPE_TECH_DEBT = "type:tech-debt"

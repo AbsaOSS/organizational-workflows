@@ -56,6 +56,7 @@ def classify_category(alert: dict[str, Any]) -> str:
 
 
 def build_parent_issue_title(rule_id: str, severity: str = "") -> str:
+    """Build the title string for a parent issue."""
     sev_tag = f"[{severity.upper()}] " if severity else ""
     return f"{sev_tag}Security Alert – {rule_id}".strip()
 
@@ -80,6 +81,7 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
 
 
 def build_parent_issue_body(alert: dict[str, Any]) -> str:
+    """Construct the full body (secmeta + rendered template) for a new parent issue."""
     rule_id = str(alert.get("rule_id") or "").strip()
     tool = str(alert.get("tool") or "").strip()
     severity = str((alert.get("severity") or "unknown")).lower()
@@ -104,12 +106,14 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
 
 
 def build_issue_title(rule_name: str | None, rule_id: str, fingerprint: str) -> str:
+    """Build the title string for a child issue."""
     prefix = fingerprint[:8] if fingerprint else "unknown"
     summary = (rule_name or rule_id or "Security finding").strip() or "Security finding"
     return f"[SEC][FP={prefix}] {summary}"
 
 
 def build_child_issue_body(alert: dict[str, Any]) -> str:
+    """Render the human-readable body for a child issue from alert data."""
     repo_full = str(alert.get("_repo") or "").strip()
     avd_id = alert_value(alert, "avd_id", "rule_id")
     title = alert_value(alert, "title", "rule_name", "rule_id")

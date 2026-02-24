@@ -35,6 +35,7 @@ from shared.common import sha256_hex
 # ---------------------------------------------------------------------------
 
 class AlertMessageKey(StrEnum):
+    """Known keys parsed from the multi-line alert message."""
     ARTIFACT = "artifact"
     TYPE = "type"
     VULNERABILITY = "vulnerability"
@@ -96,7 +97,7 @@ def extract_cwe(alert: dict[str, Any]) -> str | None:
 
 
 def compute_occurrence_fp(commit_sha: str, path: str, start_line: int | None, end_line: int | None) -> str:
-    # Works without git; used to record distinct sightings over time.
+    """Compute a fingerprint for a specific occurrence (commit + location)."""
     return sha256_hex(f"{commit_sha}|{path}|{start_line or ''}|{end_line or ''}")
 
 

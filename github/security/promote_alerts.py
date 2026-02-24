@@ -62,6 +62,7 @@ from utils.teams import notify_teams, notify_teams_severity_changes
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse and return CLI arguments."""
     p = argparse.ArgumentParser(description="Promote alerts JSON to GitHub issues using gh CLI")
     p.add_argument(
         "--file",
@@ -123,6 +124,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """CLI entry-point: load alerts, sync to issues, notify Teams."""
     if shutil.which("gh") is None:
         raise SystemExit("ERROR: gh CLI is required. Install and authenticate (gh auth login).")
     args = parse_args()

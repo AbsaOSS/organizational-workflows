@@ -164,6 +164,7 @@ def send_to_teams(webhook_url: str, payload: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments for the Teams webhook sender."""
     parser = argparse.ArgumentParser(
         description=(
             "Send a Markdown message to a Microsoft Teams channel via Incoming Webhook. "
@@ -225,6 +226,7 @@ def _resolve_body(args: argparse.Namespace) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """CLI entry-point: build an Adaptive Card payload and send it to Teams."""
     args = _parse_args(argv)
 
     body = _resolve_body(args)

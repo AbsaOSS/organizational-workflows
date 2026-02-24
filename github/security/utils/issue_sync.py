@@ -66,6 +66,7 @@ from .templates import PARENT_BODY_TEMPLATE
 
 
 def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
+    """Build lookup indexes (by fingerprint and by rule_id) from existing issues."""
     by_fingerprint: dict[str, Issue] = {}
     parent_by_rule_id: dict[str, Issue] = {}
 
@@ -92,10 +93,12 @@ def find_issue_in_index(
     *,
     fingerprint: str,
 ) -> Issue | None:
+    """Return the child issue matching *fingerprint*, or ``None``."""
     return index.by_fingerprint.get(fingerprint)
 
 
 def find_parent_issue(index: IssueIndex, *, rule_id: str) -> Issue | None:
+    """Return the parent issue for *rule_id*, or ``None``."""
     return index.parent_by_rule_id.get(rule_id)
 
 
@@ -108,6 +111,7 @@ def maybe_reopen_parent_issue(
     context: str,
     child_issue_number: int | None = None,
 ) -> None:
+    """Reopen *parent_issue* (if closed) and record a sec-event comment."""
     if parent_issue is None:
         return
 
@@ -153,6 +157,7 @@ def ensure_parent_issue(
     priority_sync: ProjectPrioritySync | None = None,
     severity_changes: list[SeverityChange] | None = None,
 ) -> Issue | None:
+    """Find or create the parent issue for the alert's ``rule_id``."""
     rule_id = str(alert.get("rule_id") or "").strip()
     if not rule_id:
         return None
@@ -297,6 +302,7 @@ def _append_notification(
     state: str,
     tool: str,
 ) -> None:
+    """Append a notification entry if the *notifications* list is active."""
     if notifications is not None:
         notifications.append(
             NotifiedIssue(
@@ -316,6 +322,7 @@ def _handle_new_child_issue(
     sync: SyncContext,
     parent_issue: Issue | None,
 ) -> None:
+    """Create a new child issue for an alert that has no matching issue yet."""
     category = classify_category(ctx.alert)
     secmeta: dict[str, str] = {
         "schema": "1",
@@ -435,6 +442,7 @@ def _handle_existing_child_issue(
     issue: Issue,
     parent_issue: Issue | None,
 ) -> None:
+    """Update an existing child issue with refreshed alert data."""
     if parent_issue is None and ctx.rule_id:
         parent_issue = find_parent_issue(sync.index, rule_id=ctx.rule_id)
 
@@ -600,6 +608,7 @@ def ensure_issue(
     priority_sync: ProjectPrioritySync | None = None,
     severity_changes: list[SeverityChange] | None = None,
 ) -> None:
+    """Process a single alert: create or update its child issue and parent."""
     alert_number = int(alert.get("alert_number"))
 
     alert_state = str(alert.get("state") or "").lower().strip()

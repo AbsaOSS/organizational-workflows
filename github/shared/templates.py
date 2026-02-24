@@ -25,6 +25,7 @@ PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_\.]+)\s*\}\}")
 
 
 def _get_nested_value(data: dict[str, Any], dotted_key: str) -> Any:
+    """Resolve a dot-separated key path against a nested dict."""
     cur: Any = data
     for part in (dotted_key or "").split("."):
         if not part:
@@ -39,6 +40,7 @@ def _get_nested_value(data: dict[str, Any], dotted_key: str) -> Any:
 
 
 def render_markdown_template(template: str, values: dict[str, Any]) -> str:
+    """Replace ``{{ key }}`` placeholders in *template* with values from *values*."""
     def repl(match: re.Match[str]) -> str:
         key = match.group(1)
         v = _get_nested_value(values, key)

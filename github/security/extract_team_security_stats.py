@@ -40,6 +40,7 @@ from github import Github
 # Configuration
 # --------------------
 def require_env(key: str) -> str:
+    """Return the value of environment variable *key*, or exit."""
     try:
         return os.environ[key]
     except KeyError as exc:
@@ -63,11 +64,13 @@ SECMETA_RE = re.compile(r'```secmeta(.*?)```', re.S)
 # --------------------
 
 def ensure_dirs():
+    """Create output directories if they don't exist."""
     os.makedirs(OUT_DATA, exist_ok=True)
     os.makedirs(OUT_REPORTS, exist_ok=True)
 
 
 def parse_kv_block(block: str) -> dict:
+    """Parse a ``key=value``-per-line block into a dict."""
     data = {}
     for line in block.splitlines():
         line = line.strip()
@@ -79,6 +82,7 @@ def parse_kv_block(block: str) -> dict:
 
 
 def parse_secmeta(body: str) -> dict:
+    """Extract the secmeta key-value block from an issue body."""
     match = SECMETA_RE.search(body or '')
     if not match:
         return {}
@@ -86,6 +90,7 @@ def parse_secmeta(body: str) -> dict:
 
 
 def parse_events(comments):
+    """Extract ``[sec-event]`` blocks from issue comments."""
     events = []
     for c in comments:
         for raw in SEC_EVENT_RE.findall(c.body or ''):
@@ -96,6 +101,7 @@ def parse_events(comments):
 
 
 def issue_has_sec_label(issue):
+    """Return ``True`` if *issue* carries any ``sec:`` prefixed label."""
     return any(l.name.startswith(SEC_LABEL_PREFIX) for l in issue.labels)
 
 
@@ -104,6 +110,7 @@ def issue_has_sec_label(issue):
 # --------------------
 
 def main():
+    """Extract security statistics from GitHub Issues for the configured team."""
     # TODO decide about changes related to this script
     print("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
     return

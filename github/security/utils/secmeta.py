@@ -26,6 +26,7 @@ import re
 
 
 def parse_kv_block(block: str) -> dict[str, str]:
+    """Parse a ``key=value``-per-line block into a dict."""
     data: dict[str, str] = {}
     for line in (block or "").splitlines():
         line = line.strip()
@@ -37,6 +38,7 @@ def parse_kv_block(block: str) -> dict[str, str]:
 
 
 def load_secmeta(issue_body: str) -> dict[str, str]:
+    """Extract the ``secmeta`` key-value block from an issue body."""
     body = issue_body or ""
     match = re.compile(r"<!--\s*secmeta\r?\n(.*?)\r?\n-->", re.S).search(body)
     if match:
@@ -49,6 +51,7 @@ def load_secmeta(issue_body: str) -> dict[str, str]:
 
 
 def render_secmeta(secmeta: dict[str, str]) -> str:
+    """Render a secmeta dict as a hidden HTML-comment block for issue bodies."""
     preferred_order = [
         "schema",
         "fingerprint",
@@ -79,6 +82,7 @@ def render_secmeta(secmeta: dict[str, str]) -> str:
 
 
 def parse_json_list(value: str | None) -> list[str]:
+    """Parse a JSON array string (or comma-separated fallback) into a list of strings."""
     if not value:
         return []
     s = value.strip()
@@ -96,4 +100,5 @@ def parse_json_list(value: str | None) -> list[str]:
 
 
 def json_list(value: list[str]) -> str:
+    """Serialise a list of strings as a compact JSON array."""
     return json.dumps([str(x) for x in value])

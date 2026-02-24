@@ -28,6 +28,7 @@ from .models import Issue
 
 
 def gh_issue_get_rest_id(repo: str, number: int) -> int | None:
+    """Fetch the REST API numeric ID for issue *number*."""
     res = run_gh(["api", f"repos/{repo}/issues/{number}", "--jq", ".id"])
     if res.returncode != 0:
         print(f"WARN: Failed to fetch REST issue id for #{number}: {res.stderr}", file=sys.stderr)
@@ -40,7 +41,7 @@ def gh_issue_get_rest_id(repo: str, number: int) -> int | None:
 
 
 def gh_issue_add_sub_issue(repo: str, parent_number: int, sub_issue_id: int) -> bool:
-    # NOTE: sub_issue_id must be an integer (REST issue id), not an issue number.
+    """Link a sub-issue to *parent_number* using the REST issue *sub_issue_id*."""
     res = run_gh(
         [
             "api",
@@ -63,6 +64,7 @@ def gh_issue_add_sub_issue(repo: str, parent_number: int, sub_issue_id: int) -> 
 
 
 def gh_issue_add_sub_issue_by_number(repo: str, parent_number: int, child_number: int) -> bool:
+    """Resolve *child_number* to a REST ID and link it as a sub-issue of *parent_number*."""
     child_id = gh_issue_get_rest_id(repo, child_number)
 
     if child_id is None:
@@ -131,6 +133,7 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
 
 
 def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
+    """Set the state of issue *number* to *state* (``open`` or ``closed``)."""
     desired = (state or "").strip().lower()
     if desired not in {"open", "closed"}:
         raise ValueError(f"Unsupported issue state: {state!r}")
@@ -165,6 +168,7 @@ def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
 
 
 def gh_issue_edit_title(repo: str, number: int, title: str) -> bool:
+    """Update the title of issue *number*."""
     res = run_gh(["issue", "edit", str(number), "--repo", repo, "--title", title])
 
     if res.returncode != 0:
@@ -176,6 +180,7 @@ def gh_issue_edit_title(repo: str, number: int, title: str) -> bool:
 
 
 def gh_issue_edit_body(repo: str, number: int, body: str) -> bool:
+    """Replace the body of issue *number*."""
     res = run_gh(["issue", "edit", str(number), "--repo", repo, "--body", body])
 
     if res.returncode != 0:
@@ -187,6 +192,7 @@ def gh_issue_edit_body(repo: str, number: int, body: str) -> bool:
 
 
 def gh_issue_add_labels(repo: str, number: int, labels: list[str]) -> None:
+    """Add *labels* to issue *number* (idempotent)."""
     if not labels:
         return
     
@@ -202,6 +208,7 @@ def gh_issue_add_labels(repo: str, number: int, labels: list[str]) -> None:
 
 
 def gh_issue_comment(repo: str, number: int, body: str) -> bool:
+    """Post a comment with *body* on issue *number*."""
     res = run_gh(["issue", "comment", str(number), "--repo", repo, "--body", body])
 
     if res.returncode != 0:
@@ -212,6 +219,7 @@ def gh_issue_comment(repo: str, number: int, body: str) -> bool:
 
 
 def gh_issue_create(repo: str, title: str, body: str, labels: list[str]) -> int | None:
+    """Create a new issue and return its number, or ``None`` on failure."""
     args: list[str] = ["issue", "create", "--repo", repo, "--title", title, "--body", body]
 
     for label in labels:

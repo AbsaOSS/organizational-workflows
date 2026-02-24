@@ -25,6 +25,7 @@ from shared.models import Issue
 
 @dataclass
 class IssueIndex:
+    """In-memory indexes for fast issue lookup by fingerprint and rule_id."""
     by_fingerprint: dict[str, Issue]
     parent_by_rule_id: dict[str, Issue]
 

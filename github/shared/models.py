@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Issue:
+    """Lightweight representation of a GitHub issue."""
     number: int
     state: str
     title: str

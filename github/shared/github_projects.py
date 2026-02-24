@@ -162,6 +162,7 @@ class ProjectPrioritySync:
         *,
         dry_run: bool = False,
     ):
+        """Initialise with project metadata and prefetch existing items."""
         self.org = org
         self.project_number = project_number
         self.pf = pf

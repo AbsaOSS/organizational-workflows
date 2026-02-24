@@ -44,6 +44,7 @@ OUT_METRICS_JSON = os.environ.get("OUT_METRICS_JSON", "reports/metrics.json")
 OUT_SUMMARY_MD = os.environ.get("OUT_SUMMARY_MD", "reports/summary.md")
 
 def require_env(key: str) -> str:
+    """Return the value of environment variable *key*, or exit."""
     try:
         return os.environ[key]
     except KeyError as exc:
@@ -54,6 +55,7 @@ TEAM_SLUG = require_env("GITHUB_TEAM_SLUG")
 
 
 def _safe_int(v: Any, default: int = 0) -> int:
+    """Coerce *v* to ``int``, returning *default* on failure."""
     try:
         if v is None:
             return default
@@ -68,6 +70,7 @@ def _safe_int(v: Any, default: int = 0) -> int:
 
 
 def _load_json(path: str) -> Optional[Any]:
+    """Load and return JSON from *path*, or ``None`` if the file is missing."""
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
@@ -75,6 +78,7 @@ def _load_json(path: str) -> Optional[Any]:
 
 
 def _index_by_fingerprint(snapshot: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Index snapshot items by their secmeta fingerprint."""
     idx: Dict[str, Dict[str, Any]] = {}
     for item in snapshot:
         fp = (item.get("secmeta") or {}).get("fingerprint")
@@ -86,6 +90,7 @@ def _index_by_fingerprint(snapshot: List[Dict[str, Any]]) -> Dict[str, Dict[str,
 
 
 def _severity_from_labels(labels: List[str]) -> str:
+    """Extract the severity token from ``sec:sev/<level>`` labels."""
     for l in labels:
         if l.startswith("sec:sev/"):
             return l.split("/", 1)[1]
@@ -93,6 +98,7 @@ def _severity_from_labels(labels: List[str]) -> str:
 
 
 def main() -> None:
+    """Derive and write team security metrics from issue snapshots."""
     # TODO decide about changes related to this script
     print("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
     return

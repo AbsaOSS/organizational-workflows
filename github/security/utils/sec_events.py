@@ -23,6 +23,7 @@ import re
 
 
 def parse_sec_event_fields(raw: str) -> dict[str, str]:
+    """Parse ``key=value`` lines from a raw sec-event block."""
     fields: dict[str, str] = {}
     for line in (raw or "").splitlines():
         s = line.strip()
@@ -34,6 +35,7 @@ def parse_sec_event_fields(raw: str) -> dict[str, str]:
 
 
 def render_sec_event(fields: dict[str, str]) -> str:
+    """Render a structured ``[sec-event]`` comment block from *fields*."""
     preferred_order = [
         "action",
         "seen_at",

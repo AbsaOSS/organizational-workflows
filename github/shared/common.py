@@ -29,6 +29,7 @@ _verbose_enabled = False
 
 
 def parse_runner_debug() -> bool:
+    """Return ``True`` when the GitHub Actions ``RUNNER_DEBUG`` env var is ``'1'``."""
     raw = os.getenv("RUNNER_DEBUG")
     if raw is None or raw == "":
         return False
@@ -38,6 +39,7 @@ def parse_runner_debug() -> bool:
 
 
 def set_verbose_enabled(value: bool) -> None:
+    """Set the global verbose-logging flag."""
     global _verbose_enabled
     _verbose_enabled = bool(value)
 
@@ -48,15 +50,18 @@ def is_verbose() -> bool:
 
 
 def vprint(msg: str) -> None:
+    """Print *msg* only when verbose logging is enabled."""
     if _verbose_enabled:
         print(msg)
 
 
 def utc_today() -> str:
+    """Return today's date in UTC as an ISO-8601 string (``YYYY-MM-DD``)."""
     return datetime.now(timezone.utc).date().isoformat()
 
 
 def iso_date(iso_dt: str | None) -> str:
+    """Extract the date portion from an ISO-8601 datetime string, or return today."""
     if not iso_dt:
         return utc_today()
     if "T" in iso_dt:
@@ -65,10 +70,12 @@ def iso_date(iso_dt: str | None) -> str:
 
 
 def sha256_hex(text: str) -> str:
+    """Return the hex SHA-256 digest of *text*."""
     return hashlib.sha256(text.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
 def normalize_path(path: str | None) -> str:
+    """Normalise a file path to forward-slash, no leading ``./`` or ``/``."""
     if not path:
         return ""
     p = path.replace("\\", "/").strip()
@@ -80,10 +87,12 @@ def normalize_path(path: str | None) -> str:
 
 
 def run_cmd(cmd: list[str], *, capture_output: bool = True) -> subprocess.CompletedProcess:
+    """Run *cmd* as a subprocess and return the completed process."""
     return subprocess.run(cmd, check=False, capture_output=capture_output, text=True)
 
 
 def run_gh(args: list[str], *, capture_output: bool = True) -> subprocess.CompletedProcess:
+    """Run a ``gh`` CLI command and return the completed process."""
     cmd = ["gh"] + args
     try:
         return run_cmd(cmd, capture_output=capture_output)

@@ -27,7 +27,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-VERBOSE_ENABLED = False
+_verbose_enabled = False
 
 
 def parse_runner_debug() -> bool:
@@ -40,17 +40,17 @@ def parse_runner_debug() -> bool:
 
 
 def set_verbose_enabled(value: bool) -> None:
-    global VERBOSE_ENABLED
-    VERBOSE_ENABLED = bool(value)
+    global _verbose_enabled
+    _verbose_enabled = bool(value)
 
 
 def is_verbose() -> bool:
     """Return the current verbose-logging state."""
-    return VERBOSE_ENABLED
+    return _verbose_enabled
 
 
 def vprint(msg: str) -> None:
-    if VERBOSE_ENABLED:
+    if _verbose_enabled:
         print(msg)
 
 

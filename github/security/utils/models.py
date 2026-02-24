@@ -17,7 +17,9 @@
 """Security-specific data models."""
 
 from dataclasses import dataclass
+from typing import Any
 
+from shared.github_projects import ProjectPrioritySync
 from shared.models import Issue
 
 
@@ -74,3 +76,35 @@ class SyncResult:
     """Aggregated output of a full sync run."""
     notifications: list[NotifiedIssue]
     severity_changes: list[SeverityChange]
+
+
+@dataclass
+class AlertContext:
+    """Per-alert data extracted in ``ensure_issue`` and passed to child handlers."""
+    alert: dict[str, Any]
+    alert_number: int
+    fingerprint: str
+    occurrence_fp: str
+    repo: str
+    first_seen: str
+    last_seen: str
+    tool: str
+    rule_id: str
+    rule_name: str
+    severity: str
+    cwe: str
+    path: str
+    start_line: Any
+    end_line: Any
+    commit_sha: str
+
+
+@dataclass
+class SyncContext:
+    """Shared orchestration state for the sync run."""
+    issues: dict[int, Issue]
+    index: IssueIndex
+    dry_run: bool
+    notifications: list[NotifiedIssue] | None
+    severity_priority_map: dict[str, str]
+    priority_sync: ProjectPrioritySync | None

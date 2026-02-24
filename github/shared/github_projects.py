@@ -152,16 +152,7 @@ class _PriorityUpdate:
 
 
 class ProjectPrioritySync:
-    """Bulk read -> diff -> bulk write for a GitHub Project Priority field.
-
-    Usage::
-
-        sync = ProjectPrioritySync(org, project_number, field, dry_run=False)
-        # during issue processing:
-        sync.enqueue(repo, issue_number, severity, spm)
-        # after all issues processed:
-        sync.flush()
-    """
+    """Bulk read -> diff -> bulk write for a GitHub Project Priority field."""
 
     def __init__(
         self,
@@ -268,7 +259,7 @@ class ProjectPrioritySync:
         severity_priority_map: dict[str, str],
     ) -> None:
         """Resolve severity -> priority and queue an update if needed."""
-        priority_value = resolve_priority(severity, severity_priority_map)
+        priority_value = resolve_priority(severity, severity_priority_map)        
         if not priority_value:
             vprint(f"  No priority mapping for severity={severity!r} – skipping project field")
             return

@@ -35,8 +35,10 @@ Draft / debug (no writes):
     `python3 promote_alerts.py --file alerts.json --verbose --dry-run`
 
 Implementation:
-- Business logic lives in the ``utils`` package (one module per concern).
-- This file is only the CLI entry-point: argument parsing → wiring → main().
+- Shared, cross-solution logic lives in the ``shared`` package
+    (common helpers, GitHub wrappers, priority mapping, template renderer).
+- Security-specific orchestration and domain logic lives in ``utils``.
+- This file remains the CLI entry-point only: argument parsing → wiring → main().
 """
 
 import argparse

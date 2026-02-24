@@ -24,9 +24,6 @@ Also hosts generic key-value and JSON-list helpers used for secmeta field values
 import json
 import re
 
-SECMETA_RE = re.compile(r"<!--\s*secmeta\r?\n(.*?)\r?\n-->", re.S)
-LEGACY_SECMETA_RE = re.compile(r"```secmeta\r?\n(.*?)\r?\n```", re.S)
-
 
 def parse_kv_block(block: str) -> dict[str, str]:
     data: dict[str, str] = {}
@@ -41,11 +38,11 @@ def parse_kv_block(block: str) -> dict[str, str]:
 
 def load_secmeta(issue_body: str) -> dict[str, str]:
     body = issue_body or ""
-    match = SECMETA_RE.search(body)
+    match = re.compile(r"<!--\s*secmeta\r?\n(.*?)\r?\n-->", re.S).search(body)
     if match:
         return parse_kv_block(match.group(1))
     # Back-compat for older issues created with a visible fenced block.
-    legacy = LEGACY_SECMETA_RE.search(body)
+    legacy = re.compile(r"```secmeta\r?\n(.*?)\r?\n```", re.S).search(body)
     if legacy:
         return parse_kv_block(legacy.group(1))
     return {}

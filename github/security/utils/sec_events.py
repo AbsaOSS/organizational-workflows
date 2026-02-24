@@ -21,8 +21,6 @@ structured lifecycle-event blocks from issue bodies.
 
 import re
 
-SEC_EVENT_BLOCK_RE = re.compile(r"\[sec-event\]\s*(.*?)\s*\[/sec-event\]", re.S)
-
 
 def parse_sec_event_fields(raw: str) -> dict[str, str]:
     fields: dict[str, str] = {}
@@ -73,6 +71,6 @@ def strip_sec_events_from_body(body: str) -> str:
     if m:
         text = text[: m.start()].rstrip() + "\n"
     # Remove any inline blocks.
-    text = SEC_EVENT_BLOCK_RE.sub("", text)
+    text = re.compile(r"\[sec-event\]\s*(.*?)\s*\[/sec-event\]", re.S).sub("", text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
     return text

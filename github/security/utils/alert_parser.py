@@ -24,9 +24,8 @@ import json
 import os
 import re
 import sys
-from enum import Enum
-from typing import Any
 from enum import StrEnum
+from typing import Any
 
 from shared.common import sha256_hex
 
@@ -35,12 +34,24 @@ from shared.common import sha256_hex
 # ---------------------------------------------------------------------------
 
 class AlertMessageKey(StrEnum):
-    """Known keys parsed from the multi-line alert message."""
+    """Known keys parsed from the multi-line alert message.
+
+    Each value corresponds to the normalised (lowercased, whitespace-collapsed)
+    key emitted by the AquaSec scan-results action.
+    """
     ARTIFACT = "artifact"
     TYPE = "type"
     VULNERABILITY = "vulnerability"
     SEVERITY = "severity"
     MESSAGE = "message"
+    REPOSITORY = "repository"
+    REACHABLE = "reachable"
+    SCAN_DATE = "scan date"
+    FIRST_SEEN = "first seen"
+    SCM_FILE = "scm file"
+    INSTALLED_VERSION = "installed version"
+    START_LINE = "start line"
+    END_LINE = "end line"
     ALERT_HASH = "alert hash"
 
 
@@ -93,7 +104,227 @@ def extract_cwe(alert: dict[str, Any]) -> str | None:
             m = re.search(r"\bCWE-(\d+)\b", str(t), flags=re.IGNORECASE)
             if m:
                 return f"CWE-{m.group(1)}"
+
+    # Try to extract CWE from help_uri (e.g. cwe.mitre.org/data/definitions/78.html)
+    help_uri = str(alert.get("help_uri") or "")
+    m = re.search(r"cwe\.mitre\.org/data/definitions/(\d+)", help_uri, flags=re.IGNORECASE)
+    if m:
+        return f"CWE-{m.group(1)}"
+
     return None
+
+
+def extract_cve(alert: dict[str, Any]) -> str | None:
+    """Best-effort CVE extraction.
+
+    Returns a CVE identifier when ``rule_id`` or ``help_uri`` contains one.
+    """
+    for field in ("rule_id", "help_uri"):
+        val = str(alert.get(field) or "")
+        m = re.search(r"\b(CVE-\d{4}-\d+)\b", val, flags=re.IGNORECASE)
+        if m:
+            return m.group(1).upper()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Fixed-version extraction from advisory free text
+# ---------------------------------------------------------------------------
+
+# Semver-like token: digits.digits with optional pre-release suffix
+_VERSION_RE = r"\d+(?:\.\d+)+(?:[-.]\w+)*"
+
+# Common verb group shared across patterns.
+_FIX_VERBS = r"(?:fixed|patched|resolved|addressed)"
+
+# Ordered list of patterns – first match wins.
+_FIX_VERSION_PATTERNS: list[re.Pattern[str]] = [
+    # "fixed in version 10.2.1"  /  "patched in version 4.1.124.Final"
+    # "resolved in version 3.0.0" / "addressed in version 2.1.0"
+    re.compile(
+        rf"{_FIX_VERBS}\s+in\s+versions?\s+({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "patched on 4.17.23"
+    re.compile(
+        rf"{_FIX_VERBS}\s+on\s+({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "fixed in jsPDF@4.2.0"  /  "fixed in jspdf@4.1.0"
+    re.compile(
+        rf"{_FIX_VERBS}\s+in\s+\S+@({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "fixed in jsPDF 4.2.0"  (package-space-version, no @)
+    re.compile(
+        rf"{_FIX_VERBS}\s+in\s+[A-Za-z][\w-]*\s+({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "fixed in 1.10.1"  (bare version right after "in")
+    re.compile(
+        rf"{_FIX_VERBS}\s+in\s+({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "upgrade/upgrading to version 2.0" / "update/updating to version 2.0"
+    re.compile(
+        rf"(?:upgrad|updat)(?:e|ing)\s+to\s+version\s+({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "upgrade to 2.0" / "update to 2.0"  (no "version" keyword)
+    re.compile(
+        rf"(?:upgrad|updat)(?:e|ing)\s+to\s+({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "first patched version: 4.3.0" / "first_patched_version: 4.3.0"
+    # (GitHub Dependabot / advisory format)
+    re.compile(
+        rf"first[_\s]patched[_\s]version[:\s]+({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "fix available in 3.2.1" / "fix is available in version 3.2.1"
+    re.compile(
+        rf"fix\s+(?:is\s+)?available\s+in\s+(?:version\s+)?({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "remediation: upgrade to 2.1.0" (Snyk-style)
+    re.compile(
+        rf"remediation[:\s]+(?:upgrad|updat)(?:e|ing)\s+to\s+(?:version\s+)?({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # ">= 1.5.0" / ">=1.5.0"  (version-constraint notation)
+    re.compile(
+        rf">=\s*({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+    # "versions 3.0.0 and later are not affected"
+    re.compile(
+        rf"versions?\s+({_VERSION_RE})\s+and\s+(?:later|above|newer)\s+(?:are\s+)?not\s+affected",
+        re.IGNORECASE,
+    ),
+    # "starting from version 2.4.0" / "starting from 2.4.0"
+    re.compile(
+        rf"starting\s+from\s+(?:version\s+)?({_VERSION_RE})",
+        re.IGNORECASE,
+    ),
+]
+
+
+def extract_fixed_version(message: str) -> str | None:
+    """Best-effort extraction of a fix version from advisory free text.
+
+    Scans the raw ``message`` field for phrases like
+    *"fixed in version 10.2.1"*, *"patched in jsPDF@4.2.0"*, etc.
+    Returns the **first** version token found, or ``None``.
+
+    Only the first match is returned because the parent issue aggregates
+    alerts by ``rule_id`` – all children share the same CVE / advisory
+    and therefore the same fix version.
+    """
+    for pat in _FIX_VERSION_PATTERNS:
+        m = pat.search(message or "")
+        if m:
+            return m.group(1)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Risk assessment derivation
+# ---------------------------------------------------------------------------
+
+# Mapping: (reachable, severity) → likelihood label.
+_LIKELIHOOD_MAP: dict[tuple[bool | None, str], str] = {
+    # Reachable = True
+    (True, "critical"): "High",
+    (True, "high"):     "High",
+    (True, "medium"):   "Medium",
+    (True, "low"):      "Medium",
+    # Reachable = False
+    (False, "critical"): "Medium",
+    (False, "high"):     "Low",
+    (False, "medium"):   "Low",
+    (False, "low"):      "Low",
+    # Reachable unknown – fall back to severity alone
+    (None, "critical"): "High",
+    (None, "high"):     "Medium",
+    (None, "medium"):   "Low",
+    (None, "low"):      "Low",
+}
+
+# Mapping: (severity, rule_name) → impact label.
+# ``rule_name`` distinguishes exploitable vulnerabilities from config issues.
+_IMPACT_MATRIX: dict[tuple[str, str], str] = {
+    ("critical", "vulnerabilities"): "Critical",
+    ("critical", "sast"):            "Critical",
+    ("high",     "vulnerabilities"): "High",
+    ("high",     "sast"):            "High",
+    ("high",     "iacMisconfigurations"): "Medium",
+    ("high",     "pipelineMisconfigurations"): "Medium",
+    ("medium",   "vulnerabilities"): "Medium",
+    ("medium",   "sast"):            "Medium",
+    ("medium",   "iacMisconfigurations"): "Low",
+    ("medium",   "pipelineMisconfigurations"): "Low",
+    ("low",      "vulnerabilities"): "Low",
+    ("low",      "sast"):            "Low",
+    ("low",      "iacMisconfigurations"): "Low",
+    ("low",      "pipelineMisconfigurations"): "Low",
+}
+
+# Confidence normalization mapping (GitHub code scanning values → labels).
+_CONFIDENCE_LABEL: dict[str, str] = {
+    "error":   "High",
+    "warning": "Medium",
+    "note":    "Low",
+}
+
+
+def _parse_reachable(alert: dict[str, Any]) -> bool | None:
+    """Return ``True``/``False`` if the *Reachable* flag is present, else ``None``."""
+    # 1. Top-level field (normalised by collector)
+    r = alert.get("reachable")
+    if r is not None:
+        return str(r).strip().lower() in ("true", "1", "yes")
+    # 2. Embedded message param
+    params = alert.get("_message_params")
+    if isinstance(params, dict):
+        val = params.get(AlertMessageKey.REACHABLE, "").strip().lower()
+        if val:
+            return val in ("true", "1", "yes")
+    return None
+
+
+def assess_impact(alert: dict[str, Any]) -> str:
+    """Derive an impact rating from ``severity`` and ``rule_name``."""
+    severity = str(alert.get("severity") or "unknown").lower()
+    rule_name = str(alert.get("rule_name") or "").strip()
+    label = _IMPACT_MATRIX.get((severity, rule_name))
+    if label:
+        return label
+    # Fallback: severity alone determines impact
+    return {
+        "critical": "Critical",
+        "high":     "High",
+        "medium":   "Medium",
+        "low":      "Low",
+    }.get(severity, "Unknown")
+
+
+def assess_likelihood(alert: dict[str, Any]) -> str:
+    """Derive a likelihood rating from ``Reachable`` and ``severity``."""
+    reachable = _parse_reachable(alert)
+    severity = str(alert.get("severity") or "unknown").lower()
+    label = _LIKELIHOOD_MAP.get((reachable, severity))
+    if label:
+        return label
+    # Fallback when severity is completely unknown
+    if reachable is True:
+        return "Medium"
+    return "Low"
+
+
+def normalize_confidence(alert: dict[str, Any]) -> str:
+    """Normalize the raw ``confidence`` value to a human-readable label."""
+    raw = str(alert.get("confidence") or "").strip().lower()
+    return _CONFIDENCE_LABEL.get(raw, raw.title() or "Unknown")
 
 
 def compute_occurrence_fp(commit_sha: str, path: str, start_line: int | None, end_line: int | None) -> str:

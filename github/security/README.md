@@ -21,6 +21,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [Issue metadata (secmeta)](#issue-metadata-secmeta)
 - [Issue structure](#issue-structure)
 - [How you “say duplicate / grouped / dismissed / reopened”](#how-you-say-duplicate--grouped--dismissed--reopened)
+- [Risk assessment (auto-derived)](#risk-assessment-auto-derived)
 - [Design: fingerprints and matching](#design-fingerprints-and-matching)
 - [Current implementation status](#current-implementation-status)
 - [Troubleshooting](#troubleshooting)
@@ -336,6 +337,78 @@ Recommended commands (example format):
 
 Implementation note: the command parsing/side-effects depend on how [github/security/process_sec_events.py](process_sec_events.py) evolves. The format above is the intended contract.
 
+
+## Risk assessment (auto-derived)
+
+Each **parent issue** includes a _Risk Assessment_ section with three fields:
+**Impact**, **Likelihood**, and **Confidence**.
+These are derived automatically from the alert data during promotion — no manual input is required.
+
+### Data sources available on every alert
+
+| Alert field | Values observed | Used for |
+| --- | --- | --- |
+| `severity` | `critical`, `high`, `medium`, `low` | Impact, Likelihood |
+| `confidence` | `error`, `warning`, `note` | Confidence |
+| `rule_name` | `vulnerabilities`, `sast`, `iacMisconfigurations`, `pipelineMisconfigurations` | Impact |
+| `Reachable` (parsed from `message`) | `True`, `False` | Likelihood |
+| `classifications` | always `[]` (empty) | _not usable_ |
+
+### Confidence
+
+**Directly mapped** from the `confidence` field (GitHub code-scanning convention):
+
+| Raw value | Derived label | Meaning |
+| --- | --- | --- |
+| `error` | **High** | Scanner is confident — low chance of false positive |
+| `warning` | **Medium** | Probable finding, worth reviewing |
+| `note` | **Low** | Informational — higher chance of false positive |
+
+Implementation: `utils/alert_parser.py → normalize_confidence()`.
+
+### Impact
+
+**Derived** from `severity` × `rule_name`.  
+Exploitable code issues (`vulnerabilities`, `sast`) carry the severity rating directly as impact, while configuration issues (`iacMisconfigurations`, `pipelineMisconfigurations`) are down-ranked one level because they typically require additional conditions to cause damage.
+
+| `severity` | `vulnerabilities` / `sast` | `iacMisconfigurations` / `pipelineMisconfigurations` |
+| --- | --- | --- |
+| critical | **Critical** | Critical |
+| high | **High** | Medium |
+| medium | **Medium** | Low |
+| low | **Low** | Low |
+
+Implementation: `utils/alert_parser.py → assess_impact()`.
+
+### Likelihood
+
+**Derived** from `Reachable` × `severity`.  
+The `Reachable` flag (embedded in the alert message by the AquaSec scanner) is the strongest signal — when `True`, the scanner has confirmed that the vulnerable code path is actually exercised, making exploitation significantly more feasible.
+
+| Reachable | `critical` / `high` | `medium` / `low` |
+| --- | --- | --- |
+| True | **High** | Medium |
+| False | Medium / Low | Low |
+| Unknown | High / Medium | Low |
+
+Implementation: `utils/alert_parser.py → assess_likelihood()`.
+
+### Example output (parent issue body)
+
+```markdown
+## Risk Assessment
+
+- **Impact:** High
+  *(Potential impact if the vulnerability is successfully exploited)*
+- **Likelihood:** High
+  *(How easily the vulnerability can be exploited in practice)*
+- **Confidence:** High
+  *(How confident the finding is; likelihood of false positive)*
+```
+
+### Overriding the derived values
+
+When the upstream alert payload includes an `extraData` sub-dict (e.g. from an enriched scanner), the `impact`, `likelihood`, and `confidence` fields inside `extraData` take precedence and the heuristic derivation is skipped.
 
 ## Design: fingerprints and matching
 

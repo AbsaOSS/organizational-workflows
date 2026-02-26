@@ -16,7 +16,7 @@
 
 """Security-specific data models."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from shared.github_projects import ProjectPrioritySync
@@ -28,6 +28,9 @@ class IssueIndex:
     """In-memory indexes for fast issue lookup by fingerprint and rule_id."""
     by_fingerprint: dict[str, Issue]
     parent_by_rule_id: dict[str, Issue]
+    # Tracks original bodies of parents touched during a sync run so the
+    # body API call can be deferred and issued at most once per parent.
+    _parent_original_bodies: dict[int, tuple[str, str]] = field(default_factory=dict)
 
 
 @dataclass

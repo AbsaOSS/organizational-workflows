@@ -215,16 +215,11 @@ def ensure_parent_issue(
         ).strip() + "\n"
         rebuilt = strip_sec_events_from_body(rebuilt)
 
-        if rebuilt != (existing.body or ""):
-            if dry_run:
-                print(f"DRY-RUN: would update parent issue #{existing.number} body to template (rule_id={rule_id})")
-                if is_verbose():
-                    print("DRY-RUN: body_preview_begin")
-                    print(rebuilt)
-                    print("DRY-RUN: body_preview_end")
-            else:
-                gh_issue_edit_body(repo_full, existing.number, rebuilt)
-                existing.body = rebuilt
+        # Snapshot the original body on first encounter so we can
+        # defer the API call until all alerts have been processed.
+        if existing.number not in index._parent_original_bodies:
+            index._parent_original_bodies[existing.number] = (repo_full, existing.body or "")
+        existing.body = rebuilt
 
         # Detect parent title drift and update when needed.
         expected_title = build_parent_issue_title(rule_id, _severity)
@@ -745,6 +740,21 @@ def sync_alerts_and_issues(
             priority_sync=priority_sync,
             severity_changes=severity_changes,
         )
+
+    # Flush deferred parent body updates (at most one API call per parent).
+    for num, (repo, original_body) in index._parent_original_bodies.items():
+        issue = issues.get(num)
+        if issue is None:
+            continue
+        if issue.body != original_body:
+            if dry_run:
+                print(f"DRY-RUN: would update parent issue #{num} body to template")
+                if is_verbose():
+                    print("DRY-RUN: body_preview_begin")
+                    print(issue.body)
+                    print("DRY-RUN: body_preview_end")
+            else:
+                gh_issue_edit_body(repo, num, issue.body)
 
     # Flush all pending priority mutations in bulk.
     if priority_sync is not None:

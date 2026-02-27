@@ -148,9 +148,9 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
             "cwe": cwe or cve or "N/A",
             "owasp": owasp or "N/A",
             "category": alert_value(alert, "rule_name") or "N/A",
-            "impact": alert_value(alert, "impact") or "Unknown",
-            "likelihood": alert_value(alert, "likelihood") or "Unknown",
-            "confidence": (alert_value(alert, "confidence") or "Unknown").title(),
+            "impact": alert_value(alert, "impact") or "N/A",
+            "likelihood": alert_value(alert, "likelihood") or "N/A",
+            "confidence": alert_value(alert, "confidence") or "N/A",
             "remediation": _fmt_bullet(_msg_param(alert, AlertMessageKey.MESSAGE)),
             "references": help_uri or alert_value(alert, "alert_url", "url"),
         }
@@ -172,7 +172,7 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
     """Construct the full body (secmeta + rendered template) for a new parent issue."""
     rule_id = str(alert.get("rule_id") or "").strip()
     tool = str(alert.get("tool") or "").strip()
-    severity = str((alert.get("severity") or "unknown")).lower()
+    severity = str((alert.get("severity") or "N/A")).lower()
     repo_full = str(alert.get("_repo") or "").strip()
 
     secmeta: dict[str, str] = {
@@ -195,7 +195,7 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
 
 def build_issue_title(rule_name: str | None, rule_id: str, fingerprint: str) -> str:
     """Build the title string for a child issue."""
-    prefix = fingerprint[:8] if fingerprint else "unknown"
+    prefix = fingerprint[:8] if fingerprint else "N/A"
     summary = (rule_name or rule_id or "Security finding").strip() or "Security finding"
     return f"[SEC][FP={prefix}] {summary}"
 

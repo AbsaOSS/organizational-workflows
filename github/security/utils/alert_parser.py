@@ -101,29 +101,26 @@ def extract_cwe(alert: dict[str, Any]) -> str | None:
     tags = alert.get("tags")
     if isinstance(tags, list):
         for t in tags:
-            m = re.search(r"\bCWE-(\d+)\b", str(t), flags=re.IGNORECASE)
-            if m:
-                return f"CWE-{m.group(1)}"
+            hits = re.findall(r"\bCWE-\d+\b", str(t), flags=re.IGNORECASE)
+            if hits:
+                return hits[0].upper()
 
     # Try to extract CWE from help_uri (e.g. cwe.mitre.org/data/definitions/78.html)
     help_uri = str(alert.get("help_uri") or "")
-    m = re.search(r"cwe\.mitre\.org/data/definitions/(\d+)", help_uri, flags=re.IGNORECASE)
-    if m:
-        return f"CWE-{m.group(1)}"
+    hits = re.findall(r"cwe\.mitre\.org/data/definitions/(\d+)", help_uri, flags=re.IGNORECASE)
+    if hits:
+        return f"CWE-{hits[0]}"
 
     return None
 
 
 def extract_cve(alert: dict[str, Any]) -> str | None:
-    """Best-effort CVE extraction.
-
-    Returns a CVE identifier when ``rule_id`` or ``help_uri`` contains one.
-    """
+    """Returns a CVE identifier when ``rule_id`` or ``help_uri`` contains one."""
     for field in ("rule_id", "help_uri"):
         val = str(alert.get(field) or "")
-        m = re.search(r"\b(CVE-\d{4}-\d+)\b", val, flags=re.IGNORECASE)
-        if m:
-            return m.group(1).upper()
+        hits = re.findall(r"CVE-\d{4}-\d+", val, flags=re.IGNORECASE)
+        if hits:
+            return hits[0].upper()
     return None
 
 

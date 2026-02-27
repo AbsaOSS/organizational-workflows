@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@master # TODO - pin to specific sha when possible
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@c1fa5b54ff24fea071415da89abc4f0506344f01
     with:
       severity-priority-map: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor'
       project-number: 42   # Replace with your org's GitHub Project number for priority tracking

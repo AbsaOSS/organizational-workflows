@@ -86,7 +86,7 @@ jobs:
 
       - name: Fetch AquaSec Scan Results
         id: aquasec
-        uses: AbsaOSS/aquasec-scan-results@master # TODO - pin to specific sha when possible
+        uses: AbsaOSS/aquasec-scan-results@06079bf026e447c12c72ba63586364d7ee0f3336
         with:
           aqua-key: ${{ secrets.AQUA_KEY }}
           aqua-secret: ${{ secrets.AQUA_SECRET }}

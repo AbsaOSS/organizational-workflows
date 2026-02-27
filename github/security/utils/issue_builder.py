@@ -24,12 +24,8 @@ from shared.templates import render_markdown_template
 
 from .alert_parser import (
     AlertMessageKey,
-    assess_impact,
-    assess_likelihood,
     extract_cve,
     extract_cwe,
-    extract_fixed_version,
-    normalize_confidence,
 )
 from .constants import SECMETA_TYPE_PARENT
 from .secmeta import render_secmeta
@@ -140,10 +136,7 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
         alert_value(alert, "package_name", "packageName")
         or _msg_param(alert, AlertMessageKey.ARTIFACT)
     )
-    fixed_version = (
-        alert_value(alert, "fixed_version", "fixedVersion")
-        or extract_fixed_version(alert_value(alert, "message"))
-    )
+    fixed_version = alert_value(alert, "fixed_version", "fixedVersion")
 
     extra = alert_extra_data(alert)
     if not extra:
@@ -155,9 +148,9 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
             "cwe": cwe or cve or "N/A",
             "owasp": owasp or "N/A",
             "category": alert_value(alert, "rule_name") or "N/A",
-            "impact": assess_impact(alert),
-            "likelihood": assess_likelihood(alert),
-            "confidence": normalize_confidence(alert),
+            "impact": alert_value(alert, "impact") or "Unknown",
+            "likelihood": alert_value(alert, "likelihood") or "Unknown",
+            "confidence": (alert_value(alert, "confidence") or "Unknown").title(),
             "remediation": _fmt_bullet(_msg_param(alert, AlertMessageKey.MESSAGE)),
             "references": help_uri or alert_value(alert, "alert_url", "url"),
         }
@@ -237,10 +230,7 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
         ("installed_version", "installedVersion"),
         AlertMessageKey.INSTALLED_VERSION,
     )
-    fixed_version = (
-        alert_value(alert, "fixed_version", "fixedVersion")
-        or extract_fixed_version(alert_value(alert, "message"))
-    )
+    fixed_version = alert_value(alert, "fixed_version", "fixedVersion")
     reachable = _alert_or_msg(alert, ("reachable",), AlertMessageKey.REACHABLE)
 
     scan_date = (

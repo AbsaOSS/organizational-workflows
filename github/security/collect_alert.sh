@@ -141,6 +141,18 @@ gh api \
 jq -n \
   --slurpfile alerts "$TMP_ALERTS" \
   --slurpfile repo "$TMP_REPO" '
+
+def help_value($name):
+  [ (.rule.help // "")
+    | match("\\*\\*" + $name + ":\\*\\*\\s*([^\\n\\r]+)"; "i")?
+    | .captures[0].string
+  ] | .[0];
+
+def help_value_norm($name):
+  (help_value($name) as $v
+    | if $v == null then null else ($v | tostring | gsub("\\s+"; " ") | rtrimstr(" ") | ascii_downcase) end
+  );
+
 {
   generated_at: (now | todate),
   repo: {
@@ -172,6 +184,8 @@ jq -n \
       rule_name: .rule.name,
       severity: .rule.security_severity_level,
       confidence: .rule.severity,
+      impact: help_value_norm("Impact"),
+      likelihood: help_value_norm("Likelihood"),
       tags: (.rule.tags // []),
       help_uri: .rule.help_uri,
 

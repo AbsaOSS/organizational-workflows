@@ -34,7 +34,7 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 
 ## Classification
 
-- **CVE:** {{ extraData.cwe }}
+- **CVE:** {{ extraData.cve }}
 - **OWASP:** {{ extraData.owasp }}
 - **Category:** {{ extraData.category }}
 

@@ -59,7 +59,7 @@ def render_secmeta(secmeta: dict[str, str]) -> str:
         "source",
         "tool",
         "severity",
-        "cwe",
+        "cve",
         "category",
         "rule_id",
         "first_seen",

@@ -37,7 +37,26 @@ def alert_extra_data(alert: dict[str, Any]) -> dict[str, Any]:
     extra = alert.get("extraData")
     if isinstance(extra, dict):
         return extra
-    return {}
+    
+    help_uri = alert_value(alert, "help_uri")
+    rule_id = str(alert.get("rule_id") or "")
+    extra = {
+        "cve": rule_id if rule_id.upper().startswith("CVE-") else "N/A",
+        "owasp": help_uri or "N/A",
+        "category": alert_value(alert, "rule_name") or "N/A",
+        "impact": alert_value(alert, "impact") or "N/A",
+        "likelihood": alert_value(alert, "likelihood") or "N/A",
+        "confidence": alert_value(alert, "confidence") or "N/A",
+        "remediation": _msg_param(alert, AlertMessageKey.MESSAGE) or "N/A",
+        "references": "\n".join(
+            f"- {r}" for r in filter(None, [
+                alert_value(alert, "alert_url", "url"),
+                help_uri,
+            ])
+        ) or "N/A",
+    }
+
+    return extra
 
 
 def alert_value(alert: dict[str, Any], *keys: str) -> str:
@@ -114,23 +133,6 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
     fixed_version = alert_value(alert, "fixed_version", "fixedVersion")
 
     extra = alert_extra_data(alert)
-    if not extra:
-        help_uri = alert_value(alert, "help_uri")
-        extra = {
-            "cwe": alert_value(alert, "cwe") or "N/A",
-            "owasp": help_uri or "N/A",
-            "category": alert_value(alert, "rule_name") or "N/A",
-            "impact": alert_value(alert, "impact") or "N/A",
-            "likelihood": alert_value(alert, "likelihood") or "N/A",
-            "confidence": alert_value(alert, "confidence") or "N/A",
-            "remediation": _msg_param(alert, AlertMessageKey.MESSAGE) or "N/A",
-            "references": "\n".join(
-                f"- {r}" for r in filter(None, [
-                    alert_value(alert, "alert_url", "url"),
-                    help_uri,
-                ])
-            ) or "N/A",
-        }
 
     return {
         "category": category,

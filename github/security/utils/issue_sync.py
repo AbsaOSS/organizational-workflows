@@ -337,8 +337,8 @@ def _handle_new_child_issue(
         "occurrence_count": "1",
         "last_occurrence_fp": ctx.occurrence_fp,
     }
-    if ctx.cwe:
-        secmeta["cwe"] = ctx.cwe
+    if ctx.cve:
+        secmeta["cve"] = ctx.cve
 
     human_body = build_child_issue_body(ctx.alert)
     body = render_secmeta(secmeta) + "\n\n" + human_body
@@ -512,8 +512,8 @@ def _handle_existing_child_issue(
             "last_occurrence_fp": ctx.occurrence_fp or last_occ_fp,
         }
     )
-    if ctx.cwe:
-        secmeta["cwe"] = ctx.cwe
+    if ctx.cve:
+        secmeta["cve"] = ctx.cve
 
     human_body = build_child_issue_body(ctx.alert)
     new_body = render_secmeta(secmeta) + "\n\n" + human_body
@@ -617,7 +617,7 @@ def ensure_issue(
     rule_id = str(alert.get("rule_id") or "")
     rule_name = alert.get("rule_name")
     severity = str((alert.get("severity") or "unknown")).lower()
-    cwe = rule_id if rule_id.upper().startswith("CVE-") else "N/A"
+    cve = rule_id if rule_id.upper().startswith("CVE-") else "N/A"
 
     path = normalize_path(alert.get("file"))
     start_line = alert.get("start_line")
@@ -669,7 +669,7 @@ def ensure_issue(
         rule_id=rule_id,
         rule_name=str(rule_name or ""),
         severity=severity,
-        cwe=cwe,
+        cve=cve,
         path=path,
         start_line=start_line,
         end_line=end_line,

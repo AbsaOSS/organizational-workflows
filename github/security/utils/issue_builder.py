@@ -22,25 +22,10 @@ from typing import Any
 from shared.common import iso_date
 from shared.templates import render_markdown_template
 
-from .alert_parser import (
-    AlertMessageKey,
-    extract_cve,
-    extract_cwe,
-)
+from .alert_parser import AlertMessageKey
 from .constants import SECMETA_TYPE_PARENT
 from .secmeta import render_secmeta
 from .templates import CHILD_BODY_TEMPLATE, PARENT_BODY_TEMPLATE
-
-# ---------------------------------------------------------------------------
-# Severity → vendor scoring mapping
-# ---------------------------------------------------------------------------
-
-SEVERITY_SCORE_MAP: dict[str, str] = {
-    "critical": "9.5",
-    "high": "8.0",
-    "medium": "5.5",
-    "low": "2.0",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -86,13 +71,8 @@ def _alert_or_msg(alert: dict[str, Any], alert_keys: tuple[str, ...], msg_key: s
 
 
 def classify_category(alert: dict[str, Any]) -> str:
-    """Derive a category from ``rule_name``."""
+    """Return the category from ``rule_name``."""
     return str(alert.get("rule_name") or "").strip()
-
-
-def _fmt_bullet(text: str) -> str:
-    """Prefix *text* with ``- `` so it renders as a Markdown bullet point."""
-    return f"- {text}" if text else ""
 
 
 def build_parent_issue_title(rule_id: str, severity: str = "") -> str:
@@ -126,11 +106,6 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
         or alert_value(alert, "created_at")
     )
 
-    vendor_scoring = (
-        alert_value(alert, "vendor_scoring", "vendorScoring")
-        or SEVERITY_SCORE_MAP.get(severity.lower(), "")
-    )
-
     # May be absent for SAST-only findings.
     package_name = (
         alert_value(alert, "package_name", "packageName")
@@ -141,18 +116,20 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
     extra = alert_extra_data(alert)
     if not extra:
         help_uri = alert_value(alert, "help_uri")
-        cwe = extract_cwe(alert) or ""
-        cve = extract_cve(alert) or ""
-        owasp = help_uri if "owasp" in (help_uri or "").lower() else ""
         extra = {
-            "cwe": cwe or cve or "N/A",
-            "owasp": owasp or "N/A",
+            "cwe": alert_value(alert, "cwe") or "N/A",
+            "owasp": help_uri or "N/A",
             "category": alert_value(alert, "rule_name") or "N/A",
             "impact": alert_value(alert, "impact") or "N/A",
             "likelihood": alert_value(alert, "likelihood") or "N/A",
             "confidence": alert_value(alert, "confidence") or "N/A",
-            "remediation": _fmt_bullet(_msg_param(alert, AlertMessageKey.MESSAGE)),
-            "references": help_uri or alert_value(alert, "alert_url", "url"),
+            "remediation": _msg_param(alert, AlertMessageKey.MESSAGE) or "N/A",
+            "references": "\n".join(
+                f"- {r}" for r in filter(None, [
+                    alert_value(alert, "alert_url", "url"),
+                    help_uri,
+                ])
+            ) or "N/A",
         }
 
     return {
@@ -161,7 +138,6 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
         "title": title,
         "severity": severity,
         "published_date": iso_date(published_date_raw),
-        "vendor_scoring": vendor_scoring,
         "package_name": package_name or "N/A",
         "fixed_version": fixed_version or "N/A",
         "extraData": extra,
@@ -172,7 +148,7 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
     """Construct the full body (secmeta + rendered template) for a new parent issue."""
     rule_id = str(alert.get("rule_id") or "").strip()
     tool = str(alert.get("tool") or "").strip()
-    severity = str((alert.get("severity") or "N/A")).lower()
+    severity = str((alert.get("severity") or "N/A"))
     repo_full = str(alert.get("_repo") or "").strip()
 
     secmeta: dict[str, str] = {

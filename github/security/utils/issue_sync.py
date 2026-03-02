@@ -39,7 +39,7 @@ from shared.github_projects import ProjectPrioritySync, gh_project_get_priority_
 from shared.models import Issue
 from shared.templates import render_markdown_template
 
-from .alert_parser import AlertMessageKey, compute_occurrence_fp, extract_cwe
+from .alert_parser import AlertMessageKey, compute_occurrence_fp
 from .constants import (
     LABEL_EPIC,
     LABEL_SCOPE_SECURITY,
@@ -617,7 +617,7 @@ def ensure_issue(
     rule_id = str(alert.get("rule_id") or "")
     rule_name = alert.get("rule_name")
     severity = str((alert.get("severity") or "unknown")).lower()
-    cwe = extract_cwe(alert)
+    cwe = rule_id if rule_id.upper().startswith("CVE-") else "N/A"
 
     path = normalize_path(alert.get("file"))
     start_line = alert.get("start_line")

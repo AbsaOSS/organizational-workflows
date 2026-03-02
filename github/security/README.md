@@ -21,6 +21,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [Issue metadata (secmeta)](#issue-metadata-secmeta)
 - [Issue structure](#issue-structure)
 - [How you “say duplicate / grouped / dismissed / reopened”](#how-you-say-duplicate--grouped--dismissed--reopened)
+- [Known data manipulations](#known-data-manipulations)
 - [Design: fingerprints and matching](#design-fingerprints-and-matching)
 - [Current implementation status](#current-implementation-status)
 - [Troubleshooting](#troubleshooting)
@@ -336,6 +337,25 @@ Recommended commands (example format):
 
 Implementation note: the command parsing/side-effects depend on how [github/security/process_sec_events.py](process_sec_events.py) evolves. The format above is the intended contract.
 
+## Known data manipulations
+
+As a rule, values placed into issue body templates are passed through **unchanged** from
+the collected alert payload. The following are intentional exceptions:
+
+### Date fields – time portion stripped
+
+The `iso_date()` helper is applied to datetime fields before rendering. It strips the
+time portion from ISO-8601 timestamps, keeping only the date.
+
+| Field | Template | Raw alert value | Rendered value |
+| --- | --- | --- | --- |
+| `published_date` | parent | `2026-02-25T08:25:18Z` | `2026-02-25` |
+| `scan_date` | child | `2026-02-25T19:37:05.912Z` | `2026-02-25` |
+| `first_seen` | child | `2025-09-17T12:46:48.271Z` | `2025-09-17` |
+| `secmeta.first_seen` | secmeta | `2026-02-25T08:25:18Z` | `2026-02-25` |
+| `secmeta.last_seen` | secmeta | `2026-02-25T14:11:06Z` | `2026-02-25` |
+
+Implementation: `shared/common.py → iso_date()`.
 
 ## Design: fingerprints and matching
 

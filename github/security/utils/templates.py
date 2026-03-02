@@ -26,7 +26,6 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 - **Title:** {{ title }}
 - **Severity:** {{ severity }}
 - **Published date:** {{ published_date }}
-- **Vendor scoring:** {{ vendor_scoring }}
 
 ## Affected Package
 

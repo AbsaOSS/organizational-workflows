@@ -22,7 +22,6 @@ JSON file produced by ``collect_alert.sh``.
 
 import json
 import os
-import re
 import sys
 from enum import StrEnum
 from typing import Any
@@ -83,45 +82,6 @@ def parse_alert_message_params(message: str | None) -> dict[str, str]:
         params[key_norm] = value
 
     return params
-
-
-def extract_cwe(alert: dict[str, Any]) -> str | None:
-    """Best-effort CWE extraction.
-
-    Not all code scanning alerts include CWE mapping.
-    - If ``alert["cwe"]`` is present, use it.
-    - Otherwise try to parse a CWE token from tags like ``"CWE-79"``.
-    """
-
-    raw = alert.get("cwe")
-    if raw:
-        s = str(raw).strip()
-        return s or None
-
-    tags = alert.get("tags")
-    if isinstance(tags, list):
-        for t in tags:
-            hits = re.findall(r"\bCWE-\d+\b", str(t), flags=re.IGNORECASE)
-            if hits:
-                return hits[0].upper()
-
-    # Try to extract CWE from help_uri (e.g. cwe.mitre.org/data/definitions/78.html)
-    help_uri = str(alert.get("help_uri") or "")
-    hits = re.findall(r"cwe\.mitre\.org/data/definitions/(\d+)", help_uri, flags=re.IGNORECASE)
-    if hits:
-        return f"CWE-{hits[0]}"
-
-    return None
-
-
-def extract_cve(alert: dict[str, Any]) -> str | None:
-    """Returns a CVE identifier when ``rule_id`` or ``help_uri`` contains one."""
-    for field in ("rule_id", "help_uri"):
-        val = str(alert.get(field) or "")
-        hits = re.findall(r"CVE-\d{4}-\d+", val, flags=re.IGNORECASE)
-        if hits:
-            return hits[0].upper()
-    return None
 
 
 def compute_occurrence_fp(commit_sha: str, path: str, start_line: int | None, end_line: int | None) -> str:

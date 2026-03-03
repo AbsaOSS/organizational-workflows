@@ -23,7 +23,7 @@ from shared.common import iso_date
 from shared.templates import render_markdown_template
 
 from .alert_parser import AlertMessageKey
-from .constants import SECMETA_TYPE_PARENT
+from .constants import NOT_AVAILABLE, SECMETA_TYPE_PARENT
 from .secmeta import render_secmeta
 from .templates import CHILD_BODY_TEMPLATE, PARENT_BODY_TEMPLATE
 
@@ -41,19 +41,19 @@ def alert_extra_data(alert: dict[str, Any]) -> dict[str, Any]:
     help_uri = alert_value(alert, "help_uri")
     rule_id = str(alert.get("rule_id") or "")
     extra = {
-        "cve": rule_id if rule_id.upper().startswith("CVE-") else "N/A",
-        "owasp": help_uri or "N/A",
-        "category": alert_value(alert, "rule_name") or "N/A",
-        "impact": alert_value(alert, "impact") or "N/A",
-        "likelihood": alert_value(alert, "likelihood") or "N/A",
-        "confidence": alert_value(alert, "confidence") or "N/A",
-        "remediation": _msg_param(alert, AlertMessageKey.MESSAGE) or "N/A",
+        "cve": rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE,
+        "owasp": help_uri or NOT_AVAILABLE,
+        "category": alert_value(alert, "rule_name") or NOT_AVAILABLE,
+        "impact": alert_value(alert, "impact") or NOT_AVAILABLE,
+        "likelihood": alert_value(alert, "likelihood") or NOT_AVAILABLE,
+        "confidence": alert_value(alert, "confidence") or NOT_AVAILABLE,
+        "remediation": _msg_param(alert, AlertMessageKey.MESSAGE) or NOT_AVAILABLE,
         "references": "\n".join(
             f"- {r}" for r in filter(None, [
                 alert_value(alert, "alert_url", "url"),
                 help_uri,
             ])
-        ) or "N/A",
+        ) or NOT_AVAILABLE,
     }
 
     return extra
@@ -77,16 +77,8 @@ def _msg_param(alert: dict[str, Any], key: str) -> str:
     """Return a single parsed message parameter, or ``""``."""
     params = alert.get("_message_params")
     if isinstance(params, dict):
-        return str(params.get(key, "")).strip()
-    return ""
-
-
-def _alert_or_msg(alert: dict[str, Any], alert_keys: tuple[str, ...], msg_key: str) -> str:
-    """Try top-level alert keys first, then fall back to the parsed message param."""
-    v = alert_value(alert, *alert_keys)
-    if v:
-        return v
-    return _msg_param(alert, msg_key)
+        return str(params.get(key, NOT_AVAILABLE)).strip()
+    return NOT_AVAILABLE
 
 
 def classify_category(alert: dict[str, Any]) -> str:
@@ -140,8 +132,8 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
         "title": title,
         "severity": severity,
         "published_date": iso_date(published_date_raw),
-        "package_name": package_name or "N/A",
-        "fixed_version": fixed_version or "N/A",
+        "package_name": package_name or NOT_AVAILABLE,
+        "fixed_version": fixed_version or NOT_AVAILABLE,
         "extraData": extra,
     }
 
@@ -150,7 +142,7 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
     """Construct the full body (secmeta + rendered template) for a new parent issue."""
     rule_id = str(alert.get("rule_id") or "").strip()
     tool = str(alert.get("tool") or "").strip()
-    severity = str((alert.get("severity") or "N/A"))
+    severity = str((alert.get("severity") or NOT_AVAILABLE))
     repo_full = str(alert.get("_repo") or "").strip()
 
     secmeta: dict[str, str] = {
@@ -173,7 +165,7 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
 
 def build_issue_title(rule_name: str | None, rule_id: str, fingerprint: str) -> str:
     """Build the title string for a child issue."""
-    prefix = fingerprint[:8] if fingerprint else "N/A"
+    prefix = fingerprint[:8] if fingerprint else NOT_AVAILABLE
     summary = (rule_name or rule_id or "Security finding").strip() or "Security finding"
     return f"[SEC][FP={prefix}] {summary}"
 
@@ -203,31 +195,18 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
         alert_value(alert, "package_name", "packageName")
         or _msg_param(alert, AlertMessageKey.ARTIFACT)
     )
-    installed_version = _alert_or_msg(
-        alert,
-        ("installed_version", "installedVersion"),
-        AlertMessageKey.INSTALLED_VERSION,
-    )
+    installed_version = _msg_param(alert, AlertMessageKey.INSTALLED_VERSION)
     fixed_version = alert_value(alert, "fixed_version", "fixedVersion")
-    reachable = _alert_or_msg(alert, ("reachable",), AlertMessageKey.REACHABLE)
-
-    scan_date = (
-        alert_value(alert, "scan_date", "scanDate")
-        or _msg_param(alert, AlertMessageKey.SCAN_DATE)
-        or alert_value(alert, "updated_at")
-    )
-    first_seen = (
-        alert_value(alert, "first_seen")
-        or _msg_param(alert, AlertMessageKey.FIRST_SEEN)
-        or alert_value(alert, "created_at")
-    )
+    reachable = _msg_param(alert, AlertMessageKey.REACHABLE)
+    scan_date = _msg_param(alert, AlertMessageKey.SCAN_DATE) or alert_value(alert, "updated_at")
+    first_seen = _msg_param(alert, AlertMessageKey.FIRST_SEEN) or alert_value(alert, "created_at")
 
     msg_params = alert.get("_message_params")
     alert_hash = ""
     if isinstance(msg_params, dict):
         alert_hash = str(msg_params.get(AlertMessageKey.ALERT_HASH, "")).strip()
 
-    message = alert_value(alert, "message")
+    message = msg_params.get(AlertMessageKey.MESSAGE, NOT_AVAILABLE)
 
     if not repo_full:
         repo_full = _msg_param(alert, AlertMessageKey.REPOSITORY)
@@ -240,10 +219,10 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
         "repository_full_name": repo_full,
         "scm_file": scm_file,
         "target_line": target_line,
-        "package_name": package_name or "N/A",
-        "installed_version": installed_version or "N/A",
-        "fixed_version": fixed_version or "N/A",
-        "reachable": reachable or "N/A",
+        "package_name": package_name or NOT_AVAILABLE,
+        "installed_version": installed_version or NOT_AVAILABLE,
+        "fixed_version": fixed_version or NOT_AVAILABLE,
+        "reachable": reachable or NOT_AVAILABLE,
         "scan_date": iso_date(scan_date),
         "first_seen": iso_date(first_seen),
     }

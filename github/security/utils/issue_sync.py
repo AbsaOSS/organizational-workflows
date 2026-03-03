@@ -45,6 +45,7 @@ from .constants import (
     LABEL_SCOPE_SECURITY,
     LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
+    NOT_AVAILABLE,
     SEC_EVENT_OCCURRENCE,
     SEC_EVENT_OPEN,
     SEC_EVENT_REOPEN,
@@ -617,7 +618,7 @@ def ensure_issue(
     rule_id = str(alert.get("rule_id") or "")
     rule_name = alert.get("rule_name")
     severity = str((alert.get("severity") or "unknown")).lower()
-    cve = rule_id if rule_id.upper().startswith("CVE-") else "N/A"
+    cve = rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE
 
     path = normalize_path(alert.get("file"))
     start_line = alert.get("start_line")

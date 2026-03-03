@@ -27,3 +27,5 @@ SEC_EVENT_OCCURRENCE = "occurrence"
 
 SECMETA_TYPE_PARENT = "parent"
 SECMETA_TYPE_CHILD = "child"
+
+NOT_AVAILABLE = "N/A"

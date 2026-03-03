@@ -65,10 +65,6 @@ from typing import Any, Dict, List
 import requests
 
 
-# ---------------------------------------------------------------------------
-# Adaptive Card helpers
-# ---------------------------------------------------------------------------
-
 def _text_block(text: str, **kwargs: Any) -> Dict[str, Any]:
     """Return an Adaptive Card TextBlock element."""
     block: Dict[str, Any] = {
@@ -137,10 +133,6 @@ def build_payload(
     }
 
 
-# ---------------------------------------------------------------------------
-# Delivery
-# ---------------------------------------------------------------------------
-
 def send_to_teams(webhook_url: str, payload: Dict[str, Any]) -> None:
     """POST *payload* to the Teams Incoming Webhook and raise on failure."""
     resp = requests.post(
@@ -158,10 +150,6 @@ def send_to_teams(webhook_url: str, payload: Dict[str, Any]) -> None:
         )
     print("Message sent to Teams successfully.")
 
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the Teams webhook sender."""

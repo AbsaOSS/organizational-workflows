@@ -28,12 +28,7 @@ from .secmeta import render_secmeta
 from .templates import CHILD_BODY_TEMPLATE, PARENT_BODY_TEMPLATE
 
 
-# ---------------------------------------------------------------------------
-# Alert-value helpers
-# ---------------------------------------------------------------------------
-
 def alert_extra_data(alert: dict[str, Any]) -> dict[str, Any]:
-    """Return the ``extraData`` sub-dict from *alert*, or ``{}``."""
     extra = alert.get("extraData")
     if isinstance(extra, dict):
         return extra
@@ -74,7 +69,6 @@ def alert_value(alert: dict[str, Any], *keys: str) -> str:
 
 
 def _msg_param(alert: dict[str, Any], key: str) -> str:
-    """Return a single parsed message parameter, or ``""``."""
     params = alert.get("_message_params")
     if isinstance(params, dict):
         return str(params.get(key, NOT_AVAILABLE)).strip()
@@ -82,7 +76,6 @@ def _msg_param(alert: dict[str, Any], key: str) -> str:
 
 
 def classify_category(alert: dict[str, Any]) -> str:
-    """Return the category from ``rule_name``."""
     return str(alert.get("rule_name") or "").strip()
 
 

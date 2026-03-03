@@ -65,7 +65,6 @@ SEVERITY_ORDER: dict[str, int] = {
 
 
 def severity_direction(old: str, new: str) -> str:
-    """Return a human-readable arrow indicating the change direction."""
     old_rank = SEVERITY_ORDER.get(old.lower(), -1)
     new_rank = SEVERITY_ORDER.get(new.lower(), -1)
     if new_rank > old_rank:

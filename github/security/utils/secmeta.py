@@ -74,10 +74,9 @@ def render_secmeta(secmeta: dict[str, str]) -> str:
     for key in preferred_order:
         if key in secmeta:
             lines.append(f"{key}={secmeta.get(key, '')}")
-    # include any additional keys deterministically
+
     for key in sorted(k for k in secmeta.keys() if k not in set(preferred_order)):
         lines.append(f"{key}={secmeta.get(key, '')}")
-    # Hidden metadata block for automation.
     return "<!--secmeta\n" + "\n".join(lines) + "\n-->"
 
 
@@ -92,7 +91,6 @@ def parse_json_list(value: str | None) -> list[str]:
             return [str(x) for x in parsed]
     except Exception:
         pass
-    # very small fallback: treat comma-separated as list
     if s.startswith("[") and s.endswith("]"):
         s = s[1:-1]
     parts = [p.strip().strip('"').strip("'") for p in s.split(",")]

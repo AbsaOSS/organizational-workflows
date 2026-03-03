@@ -176,7 +176,6 @@ def ensure_parent_issue(
         existing_severity = str(existing_secmeta.get("severity") or "unknown").lower()
         incoming_severity_raw = str(alert.get("severity") or "").strip().lower()
 
-        # Detect severity change on existing parent only when alert provides severity.
         if incoming_severity_raw and existing_severity != incoming_severity_raw:
             change = SeverityChange(
                 repo=repo_full,
@@ -232,7 +231,6 @@ def ensure_parent_issue(
                 if gh_issue_edit_title(repo_full, existing.number, expected_title):
                     existing.title = expected_title
 
-        # Enqueue priority sync (bulk – resolved + flushed later).
         if priority_sync is not None:
             priority_sync.enqueue(repo_full, existing.number, incoming_severity_raw or existing_severity, severity_priority_map or {})
 
@@ -276,7 +274,6 @@ def ensure_parent_issue(
     index.parent_by_rule_id[rule_id] = created
     print(f"Created parent issue #{num} for rule_id={rule_id}")
 
-    # Enqueue priority sync (bulk – resolved + flushed later).
     if priority_sync is not None:
         priority_sync.enqueue(
             repo_full, num, str((alert.get("severity") or "unknown")),
@@ -740,7 +737,6 @@ def sync_alerts_and_issues(
             severity_changes=severity_changes,
         )
 
-    # Flush deferred parent body updates (at most one API call per parent).
     for num, (repo, original_body) in index._parent_original_bodies.items():
         issue = issues.get(num)
         if issue is None:

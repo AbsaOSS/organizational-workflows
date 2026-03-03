@@ -28,9 +28,6 @@ from typing import Any
 
 from shared.common import sha256_hex
 
-# ---------------------------------------------------------------------------
-# AlertMessageKey enum
-# ---------------------------------------------------------------------------
 
 class AlertMessageKey(StrEnum):
     """Known keys parsed from the multi-line alert message.
@@ -53,10 +50,6 @@ class AlertMessageKey(StrEnum):
     END_LINE = "end line"
     ALERT_HASH = "alert hash"
 
-
-# ---------------------------------------------------------------------------
-# Message parsing
-# ---------------------------------------------------------------------------
 
 def parse_alert_message_params(message: str | None) -> dict[str, str]:
     """Parse key/value parameters from a multi-line alert message.
@@ -85,7 +78,6 @@ def parse_alert_message_params(message: str | None) -> dict[str, str]:
 
 
 def compute_occurrence_fp(commit_sha: str, path: str, start_line: int | None, end_line: int | None) -> str:
-    """Compute a fingerprint for a specific occurrence (commit + location)."""
     return sha256_hex(f"{commit_sha}|{path}|{start_line or ''}|{end_line or ''}")
 
 
@@ -123,10 +115,7 @@ def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]
             print(f"WARN: skipping alert with invalid alert_number: {alert_number}")
             continue
 
-        # stash repo on the alert for convenience
         alert["_repo"] = repo_full
-
-        # Parse structured parameters embedded in the message string.
         alert["_message_params"] = parse_alert_message_params(alert.get("message"))
         open_by_number[alert_number_int] = alert
 

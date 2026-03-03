@@ -50,6 +50,33 @@ def load_secmeta(issue_body: str) -> dict[str, str]:
     return {}
 
 
+def render_kv_lines(
+    data: dict[str, str],
+    preferred_order: list[str],
+    *,
+    skip_empty: bool = False,
+) -> list[str]:
+    """Render key=value lines in *preferred_order*, then remaining keys sorted.
+
+    When *skip_empty* is ``True``, keys whose value is empty or whitespace-only
+    are omitted.
+    """
+    lines: list[str] = []
+    seen = set(preferred_order)
+    for key in preferred_order:
+        if key in data:
+            val = data.get(key, "")
+            if skip_empty and not str(val).strip():
+                continue
+            lines.append(f"{key}={val}")
+    for key in sorted(k for k in data.keys() if k not in seen):
+        val = str(data.get(key, ""))
+        if skip_empty and not val.strip():
+            continue
+        lines.append(f"{key}={val}")
+    return lines
+
+
 def render_secmeta(secmeta: dict[str, str]) -> str:
     """Render a secmeta dict as a hidden HTML-comment block for issue bodies."""
     preferred_order = [
@@ -70,18 +97,12 @@ def render_secmeta(secmeta: dict[str, str]) -> str:
         "occurrence_count",
         "last_occurrence_fp",
     ]
-    lines: list[str] = []
-    for key in preferred_order:
-        if key in secmeta:
-            lines.append(f"{key}={secmeta.get(key, '')}")
-
-    for key in sorted(k for k in secmeta.keys() if k not in set(preferred_order)):
-        lines.append(f"{key}={secmeta.get(key, '')}")
+    lines = render_kv_lines(secmeta, preferred_order)
     return "<!--secmeta\n" + "\n".join(lines) + "\n-->"
 
 
 def parse_json_list(value: str | None) -> list[str]:
-    """Parse a JSON array string (or comma-separated fallback) into a list of strings."""
+    """Parse a JSON array string into a list of strings."""
     if not value:
         return []
     s = value.strip()
@@ -91,8 +112,7 @@ def parse_json_list(value: str | None) -> list[str]:
             return [str(x) for x in parsed]
     except Exception:
         pass
-    if s.startswith("[") and s.endswith("]"):
-        s = s[1:-1]
+    # Comma-separated plain values (no brackets expected from json_list()).
     parts = [p.strip().strip('"').strip("'") for p in s.split(",")]
     return [p for p in parts if p]
 

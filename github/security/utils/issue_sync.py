@@ -157,6 +157,7 @@ def ensure_parent_issue(
     severity_priority_map: dict[str, str] | None = None,
     priority_sync: ProjectPrioritySync | None = None,
     severity_changes: list[SeverityChange] | None = None,
+    parent_original_bodies: dict[int, tuple[str, str]] | None = None,
 ) -> Issue | None:
     """Find or create the parent issue for the alert's ``rule_id``."""
     rule_id = str(alert.get("rule_id") or "").strip()
@@ -219,8 +220,8 @@ def ensure_parent_issue(
 
         # Snapshot the original body on first encounter so we can
         # defer the API call until all alerts have been processed.
-        if existing.number not in index._parent_original_bodies:
-            index._parent_original_bodies[existing.number] = (repo_full, existing.body or "")
+        if parent_original_bodies is not None and existing.number not in parent_original_bodies:
+            parent_original_bodies[existing.number] = (repo_full, existing.body or "")
         existing.body = rebuilt
 
         # Detect parent title drift and update when needed.
@@ -662,6 +663,7 @@ def ensure_issue(
     severity_priority_map: dict[str, str] | None = None,
     priority_sync: ProjectPrioritySync | None = None,
     severity_changes: list[SeverityChange] | None = None,
+    parent_original_bodies: dict[int, tuple[str, str]] | None = None,
 ) -> None:
     """Process a single alert: create or update its child issue and parent."""
     alert_number = int(alert.get("alert_number"))
@@ -711,6 +713,7 @@ def ensure_issue(
         alert, issues, index, dry_run=dry_run,
         severity_priority_map=_spm, priority_sync=priority_sync,
         severity_changes=severity_changes,
+        parent_original_bodies=parent_original_bodies,
     )
     matched = find_issue_in_index(
         index,
@@ -783,13 +786,13 @@ def _init_priority_sync(
 
 
 def _flush_parent_body_updates(
-    index: IssueIndex,
+    parent_original_bodies: dict[int, tuple[str, str]],
     issues: dict[int, Issue],
     *,
     dry_run: bool,
 ) -> None:
     """Write deferred parent-issue body updates to GitHub."""
-    for num, (repo, original_body) in index._parent_original_bodies.items():
+    for num, (repo, original_body) in parent_original_bodies.items():
         issue = issues.get(num)
         if issue is None:
             continue
@@ -868,6 +871,7 @@ def sync_alerts_and_issues(
     severity_changes: list[SeverityChange] = []
     index = build_issue_index(issues)
     spm = severity_priority_map or {}
+    parent_original_bodies: dict[int, tuple[str, str]] = {}
 
     priority_sync = _init_priority_sync(
         alerts,
@@ -884,9 +888,10 @@ def sync_alerts_and_issues(
             severity_priority_map=severity_priority_map,
             priority_sync=priority_sync,
             severity_changes=severity_changes,
+            parent_original_bodies=parent_original_bodies,
         )
 
-    _flush_parent_body_updates(index, issues, dry_run=dry_run)
+    _flush_parent_body_updates(parent_original_bodies, issues, dry_run=dry_run)
 
     if priority_sync is not None:
         priority_sync.flush()

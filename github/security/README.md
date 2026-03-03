@@ -42,8 +42,6 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 | `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
 | `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
 | `send_to_teams.py` | Send a Markdown message to a Microsoft Teams channel via Incoming Webhook | `requests` |
-| `sync_issue_labels.py` | React to `sec:*` label changes and emit `[sec-event]` comments | `PyGithub`, `GITHUB_TOKEN` |
-| `process_sec_events.py` | Parse `[sec-event]` comments and apply state/side-effects | `PyGithub`, `GITHUB_TOKEN` |
 | `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
 | `derive_team_security_metrics.py` | Compute metrics/deltas from snapshots | stdlib |
 
@@ -129,7 +127,7 @@ jobs:
 This repository provides **reusable GitHub Actions workflows** in `.github/workflows/`.
 Application repositories call them with a short caller workflow instead of duplicating the logic.
 
-The `worklows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
+The `workflows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
 
 ### Available reusable workflows
 
@@ -155,7 +153,7 @@ The caller needs the following **repository secrets** configured:
 | `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
 
-Example caller (already available in `worklows/aquasec-night-scan.yml`):
+Example caller (already available in `workflows/aquasec-night-scan.yml`):
 
 ```yaml
 name: Aquasec Night Scan
@@ -188,7 +186,7 @@ jobs:
 
 #### Remove sec:adept-to-close on close
 
-Example caller (already available in `worklows/remove-adept-to-close-on-issue-close.yml`):
+Example caller (already available in `workflows/remove-adept-to-close-on-issue-close.yml`):
 
 ```yaml
 name: Remove sec:adept-to-close on close
@@ -246,11 +244,12 @@ This repository contains multiple scripts with different “label contracts”:
 
 ## Issue metadata (secmeta)
 
-Each security Issue contains exactly one fenced `secmeta` block.
+Each security Issue contains exactly one hidden HTML-comment `secmeta` block.
 
 Minimum recommended keys (child issue):
 
-```secmeta
+```
+<!--secmeta
 schema=1
 type=child
 fingerprint=<finding_fingerprint>
@@ -264,11 +263,13 @@ last_seen=YYYY-MM-DD
 postponed_until=
 gh_alert_numbers=["123"]
 occurrence_count=1
+-->
 ```
 
 Minimum recommended keys (parent issue):
 
-```secmeta
+```
+<!--secmeta
 schema=1
 type=parent
 repo=org/repo
@@ -279,6 +280,7 @@ rule_id=...
 first_seen=YYYY-MM-DD
 last_seen=YYYY-MM-DD
 postponed_until=
+-->
 ```
 
 The `secmeta` block is automation-owned (humans express intent via labels and `[sec-event]` comments).

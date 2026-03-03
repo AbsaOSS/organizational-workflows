@@ -148,10 +148,13 @@ def help_value($name):
     | .captures[0].string
   ] | .[0];
 
-def help_value_norm($name):
-  (help_value($name) as $v
-    | if $v == null then null else ($v | tostring | gsub("\\s+"; " ") | rtrimstr(" ") | ascii_downcase) end
-  );
+def msg_value($name):
+  [
+    (.most_recent_instance.message.text // "") | split("\n")[] |
+    select(test("^" + $name + "\\s*:"; "i")) |
+    sub("^" + $name + "\\s*:\\s*"; ""; "i") |
+    rtrimstr("\r")
+  ] | .[0];
 
 {
   generated_at: (now | todate),
@@ -186,6 +189,7 @@ def help_value_norm($name):
       confidence: .rule.severity,
       impact: help_value("Impact"),
       likelihood: help_value("Likelihood"),
+      reachable: msg_value("Reachable"),
       tags: (.rule.tags // []),
       help_uri: .rule.help_uri,
 

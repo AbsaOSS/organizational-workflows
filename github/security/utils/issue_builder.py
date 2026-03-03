@@ -190,7 +190,7 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
     )
     installed_version = _msg_param(alert, AlertMessageKey.INSTALLED_VERSION)
     fixed_version = alert_value(alert, "fixed_version", "fixedVersion")
-    reachable = _msg_param(alert, AlertMessageKey.REACHABLE)
+    reachable = alert_value(alert, "reachable") or _msg_param(alert, AlertMessageKey.REACHABLE)
     scan_date = _msg_param(alert, AlertMessageKey.SCAN_DATE) or alert_value(alert, "updated_at")
     first_seen = _msg_param(alert, AlertMessageKey.FIRST_SEEN) or alert_value(alert, "created_at")
 
@@ -199,7 +199,7 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
     if isinstance(msg_params, dict):
         alert_hash = str(msg_params.get(AlertMessageKey.ALERT_HASH, "")).strip()
 
-    message = alert_value(alert, AlertMessageKey.MESSAGE) or NOT_AVAILABLE
+    message = msg_params.get(AlertMessageKey.MESSAGE, NOT_AVAILABLE)
 
     if not repo_full:
         repo_full = _msg_param(alert, AlertMessageKey.REPOSITORY)

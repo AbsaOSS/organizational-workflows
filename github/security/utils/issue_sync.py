@@ -173,24 +173,28 @@ def ensure_parent_issue(
         first_seen_final = min(existing_first, iso_date(alert.get("created_at")))
         last_seen_final = max(existing_last, iso_date(alert.get("updated_at")))
 
-        existing_severity = str(existing_secmeta.get("severity") or "unknown").lower()
-        incoming_severity_raw = str(alert.get("severity") or "").strip().lower()
+        existing_severity = str(existing_secmeta.get("severity") or "unknown")
+        existing_severity_cmp = existing_severity.lower()
+        incoming_severity = str(alert.get("severity") or "").strip()
+        incoming_severity_cmp = incoming_severity.lower()
 
-        if incoming_severity_raw and existing_severity != incoming_severity_raw:
+        if incoming_severity_cmp and existing_severity_cmp != incoming_severity_cmp:
             change = SeverityChange(
                 repo=repo_full,
                 issue_number=existing.number,
                 rule_id=rule_id,
-                old_severity=existing_severity,
-                new_severity=incoming_severity_raw,
+                old_severity=existing_severity_cmp,
+                new_severity=incoming_severity_cmp,
             )
             if dry_run:
                 print(
                     f"DRY-RUN: severity change on parent #{existing.number} "
-                    f"(rule_id={rule_id}): {existing_severity} \u2192 {incoming_severity_raw}"
+                    f"(rule_id={rule_id}): {existing_severity_cmp} \u2192 {incoming_severity_cmp}"
                 )
             if severity_changes is not None:
                 severity_changes.append(change)
+
+        severity_stored = incoming_severity or existing_severity
 
         existing_secmeta.update(
             {
@@ -199,7 +203,7 @@ def ensure_parent_issue(
                 "repo": repo_full,
                 "source": existing_secmeta.get("source") or "code_scanning",
                 "tool": str(alert.get("tool") or existing_secmeta.get("tool") or ""),
-                "severity": incoming_severity_raw or existing_severity,
+                "severity": severity_stored,
                 "rule_id": rule_id,
                 "first_seen": first_seen_final,
                 "last_seen": last_seen_final,
@@ -209,7 +213,7 @@ def ensure_parent_issue(
 
         rebuilt = render_secmeta(existing_secmeta) + "\n\n" + render_markdown_template(
             PARENT_BODY_TEMPLATE,
-            build_parent_template_values(alert, rule_id=rule_id, severity=incoming_severity_raw or existing_severity),
+            build_parent_template_values(alert, rule_id=rule_id, severity=severity_stored),
         ).strip() + "\n"
         rebuilt = strip_sec_events_from_body(rebuilt)
 
@@ -220,7 +224,7 @@ def ensure_parent_issue(
         existing.body = rebuilt
 
         # Detect parent title drift and update when needed.
-        expected_title = build_parent_issue_title(rule_id, incoming_severity_raw or existing_severity)
+        expected_title = build_parent_issue_title(rule_id, severity_stored)
         if expected_title != (existing.title or ""):
             if dry_run:
                 print(
@@ -232,7 +236,7 @@ def ensure_parent_issue(
                     existing.title = expected_title
 
         if priority_sync is not None:
-            priority_sync.enqueue(repo_full, existing.number, incoming_severity_raw or existing_severity, severity_priority_map or {})
+            priority_sync.enqueue(repo_full, existing.number, severity_stored, severity_priority_map or {})
 
         return existing
 

@@ -184,8 +184,8 @@ def help_value_norm($name):
       rule_name: .rule.name,
       severity: .rule.security_severity_level,
       confidence: .rule.severity,
-      impact: help_value_norm("Impact"),
-      likelihood: help_value_norm("Likelihood"),
+      impact: help_value("Impact"),
+      likelihood: help_value("Likelihood"),
       tags: (.rule.tags // []),
       help_uri: .rule.help_uri,
 

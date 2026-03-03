@@ -357,6 +357,21 @@ time portion from ISO-8601 timestamps, keeping only the date.
 
 Implementation: `shared/common.py → iso_date()`.
 
+### File path normalisation
+
+The `normalize_path()` helper is applied to the `file` field before it is used as a
+fingerprint input and stored in secmeta. It performs the following transformations:
+
+- Converts backslashes (`\`) to forward slashes (`/`).
+- Strips any leading `./` prefix (e.g. `./src/foo.py` → `src/foo.py`).
+- Strips any leading `/` (e.g. `/src/foo.py` → `src/foo.py`).
+- Collapses consecutive slashes to a single `/`.
+
+The normalised path is used only for matching and fingerprint computation; the original
+path string from the alert is never written back to the issue body.
+
+Implementation: `shared/common.py → normalize_path()`.
+
 ## Design: fingerprints and matching
 
 ### Current fingerprint source

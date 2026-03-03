@@ -175,22 +175,20 @@ def ensure_parent_issue(
 
         existing_severity = str(existing_secmeta.get("severity") or "unknown").lower()
         incoming_severity_raw = str(alert.get("severity") or "").strip().lower()
-        _severity = incoming_severity_raw or existing_severity
 
         # Detect severity change on existing parent only when alert provides severity.
-        old_severity = existing_severity
-        if incoming_severity_raw and old_severity != _severity:
+        if incoming_severity_raw and existing_severity != incoming_severity_raw:
             change = SeverityChange(
                 repo=repo_full,
                 issue_number=existing.number,
                 rule_id=rule_id,
-                old_severity=old_severity,
-                new_severity=_severity,
+                old_severity=existing_severity,
+                new_severity=incoming_severity_raw,
             )
             if dry_run:
                 print(
                     f"DRY-RUN: severity change on parent #{existing.number} "
-                    f"(rule_id={rule_id}): {old_severity} \u2192 {_severity}"
+                    f"(rule_id={rule_id}): {existing_severity} \u2192 {incoming_severity_raw}"
                 )
             if severity_changes is not None:
                 severity_changes.append(change)
@@ -202,7 +200,7 @@ def ensure_parent_issue(
                 "repo": repo_full,
                 "source": existing_secmeta.get("source") or "code_scanning",
                 "tool": str(alert.get("tool") or existing_secmeta.get("tool") or ""),
-                "severity": _severity,
+                "severity": incoming_severity_raw or existing_severity,
                 "rule_id": rule_id,
                 "first_seen": first_seen_final,
                 "last_seen": last_seen_final,
@@ -212,7 +210,7 @@ def ensure_parent_issue(
 
         rebuilt = render_secmeta(existing_secmeta) + "\n\n" + render_markdown_template(
             PARENT_BODY_TEMPLATE,
-            build_parent_template_values(alert, rule_id=rule_id, severity=_severity),
+            build_parent_template_values(alert, rule_id=rule_id, severity=incoming_severity_raw or existing_severity),
         ).strip() + "\n"
         rebuilt = strip_sec_events_from_body(rebuilt)
 
@@ -223,7 +221,7 @@ def ensure_parent_issue(
         existing.body = rebuilt
 
         # Detect parent title drift and update when needed.
-        expected_title = build_parent_issue_title(rule_id, _severity)
+        expected_title = build_parent_issue_title(rule_id, incoming_severity_raw or existing_severity)
         if expected_title != (existing.title or ""):
             if dry_run:
                 print(
@@ -236,11 +234,11 @@ def ensure_parent_issue(
 
         # Enqueue priority sync (bulk – resolved + flushed later).
         if priority_sync is not None:
-            priority_sync.enqueue(repo_full, existing.number, _severity, severity_priority_map or {})
+            priority_sync.enqueue(repo_full, existing.number, incoming_severity_raw or existing_severity, severity_priority_map or {})
 
         return existing
 
-    title = build_parent_issue_title(rule_id, str((alert.get("severity") or "unknown")).lower())
+    title = build_parent_issue_title(rule_id, str((alert.get("severity") or "unknown")))
     body = build_parent_issue_body(alert)
     labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT, LABEL_EPIC]
     if dry_run:
@@ -268,7 +266,7 @@ def ensure_parent_issue(
                     "seen_at": iso_date(alert.get("created_at")),
                     "source": "code_scanning",
                     "rule_id": rule_id,
-                    "severity": str((alert.get("severity") or "unknown")).lower(),
+                    "severity": str((alert.get("severity") or "unknown")),
                 }
             ),
         )
@@ -281,7 +279,7 @@ def ensure_parent_issue(
     # Enqueue priority sync (bulk – resolved + flushed later).
     if priority_sync is not None:
         priority_sync.enqueue(
-            repo_full, num, str((alert.get("severity") or "unknown")).lower(),
+            repo_full, num, str((alert.get("severity") or "unknown")),
             severity_priority_map or {},
         )
 
@@ -617,7 +615,7 @@ def ensure_issue(
     tool = str(alert.get("tool") or "")
     rule_id = str(alert.get("rule_id") or "")
     rule_name = alert.get("rule_name")
-    severity = str((alert.get("severity") or "unknown")).lower()
+    severity = str((alert.get("severity") or "unknown"))
     cve = rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE
 
     path = normalize_path(alert.get("file"))

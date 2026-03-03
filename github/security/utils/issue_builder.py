@@ -206,7 +206,7 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
     if isinstance(msg_params, dict):
         alert_hash = str(msg_params.get(AlertMessageKey.ALERT_HASH, "")).strip()
 
-    message = msg_params.get(AlertMessageKey.MESSAGE, NOT_AVAILABLE)
+    message = alert_value(alert, AlertMessageKey.MESSAGE) or NOT_AVAILABLE
 
     if not repo_full:
         repo_full = _msg_param(alert, AlertMessageKey.REPOSITORY)

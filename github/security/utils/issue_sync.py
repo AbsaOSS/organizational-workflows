@@ -774,12 +774,12 @@ def _init_priority_sync(
             org = repo_full.split("/", 1)[0] if "/" in repo_full else ""
 
     if not org:
-        logging.debug("WARN: Cannot determine org for project priority – priority sync disabled")
+        logging.warning("Cannot determine org for project priority – priority sync disabled")
         return None
 
     pf = gh_project_get_priority_field(org, project_number)
     if pf is None:
-        logging.debug(f"WARN: Could not load project #{project_number} metadata – priority sync disabled")
+        logging.warning(f"Could not load project #{project_number} metadata – priority sync disabled")
         return None
 
     return ProjectPrioritySync(org, project_number, pf, dry_run=dry_run)

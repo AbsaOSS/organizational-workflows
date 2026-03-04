@@ -14,34 +14,22 @@
 # limitations under the License.
 #
 
-"""
-This module contains a method to set up logging in the project.
-"""
+"""Centralised logging configuration for the security tooling."""
 
 import logging
 import sys
 
 
 def setup_logging(verbose: bool = False) -> None:
-    """
-    Set up the logging configuration in the project.
-
-    @param verbose: When ``True`` the root logger is set to DEBUG;
-                    otherwise it defaults to INFO.
-    @return: None
-    """
+    """Configure the root logger (DEBUG when *verbose*, else INFO)."""
     level = logging.DEBUG if verbose else logging.INFO
 
-    # Set up the logging configuration
     logging.basicConfig(
         level=level,
         format="%(asctime)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
-    sys.stdout.flush()
-
-    logging.info("Setting up logging configuration")
 
     if verbose:
         logging.debug("Verbose logging enabled")

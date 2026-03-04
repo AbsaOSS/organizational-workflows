@@ -55,12 +55,12 @@ def _run_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[st
         args += ["-F", f"{k}={v}"]
     res = run_gh(args)
     if res.returncode != 0:
-        logging.debug(f"WARN: GraphQL call failed: {res.stderr}")
+        logging.warning(f"GraphQL call failed: {res.stderr}")
         return None
     try:
         return json.loads(res.stdout)
     except Exception:
-        logging.debug(f"WARN: Could not parse GraphQL response: {res.stdout!r}")
+        logging.warning(f"Could not parse GraphQL response: {res.stdout!r}")
         return None
 
 
@@ -102,7 +102,7 @@ def gh_project_get_priority_field(
 
     project = (data.get("data") or {}).get("organization", {}).get("projectV2")
     if project is None:
-        logging.debug(f"WARN: Project #{project_number} not found in org {org}")
+        logging.warning(f"Project #{project_number} not found in org {org}")
         _project_priority_cache[cache_key] = None
         return None
 
@@ -127,7 +127,7 @@ def gh_project_get_priority_field(
             )
             return result
 
-    logging.debug(f"WARN: No single-select field named '{field_name}' in project #{project_number}")
+    logging.warning(f"No single-select field named '{field_name}' in project #{project_number}")
     _project_priority_cache[cache_key] = None
     return None
 
@@ -221,7 +221,7 @@ class ProjectPrioritySync:
                 variables["cursor"] = cursor
             data = _run_graphql(query, variables)
             if data is None:
-                logging.debug("WARN: Failed to prefetch project items – falling back to per-issue calls")
+                logging.warning("Failed to prefetch project items – falling back to per-issue calls")
                 break
 
             items_data = ((data.get("data") or {}).get("node") or {}).get("items", {})
@@ -387,7 +387,7 @@ class ProjectPrioritySync:
         to_update: list[_PriorityUpdate] = []
         for p in self._pending:
             if not p.item_id:
-                logging.debug(f"WARN: Could not resolve project item for issue #{p.issue_number} \u2013 skipping priority")
+                logging.warning(f"Could not resolve project item for issue #{p.issue_number} \u2013 skipping priority")
                 continue
             current = self._item_current_option.get(p.item_id, "")
             if current == p.desired_option_id:

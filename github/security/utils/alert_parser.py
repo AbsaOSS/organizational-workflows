@@ -41,7 +41,7 @@ class AlertMessageKey(StrEnum):
     SEVERITY = "severity"
     MESSAGE = "message"
     REPOSITORY = "repository"
-    REACHABLE = "reachable"
+    -REACHABLE = "reachable"
     SCAN_DATE = "scan date"
     FIRST_SEEN = "first seen"
     SCM_FILE = "scm file"

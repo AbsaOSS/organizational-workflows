@@ -173,16 +173,17 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
     )
     title = alert_value(alert, "title", "rule_name", "rule_id")
 
-    # SCM file: prefer the parsed "SCM file:" message param (full URL)
-    # over the plain repo-relative path stored in "file".
-    scm_file = (
-        _msg_param(alert, AlertMessageKey.SCM_FILE)
-        or alert_value(alert, "file", "scm_file")
-    )
+    scm_file = _msg_param(alert, AlertMessageKey.SCM_FILE) or NOT_AVAILABLE
+    start_line = alert_value(alert, "start_line")
 
-    target_line = alert_value(alert, "target_line", "start_line")
-    if not target_line:
-        target_line = _msg_param(alert, AlertMessageKey.START_LINE)
+    # Build a display name (filename only) and permalink with #L anchor
+    file_name = scm_file.rsplit("/", 1)[-1] if scm_file and scm_file != NOT_AVAILABLE else None
+    if scm_file and scm_file != NOT_AVAILABLE and start_line:
+        file_permalink = f"{scm_file}#L{start_line}"
+        file_display = f"{file_name}#L{start_line}"
+    else:
+        file_permalink = scm_file if scm_file != NOT_AVAILABLE else ""
+        file_display = file_name or NOT_AVAILABLE
 
     package_name = (
         alert_value(alert, "package_name", "packageName")
@@ -210,8 +211,8 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
         "title": title,
         "message": message,
         "repository_full_name": repo_full,
-        "scm_file": scm_file,
-        "target_line": target_line,
+        "file_display": file_display,
+        "file_permalink": file_permalink,
         "package_name": package_name or NOT_AVAILABLE,
         "installed_version": installed_version or NOT_AVAILABLE,
         "fixed_version": fixed_version or NOT_AVAILABLE,

@@ -70,8 +70,7 @@ CHILD_BODY_TEMPLATE = """## General Information
 ## Location
 
 - **Repository:** {{ repository_full_name }}
-- **File:** {{ scm_file }}
-- **Line:** {{ target_line }}
+- **File:** [{{ file_display }}]({{ file_permalink }})
 
 ## Dependency Details
 

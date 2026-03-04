@@ -19,12 +19,10 @@
 """
 
 
+import logging
 import os
 import subprocess
-import sys
 import tempfile
-
-from shared.common import vprint
 
 from .models import NotifiedIssue, SeverityChange, severity_direction
 
@@ -75,9 +73,9 @@ def _post_to_teams(
     """Write *body* to a temp file and invoke send_to_teams.py."""
     if dry_run:
         if webhook_url:
-            print(f"DRY-RUN: {label} webhook configured; no delivery will occur")
+            logging.info(f"DRY-RUN: {label} webhook configured; no delivery will occur")
         else:
-            print(
+            logging.info(
                 f"DRY-RUN: no Teams Incoming Webhook URL configured. "
                 f"No {label.lower()} post to Teams will be made."
             )
@@ -86,9 +84,8 @@ def _post_to_teams(
     send_script = os.path.join(os.path.dirname(script_dir), "send_to_teams.py")
 
     if not os.path.exists(send_script):
-        print(
-            f"WARN: send_to_teams.py not found at {send_script} – skipping {label.lower()}",
-            file=sys.stderr,
+        logging.warning(
+            f"send_to_teams.py not found at {send_script} – skipping {label.lower()}"
         )
         return
 
@@ -116,13 +113,13 @@ def _post_to_teams(
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            print(f"WARN: {label} failed: {result.stderr}", file=sys.stderr)
+            logging.warning(f"{label} failed: {result.stderr}")
         else:
             if dry_run:
-                print(f"DRY-RUN: send_to_teams.py {label.lower()} output:")
-                print(result.stdout)
+                logging.info(f"DRY-RUN: send_to_teams.py {label.lower()} output:")
+                logging.info(result.stdout)
             else:
-                print(f"{label} sent successfully")
+                logging.info(f"{label} sent successfully")
     finally:
         if body_file:
             try:
@@ -139,7 +136,7 @@ def notify_teams(
 ) -> None:
     """Send a Teams message about new / reopened issues via send_to_teams.py."""
     if not notifications:
-        print("No new or reopened issues – skipping Teams notification")
+        logging.info("No new or reopened issues – skipping Teams notification")
         return
 
     body = build_teams_notification_body(notifications)
@@ -161,7 +158,7 @@ def notify_teams_severity_changes(
 ) -> None:
     """Send a Teams message about parent severity changes via send_to_teams.py."""
     if not changes:
-        vprint("No severity changes – skipping Teams severity-change notification")
+        logging.debug("No severity changes – skipping Teams severity-change notification")
         return
 
     body = build_severity_change_body(changes)

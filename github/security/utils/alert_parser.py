@@ -21,8 +21,8 @@ JSON file produced by ``collect_alert.sh``.
 
 
 import json
+import logging
 import os
-import sys
 from enum import StrEnum
 from typing import Any
 
@@ -97,22 +97,22 @@ def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]
         raise SystemExit(f"ERROR: repo.full_name not found in {path}")
 
     alerts = data.get("alerts", [])
-    print(f"Loaded {len(alerts)} alerts from {path} (repo={repo_full})")
+    logging.info(f"Loaded {len(alerts)} alerts from {path} (repo={repo_full})")
 
     open_alerts = [a for a in alerts if str((a.get("state") or "")).lower() == "open"]
-    print(f"Found {len(open_alerts)} open alerts")
+    logging.info(f"Found {len(open_alerts)} open alerts")
 
     open_by_number: dict[int, dict[str, Any]] = {}
     for alert in open_alerts:
         alert_number = alert.get("alert_number")
         if alert_number is None:
-            print(f"WARN: skipping alert with missing alert_number: {alert}")
+            logging.warning(f"Skipping alert with missing alert_number: {alert}")
             continue
 
         try:
             alert_number_int = int(alert_number)
         except Exception:
-            print(f"WARN: skipping alert with invalid alert_number: {alert_number}")
+            logging.warning(f"Skipping alert with invalid alert_number: {alert_number}")
             continue
 
         alert["_repo"] = repo_full
@@ -120,8 +120,8 @@ def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]
         open_by_number[alert_number_int] = alert
 
         if os.getenv("DEBUG_ALERTS") == "1":
-            print(
-                f"DEBUG: full alert payload for alert_number={alert_number_int}:\n"
+            logging.debug(
+                f"Full alert payload for alert_number={alert_number_int}:\n"
                 + json.dumps(alert, indent=2, sort_keys=True)
             )
 

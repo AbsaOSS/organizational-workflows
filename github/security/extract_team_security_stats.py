@@ -31,6 +31,7 @@ Outputs:
 
 import csv
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -112,7 +113,7 @@ def issue_has_sec_label(issue):
 def main():
     """Extract security statistics from GitHub Issues for the configured team."""
     # TODO decide about changes related to this script
-    print("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
+    logging.warning("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
     return
 
     ensure_dirs()

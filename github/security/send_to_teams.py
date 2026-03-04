@@ -58,11 +58,24 @@ python3 send_to_teams.py --body-file reports/summary.md --dry-run
 
 import argparse
 import json
+import logging
 import os
 import sys
 from typing import Any, Dict, List
 
 import requests
+
+# Ensure the github/ root is on sys.path so `shared.*` is importable,
+# and the security/ dir so `utils.*` is importable.
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+if _script_dir not in sys.path:
+    sys.path.insert(0, _script_dir)
+_github_root = os.path.normpath(os.path.join(_script_dir, ".."))
+if _github_root not in sys.path:
+    sys.path.insert(0, _github_root)
+
+from shared.common import parse_runner_debug
+from utils.logging_config import setup_logging
 
 
 def _text_block(text: str, **kwargs: Any) -> Dict[str, Any]:
@@ -148,7 +161,7 @@ def send_to_teams(webhook_url: str, payload: Dict[str, Any]) -> None:
             f"  Status : {resp.status_code}\n"
             f"  Body   : {resp.text}"
         )
-    print("Message sent to Teams successfully.")
+    logging.info("Message sent to Teams successfully.")
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -188,6 +201,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Teams Incoming Webhook URL (default: $TEAMS_WEBHOOK_URL).",
     )
     parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose (DEBUG) logs (also enabled when RUNNER_DEBUG=1).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the JSON payload to stdout instead of sending it.",
@@ -216,6 +234,8 @@ def _resolve_body(args: argparse.Namespace) -> str:
 def main(argv: list[str] | None = None) -> None:
     """CLI entry-point: build an Adaptive Card payload and send it to Teams."""
     args = _parse_args(argv)
+    verbose = bool(args.verbose) or parse_runner_debug()
+    setup_logging(verbose)
 
     body = _resolve_body(args)
     if not body.strip():
@@ -230,7 +250,7 @@ def main(argv: list[str] | None = None) -> None:
     payload = build_payload(body, title=args.title, subtitle=args.subtitle)
 
     if args.dry_run:
-        print(json.dumps(payload, indent=2))
+        logging.info(json.dumps(payload, indent=2))
         return
 
     send_to_teams(webhook_url, payload)

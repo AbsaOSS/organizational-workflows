@@ -21,11 +21,11 @@ and the bulk :class:`ProjectPrioritySync` class (prefetch -> enqueue -> flush).
 
 
 import json
-import sys
+import logging
 from dataclasses import dataclass
 from typing import Any
 
-from .common import run_gh, vprint
+from .common import run_gh
 from .priority import resolve_priority
 
 
@@ -55,12 +55,12 @@ def _run_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[st
         args += ["-F", f"{k}={v}"]
     res = run_gh(args)
     if res.returncode != 0:
-        vprint(f"WARN: GraphQL call failed: {res.stderr}")
+        logging.debug(f"WARN: GraphQL call failed: {res.stderr}")
         return None
     try:
         return json.loads(res.stdout)
     except Exception:
-        vprint(f"WARN: Could not parse GraphQL response: {res.stdout!r}")
+        logging.debug(f"WARN: Could not parse GraphQL response: {res.stdout!r}")
         return None
 
 
@@ -102,7 +102,7 @@ def gh_project_get_priority_field(
 
     project = (data.get("data") or {}).get("organization", {}).get("projectV2")
     if project is None:
-        vprint(f"WARN: Project #{project_number} not found in org {org}")
+        logging.debug(f"WARN: Project #{project_number} not found in org {org}")
         _project_priority_cache[cache_key] = None
         return None
 
@@ -121,13 +121,13 @@ def gh_project_get_priority_field(
                 options=options,
             )
             _project_priority_cache[cache_key] = result
-            vprint(
+            logging.debug(
                 f"Project #{project_number}: field '{field_name}' id={node['id']} "
                 f"options={list(options.keys())}"
             )
             return result
 
-    vprint(f"WARN: No single-select field named '{field_name}' in project #{project_number}")
+    logging.debug(f"WARN: No single-select field named '{field_name}' in project #{project_number}")
     _project_priority_cache[cache_key] = None
     return None
 
@@ -221,7 +221,7 @@ class ProjectPrioritySync:
                 variables["cursor"] = cursor
             data = _run_graphql(query, variables)
             if data is None:
-                vprint("WARN: Failed to prefetch project items – falling back to per-issue calls")
+                logging.debug("WARN: Failed to prefetch project items – falling back to per-issue calls")
                 break
 
             items_data = ((data.get("data") or {}).get("node") or {}).get("items", {})
@@ -246,7 +246,7 @@ class ProjectPrioritySync:
             else:
                 break
 
-        vprint(f"Prefetched {total} project items from project #{self.project_number}")
+        logging.debug(f"Prefetched {total} project items from project #{self.project_number}")
 
     # ------------------------------------------------------------------
     # Enqueue
@@ -262,21 +262,20 @@ class ProjectPrioritySync:
         """Resolve severity -> priority and queue an update if needed."""
         priority_value = resolve_priority(severity, severity_priority_map)        
         if not priority_value:
-            vprint(f"No priority mapping for severity={severity!r} – skipping project field")
+            logging.debug(f"No priority mapping for severity={severity!r} \u2013 skipping project field")
             return
 
         option_id = self.pf.options.get(priority_value.lower())
         if option_id is None:
-            print(
-                f"WARN: Priority value {priority_value!r} (from severity={severity!r}) "
+            logging.warning(
+                f"Priority value {priority_value!r} (from severity={severity!r}) "
                 f"does not match any option in project #{self.project_number}. "
-                f"Available options: {list(self.pf.options.keys())}",
-                file=sys.stderr,
+                f"Available options: {list(self.pf.options.keys())}"
             )
             return
 
         if self.dry_run:
-            print(
+            logging.info(
                 f"DRY-RUN: would set Priority={priority_value!r} on issue #{issue_number} "
                 f"in project #{self.project_number}"
             )
@@ -388,11 +387,11 @@ class ProjectPrioritySync:
         to_update: list[_PriorityUpdate] = []
         for p in self._pending:
             if not p.item_id:
-                vprint(f"WARN: Could not resolve project item for issue #{p.issue_number} – skipping priority")
+                logging.debug(f"WARN: Could not resolve project item for issue #{p.issue_number} \u2013 skipping priority")
                 continue
             current = self._item_current_option.get(p.item_id, "")
             if current == p.desired_option_id:
-                vprint(
+                logging.debug(
                     f"Priority already {p.priority_label!r} on issue #{p.issue_number} "
                     f"in project #{self.project_number} – skipping update"
                 )
@@ -400,10 +399,10 @@ class ProjectPrioritySync:
             to_update.append(p)
 
         if not to_update:
-            vprint("No priority updates needed – all values are current")
+            logging.debug("No priority updates needed \u2013 all values are current")
             return
 
-        vprint(f"Updating priority on {len(to_update)} issue(s) in project #{self.project_number}")
+        logging.debug(f"Updating priority on {len(to_update)} issue(s) in project #{self.project_number}")
 
         for i in range(0, len(to_update), _BULK_MUTATION_SIZE):
             batch = to_update[i:i + _BULK_MUTATION_SIZE]
@@ -427,21 +426,19 @@ class ProjectPrioritySync:
             query = f"mutation({', '.join(var_defs)}) {{\n" + "\n".join(parts) + "\n}"
             data = _run_graphql(query, variables)
             if data is None:
-                print(
-                    f"WARN: Batch priority update failed for issues "
-                    f"{[p.issue_number for p in batch]}",
-                    file=sys.stderr,
+                logging.warning(
+                    f"Batch priority update failed for issues "
+                    f"{[p.issue_number for p in batch]}"
                 )
                 continue
             for idx, p in enumerate(batch):
                 result = (data.get("data") or {}).get(f"u{idx}")
                 if result:
-                    print(
+                    logging.info(
                         f"Set Priority={p.priority_label!r} on issue #{p.issue_number} "
                         f"in project #{self.project_number}"
                     )
                 else:
-                    print(
-                        f"WARN: Failed to set Priority={p.priority_label!r} on issue #{p.issue_number}",
-                        file=sys.stderr,
+                    logging.warning(
+                        f"Failed to set Priority={p.priority_label!r} on issue #{p.issue_number}"
                     )

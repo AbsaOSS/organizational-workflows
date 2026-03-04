@@ -14,19 +14,17 @@
 # limitations under the License.
 #
 
-"""Low-level utilities – logging control, date helpers, hashing,
+"""Low-level utilities – date helpers, hashing,
 path normalisation, and subprocess wrappers for the ``gh`` CLI.
 """
 
 import hashlib
+import logging
 import os
 import re
 import subprocess
 import sys
 from datetime import datetime, timezone
-
-_verbose_enabled = False
-
 
 def parse_runner_debug() -> bool:
     """Return ``True`` when the GitHub Actions ``RUNNER_DEBUG`` env var is ``'1'``."""
@@ -37,22 +35,6 @@ def parse_runner_debug() -> bool:
         raise SystemExit("ERROR: RUNNER_DEBUG must be '0' or '1' when set")
     return raw == "1"
 
-
-def set_verbose_enabled(value: bool) -> None:
-    """Set the global verbose-logging flag."""
-    global _verbose_enabled
-    _verbose_enabled = bool(value)
-
-
-def is_verbose() -> bool:
-    """Return the current verbose-logging state."""
-    return _verbose_enabled
-
-
-def vprint(msg: str) -> None:
-    """Print *msg* only when verbose logging is enabled."""
-    if _verbose_enabled:
-        print(msg)
 
 
 def utc_today() -> str:
@@ -97,5 +79,5 @@ def run_gh(args: list[str], *, capture_output: bool = True) -> subprocess.Comple
     try:
         return run_cmd(cmd, capture_output=capture_output)
     except FileNotFoundError:
-        print("ERROR: gh CLI not found. Install and authenticate gh.", file=sys.stderr)
+        logging.error("gh CLI not found. Install and authenticate gh.")
         raise SystemExit(1)

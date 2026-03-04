@@ -20,8 +20,8 @@ sub-issue linking, list-by-label, and node-id lookup.
 """
 
 import json
+import logging
 import re
-import sys
 
 from .common import run_gh
 from .models import Issue
@@ -31,12 +31,12 @@ def gh_issue_get_rest_id(repo: str, number: int) -> int | None:
     """Fetch the REST API numeric ID for issue *number*."""
     res = run_gh(["api", f"repos/{repo}/issues/{number}", "--jq", ".id"])
     if res.returncode != 0:
-        print(f"WARN: Failed to fetch REST issue id for #{number}: {res.stderr}", file=sys.stderr)
+        logging.warning(f"Failed to fetch REST issue id for #{number}: {res.stderr}")
         return None
     try:
         return int((res.stdout or "").strip())
     except Exception:
-        print(f"WARN: Failed to parse REST issue id for #{number}: {res.stdout!r}", file=sys.stderr)
+        logging.warning(f"Failed to parse REST issue id for #{number}: {res.stdout!r}")
         return None
 
 
@@ -54,9 +54,8 @@ def gh_issue_add_sub_issue(repo: str, parent_number: int, sub_issue_id: int) -> 
     )
 
     if res.returncode != 0:
-        print(
-            f"WARN: Failed to add sub-issue link parent=#{parent_number} sub_issue_id={sub_issue_id}: {res.stderr}",
-            file=sys.stderr,
+        logging.warning(
+            f"Failed to add sub-issue link parent=#{parent_number} sub_issue_id={sub_issue_id}: {res.stderr}"
         )
         return False
     
@@ -101,7 +100,7 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
     )
 
     if res.returncode != 0:
-        print(f"gh issue list by label failed: {res.stderr}", file=sys.stderr)
+        logging.error(f"gh issue list by label failed: {res.stderr}")
         return {}
 
     try:
@@ -128,7 +127,7 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
             labels=label_names,
         )
 
-    print(f"Loaded {len(issues)} issues with label {label!r} from repository {repo}")
+    logging.info(f"Loaded {len(issues)} issues with label {label!r} from repository {repo}")
     return issues
 
 
@@ -145,7 +144,7 @@ def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
 
     stderr = (res.stderr or "") + (res.stdout or "")
     if "unknown flag: --state" not in stderr:
-        print(f"Failed to edit state for #{number}: {res.stderr}", file=sys.stderr)
+        logging.error(f"Failed to edit state for #{number}: {res.stderr}")
         return False
 
     # Fallback for older gh versions that don't support `issue edit --state`.
@@ -159,9 +158,8 @@ def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
     # Last resort: REST API.
     res3 = run_gh(["api", "--method", "PATCH", f"repos/{repo}/issues/{number}", "-f", f"state={desired}"])
     if res3.returncode != 0:
-        print(
-            f"Failed to edit state for #{number}: {res2.stderr or res2.stdout or res.stderr}",
-            file=sys.stderr,
+        logging.error(
+            f"Failed to edit state for #{number}: {res2.stderr or res2.stdout or res.stderr}"
         )
         return False
     return True
@@ -172,10 +170,10 @@ def gh_issue_edit_title(repo: str, number: int, title: str) -> bool:
     res = run_gh(["issue", "edit", str(number), "--repo", repo, "--title", title])
 
     if res.returncode != 0:
-        print(f"Failed to edit title for #{number}: {res.stderr}", file=sys.stderr)
+        logging.error(f"Failed to edit title for #{number}: {res.stderr}")
         return False
 
-    print(f"Updated issue #{number} title")
+    logging.info(f"Updated issue #{number} title")
     return True
 
 
@@ -184,10 +182,10 @@ def gh_issue_edit_body(repo: str, number: int, body: str) -> bool:
     res = run_gh(["issue", "edit", str(number), "--repo", repo, "--body", body])
 
     if res.returncode != 0:
-        print(f"Failed to edit body for #{number}: {res.stderr}", file=sys.stderr)
+        logging.error(f"Failed to edit body for #{number}: {res.stderr}")
         return False
     
-    print(f"Updated issue #{number} body")
+    logging.info(f"Updated issue #{number} body")
     return True
 
 
@@ -204,7 +202,7 @@ def gh_issue_add_labels(repo: str, number: int, labels: list[str]) -> None:
     res = run_gh(args)
     if res.returncode != 0:
         # Labels may not exist; don't fail the whole run.
-        print(f"WARN: Failed to add labels to #{number}: {res.stderr}", file=sys.stderr)
+        logging.warning(f"Failed to add labels to #{number}: {res.stderr}")
 
 
 def gh_issue_comment(repo: str, number: int, body: str) -> bool:
@@ -212,7 +210,7 @@ def gh_issue_comment(repo: str, number: int, body: str) -> bool:
     res = run_gh(["issue", "comment", str(number), "--repo", repo, "--body", body])
 
     if res.returncode != 0:
-        print(f"Failed to comment on #{number}: {res.stderr}", file=sys.stderr)
+        logging.error(f"Failed to comment on #{number}: {res.stderr}")
         return False
     
     return True
@@ -227,7 +225,7 @@ def gh_issue_create(repo: str, title: str, body: str, labels: list[str]) -> int 
 
     res = run_gh(args)
     if res.returncode != 0:
-        print(f"Failed to create issue: {res.stderr}", file=sys.stderr)
+        logging.error(f"Failed to create issue: {res.stderr}")
         return None
 
     out = (res.stdout or "").strip()

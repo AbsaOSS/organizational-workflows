@@ -9,3 +9,4 @@ target
 *.iml
 .vscode
 github/security/alerts*.json
+github/security/.coverage

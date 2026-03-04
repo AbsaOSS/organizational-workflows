@@ -210,7 +210,6 @@ jobs:
 This repository contains multiple scripts with different “label contracts”:
 
 - `promote_alerts.py` mines existing issues by `--issue-label` (default: `scope:security`) and ensures baseline labels `scope:security` and `type:tech-debt` on child/parent issues it creates/updates.
-- `sync_issue_labels.py` and `process_sec_events.py` are intended to react to `sec:*` label changes and `[sec-event]` comments.
 
 ### Source
 
@@ -337,7 +336,7 @@ Recommended commands (example format):
 - `/sec dismiss reason=false_positive|accepted_risk|wont_fix comment="..."` — close with an auditable reason
 - `/sec reopen` — reopen a previously closed Issue
 
-Implementation note: the command parsing/side-effects depend on how [github/security/process_sec_events.py](process_sec_events.py) evolves. The format above is the intended contract.
+Implementation note: the command parsing/side-effects depend on how `process_sec_events.py` (not yet implemented) evolves. The format above is the intended contract.
 
 ## Known data manipulations
 

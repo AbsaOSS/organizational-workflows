@@ -94,8 +94,8 @@ class AlertContext:
     severity: str
     cve: str
     path: str
-    start_line: Any
-    end_line: Any
+    start_line: int | None
+    end_line: int | None
     commit_sha: str
 
 

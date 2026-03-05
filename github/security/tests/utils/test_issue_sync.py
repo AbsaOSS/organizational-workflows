@@ -477,16 +477,14 @@ def test_comment_reopen_event(mocker: MockerFixture) -> None:
     comment_body = mock_comment.call_args[0][2]
     assert "reopen" in comment_body
 
-def test_comment_occurrence_event(mocker: MockerFixture) -> None:
-    """Posts an occurrence sec-event comment when new_occurrence=True."""
+def test_comment_occurrence_event_no_comment(mocker: MockerFixture) -> None:
+    """No sec-event comment when issue is already open (new_occurrence=True but reopened=False)."""
     mock_comment = mocker.patch("utils.issue_sync.gh_issue_comment")
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context()
     _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False, new_occurrence=True)
-    mock_comment.assert_called_once()
-    comment_body = mock_comment.call_args[0][2]
-    assert "occurrence" in comment_body
+    mock_comment.assert_not_called()
 
 def test_comment_no_event() -> None:
     """No comment when neither reopened nor new_occurrence."""
@@ -503,10 +501,11 @@ def test_comment_reopen_dry_run() -> None:
     _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True, new_occurrence=False)
 
 def test_comment_occurrence_dry_run() -> None:
-    """Dry-run mode does not call gh_issue_comment for occurrence."""
+    """No comment in any mode when issue is already open (occurrence-only path)."""
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context(dry_run=True)
+    # Dry-run should also be silent for already-open issues.
     _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False, new_occurrence=True)
 
 

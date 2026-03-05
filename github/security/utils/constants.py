@@ -23,7 +23,6 @@ LABEL_SEC_ADEPT_TO_CLOSE = "sec:adept-to-close"
 
 SEC_EVENT_OPEN = "open"
 SEC_EVENT_REOPEN = "reopen"
-SEC_EVENT_OCCURRENCE = "occurrence"
 
 SECMETA_TYPE_PARENT = "parent"
 SECMETA_TYPE_CHILD = "child"

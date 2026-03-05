@@ -21,7 +21,6 @@ from utils.constants import (
     LABEL_SCOPE_SECURITY,
     LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
-    SEC_EVENT_OCCURRENCE,
     SEC_EVENT_OPEN,
     SEC_EVENT_REOPEN,
     SECMETA_TYPE_CHILD,
@@ -47,9 +46,6 @@ def test_open() -> None:
 
 def test_reopen() -> None:
     assert SEC_EVENT_REOPEN == "reopen"
-
-def test_occurrence() -> None:
-    assert SEC_EVENT_OCCURRENCE == "occurrence"
 
 
 def test_parent() -> None:

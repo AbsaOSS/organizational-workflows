@@ -46,7 +46,6 @@ from .constants import (
     LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
     NOT_AVAILABLE,
-    SEC_EVENT_OCCURRENCE,
     SEC_EVENT_OPEN,
     SEC_EVENT_REOPEN,
     SECMETA_TYPE_CHILD,
@@ -565,7 +564,7 @@ def _comment_child_event(
     reopened: bool,
     new_occurrence: bool,
 ) -> None:
-    """Post a reopen or new-occurrence sec-event comment on the child issue."""
+    """Post a reopen sec-event comment on the child issue."""
     if reopened:
         if sync.dry_run:
             logging.info(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {ctx.alert_number})")
@@ -579,27 +578,6 @@ def _comment_child_event(
                         "seen_at": utc_today(),
                         "source": "code_scanning",
                         "gh_alert_number": str(ctx.alert_number),
-                    }
-                ),
-            )
-    elif new_occurrence:
-        if sync.dry_run:
-            logging.info(f"DRY-RUN: would comment occurrence event on issue #{issue.number} (alert {ctx.alert_number})")
-        else:
-            gh_issue_comment(
-                ctx.repo,
-                issue.number,
-                render_sec_event(
-                    {
-                        "action": SEC_EVENT_OCCURRENCE,
-                        "seen_at": utc_today(),
-                        "source": "code_scanning",
-                        "gh_alert_number": str(ctx.alert_number),
-                        "occurrence_fp": str(ctx.occurrence_fp),
-                        "commit_sha": str(ctx.commit_sha),
-                        "path": str(ctx.path),
-                        "start_line": str(ctx.start_line or ""),
-                        "end_line": str(ctx.end_line or ""),
                     }
                 ),
             )

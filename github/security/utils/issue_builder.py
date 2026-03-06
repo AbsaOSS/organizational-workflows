@@ -102,8 +102,6 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
         or rule_id
     )
 
-    title = alert_value(alert, "title", "rule_name", "rule_id") or rule_id
-
     published_date_raw = (
         alert_value(alert, "published_date", "publishedDate")
         or _msg_param(alert, AlertMessageKey.FIRST_SEEN)
@@ -122,7 +120,7 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
     return {
         "category": category,
         "avd_id": avd_id,
-        "title": title,
+        "title": rule_id,
         "severity": severity,
         "published_date": iso_date(published_date_raw),
         "package_name": package_name or NOT_AVAILABLE,
@@ -167,11 +165,10 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
     """Render the human-readable body for a child issue from alert data."""
     repo_full = str(alert.get("_repo") or "").strip()
 
-    avd_id = (
-        alert_value(alert, "avd_id", "rule_id")
-        or _msg_param(alert, AlertMessageKey.VULNERABILITY)
-    )
-    title = alert_value(alert, "title", "rule_name", "rule_id")
+    _v_value = _msg_param(alert, AlertMessageKey.VULNERABILITY)
+    avd_id = _v_value if _v_value.startswith("AVD-") else NOT_AVAILABLE
+
+    title = alert_value(alert, "rule_id")
 
     scm_file = _msg_param(alert, AlertMessageKey.SCM_FILE) or NOT_AVAILABLE
     start_line = alert_value(alert, "start_line")

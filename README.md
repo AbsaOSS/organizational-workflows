@@ -1,7 +1,7 @@
 # Organizational Workflows
 
 A toolkit of repeatable, organization-level GitHub Actions workflows.
-Each workflow solution has its own automation code and documentation.
+Each solution is self-contained: a reusable workflow, Python automation scripts, and a dedicated documentation page.
 
 ## Solutions
 
@@ -23,9 +23,11 @@ pytest
 
 ```
 .github/workflows/          # reusable GitHub Actions workflows (the product)
-github/
-  shared/                   # shared Python utilities used across solutions
-  security/                 # security automation scripts & code
+shared/                     # shared Python utilities used across solutions
+security/                   # security automation scripts & code
+  utils/                    # security-specific helper modules
+  workflows/                # example caller workflow snippets
+tests/                      # all tests (security + shared)
 docs/                       # per-solution documentation
 ```
 

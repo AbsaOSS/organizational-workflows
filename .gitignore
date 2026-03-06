@@ -10,3 +10,5 @@ target
 .vscode
 github/security/alerts*.json
 github/security/.coverage
+security/alerts_aul.json
+security/alerts_local.json

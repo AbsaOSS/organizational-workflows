@@ -15,11 +15,11 @@ dev = [
 # ── pytest + coverage ────────────────────────────────────────────────
 
 [tool.pytest.ini_options]
-testpaths = ["github/security/tests"]
-pythonpath = [".", "github", "github/security"]
+testpaths = ["tests"]
+pythonpath = [".", "security"]
 
 [tool.coverage.run]
-source = ["github"]
+source = ["shared", "security"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",

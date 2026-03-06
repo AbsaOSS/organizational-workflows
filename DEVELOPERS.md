@@ -45,7 +45,7 @@ github/security/
 
 ## Running tests
 
-All commands assume your working directory is `github/security/`.
+All commands assume your working directory is the repository root.
 
 ### Quick run
 

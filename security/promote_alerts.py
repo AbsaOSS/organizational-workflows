@@ -47,10 +47,10 @@ import os
 import shutil
 import sys
 
-# Ensure the github/ root is on sys.path so `shared.*` is importable.
-_github_root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-if _github_root not in sys.path:
-    sys.path.insert(0, _github_root)
+# Ensure the repo root is on sys.path so `shared.*` is importable.
+_repo_root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 from shared.common import parse_runner_debug
 from shared.github_issues import gh_issue_list_by_label

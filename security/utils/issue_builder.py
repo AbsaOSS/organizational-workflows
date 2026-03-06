@@ -202,7 +202,10 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
     if not repo_full:
         repo_full = _msg_param(alert, AlertMessageKey.REPOSITORY)
 
+    category = classify_category(alert)
+
     values: dict[str, Any] = {
+        "category": category or NOT_AVAILABLE,
         "avd_id": avd_id,
         "alert_hash": alert_hash,
         "title": title,

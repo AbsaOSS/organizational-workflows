@@ -23,17 +23,35 @@ from shared.common import iso_date
 from shared.templates import render_markdown_template
 
 from .alert_parser import AlertMessageKey
-from .constants import SECMETA_TYPE_PARENT
+from .constants import NOT_AVAILABLE, SECMETA_TYPE_PARENT
 from .secmeta import render_secmeta
 from .templates import CHILD_BODY_TEMPLATE, PARENT_BODY_TEMPLATE
 
 
 def alert_extra_data(alert: dict[str, Any]) -> dict[str, Any]:
-    """Return the ``extraData`` sub-dict from *alert*, or ``{}``."""
     extra = alert.get("extraData")
     if isinstance(extra, dict):
         return extra
-    return {}
+    
+    help_uri = alert_value(alert, "help_uri")
+    rule_id = str(alert.get("rule_id") or "")
+    extra = {
+        "cve": rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE,
+        "owasp": help_uri or NOT_AVAILABLE,
+        "category": alert_value(alert, "rule_name") or NOT_AVAILABLE,
+        "impact": alert_value(alert, "impact") or NOT_AVAILABLE,
+        "likelihood": alert_value(alert, "likelihood") or NOT_AVAILABLE,
+        "confidence": alert_value(alert, "confidence") or NOT_AVAILABLE,
+        "remediation": _msg_param(alert, AlertMessageKey.MESSAGE) or NOT_AVAILABLE,
+        "references": "\n".join(
+            f"- {r}" for r in filter(None, [
+                alert_value(alert, "alert_url", "url"),
+                help_uri,
+            ])
+        ) or NOT_AVAILABLE,
+    }
+
+    return extra
 
 
 def alert_value(alert: dict[str, Any], *keys: str) -> str:
@@ -50,8 +68,14 @@ def alert_value(alert: dict[str, Any], *keys: str) -> str:
     return ""
 
 
+def _msg_param(alert: dict[str, Any], key: str) -> str:
+    params = alert.get("_message_params")
+    if isinstance(params, dict):
+        return str(params.get(key, NOT_AVAILABLE)).strip()
+    return NOT_AVAILABLE
+
+
 def classify_category(alert: dict[str, Any]) -> str:
-    """Derive a category from ``rule_name``."""
     return str(alert.get("rule_name") or "").strip()
 
 
@@ -67,16 +91,41 @@ def build_parent_template_values(alert: dict[str, Any], *, rule_id: str, severit
     Shared by both *create* and *update* paths so the value-mapping
     logic is defined in one place.
     """
+    category = (
+        alert_value(alert, "category", "rule_name")
+        or _msg_param(alert, AlertMessageKey.TYPE)
+    )
+
+    avd_id = (
+        alert_value(alert, "avd_id", "rule_id")
+        or _msg_param(alert, AlertMessageKey.VULNERABILITY)
+        or rule_id
+    )
+
+    published_date_raw = (
+        alert_value(alert, "published_date", "publishedDate")
+        or _msg_param(alert, AlertMessageKey.FIRST_SEEN)
+        or alert_value(alert, "created_at")
+    )
+
+    # May be absent for SAST-only findings.
+    package_name = (
+        alert_value(alert, "package_name", "packageName")
+        or _msg_param(alert, AlertMessageKey.ARTIFACT)
+    )
+    fixed_version = alert_value(alert, "fixed_version", "fixedVersion")
+
+    extra = alert_extra_data(alert)
+
     return {
-        "category": alert_value(alert, "category"),
-        "avd_id": alert_value(alert, "avd_id", "rule_id") or rule_id,
-        "title": alert_value(alert, "title", "rule_name", "rule_id") or rule_id,
+        "category": category,
+        "avd_id": avd_id,
+        "title": rule_id,
         "severity": severity,
-        "published_date": iso_date(alert_value(alert, "published_date", "publishedDate", "created_at")),
-        "vendor_scoring": alert_value(alert, "vendor_scoring", "vendorScoring"),
-        "package_name": alert_value(alert, "package_name", "packageName"),
-        "fixed_version": alert_value(alert, "fixed_version", "fixedVersion"),
-        "extraData": alert_extra_data(alert),
+        "published_date": iso_date(published_date_raw),
+        "package_name": package_name or NOT_AVAILABLE,
+        "fixed_version": fixed_version or NOT_AVAILABLE,
+        "extraData": extra,
     }
 
 
@@ -84,7 +133,7 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
     """Construct the full body (secmeta + rendered template) for a new parent issue."""
     rule_id = str(alert.get("rule_id") or "").strip()
     tool = str(alert.get("tool") or "").strip()
-    severity = str((alert.get("severity") or "unknown")).lower()
+    severity = str((alert.get("severity") or NOT_AVAILABLE))
     repo_full = str(alert.get("_repo") or "").strip()
 
     secmeta: dict[str, str] = {
@@ -107,7 +156,7 @@ def build_parent_issue_body(alert: dict[str, Any]) -> str:
 
 def build_issue_title(rule_name: str | None, rule_id: str, fingerprint: str) -> str:
     """Build the title string for a child issue."""
-    prefix = fingerprint[:8] if fingerprint else "unknown"
+    prefix = fingerprint[:8] if fingerprint else NOT_AVAILABLE
     summary = (rule_name or rule_id or "Security finding").strip() or "Security finding"
     return f"[SEC][FP={prefix}] {summary}"
 
@@ -115,26 +164,43 @@ def build_issue_title(rule_name: str | None, rule_id: str, fingerprint: str) -> 
 def build_child_issue_body(alert: dict[str, Any]) -> str:
     """Render the human-readable body for a child issue from alert data."""
     repo_full = str(alert.get("_repo") or "").strip()
-    avd_id = alert_value(alert, "avd_id", "rule_id")
-    title = alert_value(alert, "title", "rule_name", "rule_id")
-    scm_file = alert_value(alert, "file", "scm_file")
-    target_line = alert_value(alert, "target_line")
-    if not target_line:
-        target_line = alert_value(alert, "start_line")
 
-    package_name = alert_value(alert, "package_name", "packageName")
-    installed_version = alert_value(alert, "installed_version", "installedVersion")
+    _v_value = _msg_param(alert, AlertMessageKey.VULNERABILITY)
+    avd_id = _v_value if _v_value.startswith("AVD-") else NOT_AVAILABLE
+
+    title = alert_value(alert, "rule_id")
+
+    scm_file = _msg_param(alert, AlertMessageKey.SCM_FILE) or NOT_AVAILABLE
+    start_line = alert_value(alert, "start_line")
+
+    # Build a display name (filename only) and permalink with #L anchor
+    file_name = scm_file.rsplit("/", 1)[-1] if scm_file and scm_file != NOT_AVAILABLE else None
+    if scm_file and scm_file != NOT_AVAILABLE and start_line:
+        file_permalink = f"{scm_file}#L{start_line}"
+        file_display = f"{file_name}#L{start_line}"
+    else:
+        file_permalink = scm_file if scm_file != NOT_AVAILABLE else ""
+        file_display = file_name or NOT_AVAILABLE
+
+    package_name = (
+        alert_value(alert, "package_name", "packageName")
+        or _msg_param(alert, AlertMessageKey.ARTIFACT)
+    )
+    installed_version = _msg_param(alert, AlertMessageKey.INSTALLED_VERSION)
     fixed_version = alert_value(alert, "fixed_version", "fixedVersion")
-    reachable = alert_value(alert, "reachable")
-
-    scan_date = alert_value(alert, "scan_date", "scanDate", "updated_at")
-    first_seen = alert_value(alert, "first_seen", "created_at")
+    reachable = alert_value(alert, AlertMessageKey.REACHABLE) or _msg_param(alert, AlertMessageKey.REACHABLE)
+    scan_date = _msg_param(alert, AlertMessageKey.SCAN_DATE) or alert_value(alert, "updated_at")
+    first_seen = _msg_param(alert, AlertMessageKey.FIRST_SEEN) or alert_value(alert, "created_at")
 
     msg_params = alert.get("_message_params")
     alert_hash = ""
     if isinstance(msg_params, dict):
-        alert_hash = str(msg_params.get(AlertMessageKey.ALERT_HASH.value) or "").strip()
-    message = alert_value(alert, "message")
+        alert_hash = str(msg_params.get(AlertMessageKey.ALERT_HASH, "")).strip()
+
+    message = msg_params.get(AlertMessageKey.MESSAGE, NOT_AVAILABLE)
+
+    if not repo_full:
+        repo_full = _msg_param(alert, AlertMessageKey.REPOSITORY)
 
     values: dict[str, Any] = {
         "avd_id": avd_id,
@@ -142,12 +208,12 @@ def build_child_issue_body(alert: dict[str, Any]) -> str:
         "title": title,
         "message": message,
         "repository_full_name": repo_full,
-        "scm_file": scm_file,
-        "target_line": target_line,
-        "package_name": package_name,
-        "installed_version": installed_version,
-        "fixed_version": fixed_version,
-        "reachable": reachable,
+        "file_display": file_display,
+        "file_permalink": file_permalink,
+        "package_name": package_name or NOT_AVAILABLE,
+        "installed_version": installed_version or NOT_AVAILABLE,
+        "fixed_version": fixed_version or NOT_AVAILABLE,
+        "reachable": reachable or NOT_AVAILABLE,
         "scan_date": iso_date(scan_date),
         "first_seen": iso_date(first_seen),
     }

@@ -42,6 +42,7 @@ Implementation:
 """
 
 import argparse
+import logging
 import os
 import shutil
 import sys
@@ -51,13 +52,14 @@ _github_root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__f
 if _github_root not in sys.path:
     sys.path.insert(0, _github_root)
 
-from shared.common import parse_runner_debug, set_verbose_enabled, vprint
+from shared.common import parse_runner_debug
 from shared.github_issues import gh_issue_list_by_label
 from shared.priority import parse_severity_priority_map
 
 from utils.alert_parser import load_open_alerts_from_file
 from utils.constants import LABEL_SCOPE_SECURITY
 from utils.issue_sync import sync_alerts_and_issues
+from utils.logging_config import setup_logging
 from utils.teams import notify_teams, notify_teams_severity_changes
 
 
@@ -130,7 +132,8 @@ def main() -> None:
     args = parse_args()
 
     dry_run = bool(args.dry_run)
-    set_verbose_enabled(bool(args.verbose) or parse_runner_debug())
+    verbose = bool(args.verbose) or parse_runner_debug()
+    setup_logging(verbose)
 
     repo_full, open_alerts = load_open_alerts_from_file(args.file)
     issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
@@ -151,7 +154,7 @@ def main() -> None:
 
     webhook_url = str(args.teams_webhook_url or "")
     if (notifications or severity_changes) and not webhook_url:
-        vprint("Teams webhook URL not configured - skipping notification")
+        logging.debug("Teams webhook URL not configured - skipping notification")
     else:
         notify_teams(webhook_url, notifications, dry_run=dry_run)
         notify_teams_severity_changes(webhook_url, severity_changes, dry_run=dry_run)

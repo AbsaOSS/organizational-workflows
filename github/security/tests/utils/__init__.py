@@ -13,18 +13,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-"""Shared constants used across the security workflow utilities."""
-
-LABEL_SCOPE_SECURITY = "scope:security"
-LABEL_TYPE_TECH_DEBT = "type:tech-debt"
-LABEL_EPIC = "epic"
-LABEL_SEC_ADEPT_TO_CLOSE = "sec:adept-to-close"
-
-SEC_EVENT_OPEN = "open"
-SEC_EVENT_REOPEN = "reopen"
-
-SECMETA_TYPE_PARENT = "parent"
-SECMETA_TYPE_CHILD = "child"
-
-NOT_AVAILABLE = "N/A"

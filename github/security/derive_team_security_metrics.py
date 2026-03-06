@@ -32,6 +32,7 @@ Outputs:
 """
 
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -100,7 +101,7 @@ def _severity_from_labels(labels: List[str]) -> str:
 def main() -> None:
     """Derive and write team security metrics from issue snapshots."""
     # TODO decide about changes related to this script
-    print("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
+    logging.warning("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
     return
 
     cur = _load_json(SNAPSHOT_CUR)

@@ -26,7 +26,6 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 - **Title:** {{ title }}
 - **Severity:** {{ severity }}
 - **Published date:** {{ published_date }}
-- **Vendor scoring:** {{ vendor_scoring }}
 
 ## Affected Package
 
@@ -35,7 +34,7 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 
 ## Classification
 
-- **CVE:** {{ extraData.cwe }}
+- **CVE:** {{ extraData.cve }}
 - **OWASP:** {{ extraData.owasp }}
 - **Category:** {{ extraData.category }}
 
@@ -71,8 +70,7 @@ CHILD_BODY_TEMPLATE = """## General Information
 ## Location
 
 - **Repository:** {{ repository_full_name }}
-- **File:** {{ scm_file }}
-- **Line:** {{ target_line }}
+- **File:** [{{ file_display }}]({{ file_permalink }})
 
 ## Dependency Details
 

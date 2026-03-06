@@ -62,7 +62,6 @@ SEVERITY_ORDER: dict[str, int] = {
 
 
 def severity_direction(old: str, new: str) -> str:
-    """Return a human-readable arrow indicating the change direction."""
     old_rank = SEVERITY_ORDER.get(old.lower(), -1)
     new_rank = SEVERITY_ORDER.get(new.lower(), -1)
     if new_rank > old_rank:
@@ -93,10 +92,10 @@ class AlertContext:
     rule_id: str
     rule_name: str
     severity: str
-    cwe: str
+    cve: str
     path: str
-    start_line: Any
-    end_line: Any
+    start_line: int | None
+    end_line: int | None
     commit_sha: str
 
 

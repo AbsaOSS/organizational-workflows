@@ -14,17 +14,22 @@
 # limitations under the License.
 #
 
-"""Shared constants used across the security workflow utilities."""
+"""Centralised logging configuration for the security tooling."""
 
-LABEL_SCOPE_SECURITY = "scope:security"
-LABEL_TYPE_TECH_DEBT = "type:tech-debt"
-LABEL_EPIC = "epic"
-LABEL_SEC_ADEPT_TO_CLOSE = "sec:adept-to-close"
+import logging
+import sys
 
-SEC_EVENT_OPEN = "open"
-SEC_EVENT_REOPEN = "reopen"
 
-SECMETA_TYPE_PARENT = "parent"
-SECMETA_TYPE_CHILD = "child"
+def setup_logging(verbose: bool = False) -> None:
+    """Configure the root logger (DEBUG when *verbose*, else INFO)."""
+    level = logging.DEBUG if verbose else logging.INFO
 
-NOT_AVAILABLE = "N/A"
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
+    if verbose:
+        logging.debug("Verbose logging enabled")

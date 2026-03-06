@@ -21,6 +21,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [Issue metadata (secmeta)](#issue-metadata-secmeta)
 - [Issue structure](#issue-structure)
 - [How you “say duplicate / grouped / dismissed / reopened”](#how-you-say-duplicate--grouped--dismissed--reopened)
+- [Known data manipulations](#known-data-manipulations)
 - [Design: fingerprints and matching](#design-fingerprints-and-matching)
 - [Current implementation status](#current-implementation-status)
 - [Troubleshooting](#troubleshooting)
@@ -41,8 +42,6 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 | `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
 | `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
 | `send_to_teams.py` | Send a Markdown message to a Microsoft Teams channel via Incoming Webhook | `requests` |
-| `sync_issue_labels.py` | React to `sec:*` label changes and emit `[sec-event]` comments | `PyGithub`, `GITHUB_TOKEN` |
-| `process_sec_events.py` | Parse `[sec-event]` comments and apply state/side-effects | `PyGithub`, `GITHUB_TOKEN` |
 | `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
 | `derive_team_security_metrics.py` | Compute metrics/deltas from snapshots | stdlib |
 
@@ -82,7 +81,7 @@ You can run the individual steps when you need finer control or want to debug th
 ./collect_alert.sh --repo <owner/repo> --state open --out alerts.json
 ```
 
-1. Promote alerts to Issues:
+2. Promote alerts to Issues:
 
 ```bash
 python3 promote_alerts.py --file alerts.json
@@ -128,7 +127,7 @@ jobs:
 This repository provides **reusable GitHub Actions workflows** in `.github/workflows/`.
 Application repositories call them with a short caller workflow instead of duplicating the logic.
 
-The `worklows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
+The `workflows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
 
 ### Available reusable workflows
 
@@ -154,7 +153,7 @@ The caller needs the following **repository secrets** configured:
 | `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
 
-Example caller (already available in `worklows/aquasec-night-scan.yml`):
+Example caller (already available in `workflows/aquasec-night-scan.yml`):
 
 ```yaml
 name: Aquasec Night Scan
@@ -187,7 +186,7 @@ jobs:
 
 #### Remove sec:adept-to-close on close
 
-Example caller (already available in `worklows/remove-adept-to-close-on-issue-close.yml`):
+Example caller (already available in `workflows/remove-adept-to-close-on-issue-close.yml`):
 
 ```yaml
 name: Remove sec:adept-to-close on close
@@ -211,7 +210,6 @@ jobs:
 This repository contains multiple scripts with different “label contracts”:
 
 - `promote_alerts.py` mines existing issues by `--issue-label` (default: `scope:security`) and ensures baseline labels `scope:security` and `type:tech-debt` on child/parent issues it creates/updates.
-- `sync_issue_labels.py` and `process_sec_events.py` are intended to react to `sec:*` label changes and `[sec-event]` comments.
 
 ### Source
 
@@ -245,11 +243,12 @@ This repository contains multiple scripts with different “label contracts”:
 
 ## Issue metadata (secmeta)
 
-Each security Issue contains exactly one fenced `secmeta` block.
+Each security Issue contains exactly one hidden HTML-comment `secmeta` block.
 
 Minimum recommended keys (child issue):
 
-```secmeta
+```
+<!--secmeta
 schema=1
 type=child
 fingerprint=<finding_fingerprint>
@@ -263,11 +262,13 @@ last_seen=YYYY-MM-DD
 postponed_until=
 gh_alert_numbers=["123"]
 occurrence_count=1
+-->
 ```
 
 Minimum recommended keys (parent issue):
 
-```secmeta
+```
+<!--secmeta
 schema=1
 type=parent
 repo=org/repo
@@ -278,6 +279,7 @@ rule_id=...
 first_seen=YYYY-MM-DD
 last_seen=YYYY-MM-DD
 postponed_until=
+-->
 ```
 
 The `secmeta` block is automation-owned (humans express intent via labels and `[sec-event]` comments).
@@ -334,8 +336,42 @@ Recommended commands (example format):
 - `/sec dismiss reason=false_positive|accepted_risk|wont_fix comment="..."` — close with an auditable reason
 - `/sec reopen` — reopen a previously closed Issue
 
-Implementation note: the command parsing/side-effects depend on how [github/security/process_sec_events.py](process_sec_events.py) evolves. The format above is the intended contract.
+Implementation note: the command parsing/side-effects depend on how `process_sec_events.py` (not yet implemented) evolves. The format above is the intended contract.
 
+## Known data manipulations
+
+As a rule, values placed into issue body templates are passed through **unchanged** from
+the collected alert payload. The following are intentional exceptions:
+
+### Date fields – time portion stripped
+
+The `iso_date()` helper is applied to datetime fields before rendering. It strips the
+time portion from ISO-8601 timestamps, keeping only the date.
+
+| Field | Template | Raw alert value | Rendered value |
+| --- | --- | --- | --- |
+| `published_date` | parent | `2026-02-25T08:25:18Z` | `2026-02-25` |
+| `scan_date` | child | `2026-02-25T19:37:05.912Z` | `2026-02-25` |
+| `first_seen` | child | `2025-09-17T12:46:48.271Z` | `2025-09-17` |
+| `secmeta.first_seen` | secmeta | `2026-02-25T08:25:18Z` | `2026-02-25` |
+| `secmeta.last_seen` | secmeta | `2026-02-25T14:11:06Z` | `2026-02-25` |
+
+Implementation: `shared/common.py → iso_date()`.
+
+### File path normalisation
+
+The `normalize_path()` helper is applied to the `file` field before it is used as a
+fingerprint input and stored in secmeta. It performs the following transformations:
+
+- Converts backslashes (`\`) to forward slashes (`/`).
+- Strips any leading `./` prefix (e.g. `./src/foo.py` → `src/foo.py`).
+- Strips any leading `/` (e.g. `/src/foo.py` → `src/foo.py`).
+- Collapses consecutive slashes to a single `/`.
+
+The normalised path is used only for matching and fingerprint computation; the original
+path string from the alert is never written back to the issue body.
+
+Implementation: `shared/common.py → normalize_path()`.
 
 ## Design: fingerprints and matching
 
@@ -396,7 +432,3 @@ As of 2026-02, [github/security/promote_alerts.py](promote_alerts.py) implements
 - [REST API endpoints for code scanning - GitHub Docs](https://docs.github.com/en/rest/code-scanning/code-scanning)
 - [SARIF support for code scanning - GitHub Docs](https://docs.github.com/en/code-security/reference/code-scanning/sarif-support-for-code-scanning)
 - [upload-sarif: Adding fingerprints discussion](https://github.com/github/codeql-action/issues/2386)
-
-
-
-

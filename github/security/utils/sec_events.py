@@ -21,6 +21,8 @@ structured lifecycle-event blocks from issue bodies.
 
 import re
 
+from .secmeta import render_kv_lines
+
 
 def parse_sec_event_fields(raw: str) -> dict[str, str]:
     """Parse ``key=value`` lines from a raw sec-event block."""
@@ -47,15 +49,8 @@ def render_sec_event(fields: dict[str, str]) -> str:
         "start_line",
         "end_line",
     ]
-    lines: list[str] = ["[sec-event]"]
-    for k in preferred_order:
-        if k in fields and str(fields.get(k, "")).strip() != "":
-            lines.append(f"{k}={fields.get(k, '')}")
-    for k in sorted(k for k in fields.keys() if k not in set(preferred_order)):
-        v = str(fields.get(k, ""))
-        if v.strip() == "":
-            continue
-        lines.append(f"{k}={v}")
+    lines = ["[sec-event]"]
+    lines.extend(render_kv_lines(fields, preferred_order, skip_empty=True))
     lines.append("[/sec-event]")
     return "\n".join(lines) + "\n"
 

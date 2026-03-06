@@ -1,0 +1,24 @@
+# ── pytest + coverage configuration ──────────────────────────────────
+# Run from the security/ directory:
+#   python3 -m pytest tests/ -v --cov --cov-report=term-missing
+# ─────────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", ".."]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "__pycache__/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]

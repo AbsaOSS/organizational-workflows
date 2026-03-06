@@ -15,38 +15,41 @@
 #
 
 """Alert data parsing – extracting structured fields from raw alert dicts
-(message parameters, CWE, occurrence fingerprint) and loading the alerts
+(message parameters, CVE, occurrence fingerprint) and loading the alerts
 JSON file produced by ``collect_alert.sh``.
 """
 
 
 import json
+import logging
 import os
-import re
-import sys
-from enum import Enum
-from typing import Any
 from enum import StrEnum
+from typing import Any
 
 from shared.common import sha256_hex
 
-# ---------------------------------------------------------------------------
-# AlertMessageKey enum
-# ---------------------------------------------------------------------------
 
 class AlertMessageKey(StrEnum):
-    """Known keys parsed from the multi-line alert message."""
+    """Known keys parsed from the multi-line alert message.
+
+    Each value corresponds to the normalised (lowercased, whitespace-collapsed)
+    key emitted by the AquaSec scan-results action.
+    """
     ARTIFACT = "artifact"
     TYPE = "type"
     VULNERABILITY = "vulnerability"
     SEVERITY = "severity"
     MESSAGE = "message"
+    REPOSITORY = "repository"
+    REACHABLE = "reachable"
+    SCAN_DATE = "scan date"
+    FIRST_SEEN = "first seen"
+    SCM_FILE = "scm file"
+    INSTALLED_VERSION = "installed version"
+    START_LINE = "start line"
+    END_LINE = "end line"
     ALERT_HASH = "alert hash"
 
-
-# ---------------------------------------------------------------------------
-# Message parsing
-# ---------------------------------------------------------------------------
 
 def parse_alert_message_params(message: str | None) -> dict[str, str]:
     """Parse key/value parameters from a multi-line alert message.
@@ -74,30 +77,7 @@ def parse_alert_message_params(message: str | None) -> dict[str, str]:
     return params
 
 
-def extract_cwe(alert: dict[str, Any]) -> str | None:
-    """Best-effort CWE extraction.
-
-    Not all code scanning alerts include CWE mapping.
-    - If ``alert["cwe"]`` is present, use it.
-    - Otherwise try to parse a CWE token from tags like ``"CWE-79"``.
-    """
-
-    raw = alert.get("cwe")
-    if raw:
-        s = str(raw).strip()
-        return s or None
-
-    tags = alert.get("tags")
-    if isinstance(tags, list):
-        for t in tags:
-            m = re.search(r"\bCWE-(\d+)\b", str(t), flags=re.IGNORECASE)
-            if m:
-                return f"CWE-{m.group(1)}"
-    return None
-
-
 def compute_occurrence_fp(commit_sha: str, path: str, start_line: int | None, end_line: int | None) -> str:
-    """Compute a fingerprint for a specific occurrence (commit + location)."""
     return sha256_hex(f"{commit_sha}|{path}|{start_line or ''}|{end_line or ''}")
 
 
@@ -117,34 +97,31 @@ def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]
         raise SystemExit(f"ERROR: repo.full_name not found in {path}")
 
     alerts = data.get("alerts", [])
-    print(f"Loaded {len(alerts)} alerts from {path} (repo={repo_full})")
+    logging.info(f"Loaded {len(alerts)} alerts from {path} (repo={repo_full})")
 
     open_alerts = [a for a in alerts if str((a.get("state") or "")).lower() == "open"]
-    print(f"Found {len(open_alerts)} open alerts")
+    logging.info(f"Found {len(open_alerts)} open alerts")
 
     open_by_number: dict[int, dict[str, Any]] = {}
     for alert in open_alerts:
         alert_number = alert.get("alert_number")
         if alert_number is None:
-            print(f"WARN: skipping alert with missing alert_number: {alert}")
+            logging.warning(f"Skipping alert with missing alert_number: {alert}")
             continue
 
         try:
             alert_number_int = int(alert_number)
         except Exception:
-            print(f"WARN: skipping alert with invalid alert_number: {alert_number}")
+            logging.warning(f"Skipping alert with invalid alert_number: {alert_number}")
             continue
 
-        # stash repo on the alert for convenience
         alert["_repo"] = repo_full
-
-        # Parse structured parameters embedded in the message string.
         alert["_message_params"] = parse_alert_message_params(alert.get("message"))
         open_by_number[alert_number_int] = alert
 
         if os.getenv("DEBUG_ALERTS") == "1":
-            print(
-                f"DEBUG: full alert payload for alert_number={alert_number_int}:\n"
+            logging.debug(
+                f"Full alert payload for alert_number={alert_number_int}:\n"
                 + json.dumps(alert, indent=2, sort_keys=True)
             )
 

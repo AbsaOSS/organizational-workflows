@@ -22,10 +22,10 @@ This is the main business-logic module that ties together all other
 ``utils.*`` modules.
 """
 
-
+import logging
 from typing import Any
 
-from shared.common import is_verbose, iso_date, normalize_path, utc_today, vprint
+from shared.common import iso_date, normalize_path, utc_today
 from shared.github_issues import (
     gh_issue_add_labels,
     gh_issue_add_sub_issue_by_number,
@@ -39,13 +39,13 @@ from shared.github_projects import ProjectPrioritySync, gh_project_get_priority_
 from shared.models import Issue
 from shared.templates import render_markdown_template
 
-from .alert_parser import AlertMessageKey, compute_occurrence_fp, extract_cwe
+from .alert_parser import AlertMessageKey, compute_occurrence_fp
 from .constants import (
     LABEL_EPIC,
     LABEL_SCOPE_SECURITY,
     LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
-    SEC_EVENT_OCCURRENCE,
+    NOT_AVAILABLE,
     SEC_EVENT_OPEN,
     SEC_EVENT_REOPEN,
     SECMETA_TYPE_CHILD,
@@ -119,11 +119,11 @@ def maybe_reopen_parent_issue(
         return
 
     if dry_run:
-        print(
+        logging.info(
             f"DRY-RUN: would reopen parent issue #{parent_issue.number} (rule_id={rule_id}) "
             f"due_to={context} child={child_issue_number or ''}".rstrip()
         )
-        print(
+        logging.info(
             f"DRY-RUN: would comment parent reopen sec-event on issue #{parent_issue.number} (rule_id={rule_id})"
         )
         parent_issue.state = "open"
@@ -156,6 +156,7 @@ def ensure_parent_issue(
     severity_priority_map: dict[str, str] | None = None,
     priority_sync: ProjectPrioritySync | None = None,
     severity_changes: list[SeverityChange] | None = None,
+    parent_original_bodies: dict[int, tuple[str, str]] | None = None,
 ) -> Issue | None:
     """Find or create the parent issue for the alert's ``rule_id``."""
     rule_id = str(alert.get("rule_id") or "").strip()
@@ -172,27 +173,28 @@ def ensure_parent_issue(
         first_seen_final = min(existing_first, iso_date(alert.get("created_at")))
         last_seen_final = max(existing_last, iso_date(alert.get("updated_at")))
 
-        existing_severity = str(existing_secmeta.get("severity") or "unknown").lower()
-        incoming_severity_raw = str(alert.get("severity") or "").strip().lower()
-        _severity = incoming_severity_raw or existing_severity
+        existing_severity = str(existing_secmeta.get("severity") or "unknown")
+        existing_severity_cmp = existing_severity.lower()
+        incoming_severity = str(alert.get("severity") or "").strip()
+        incoming_severity_cmp = incoming_severity.lower()
 
-        # Detect severity change on existing parent only when alert provides severity.
-        old_severity = existing_severity
-        if incoming_severity_raw and old_severity != _severity:
+        if incoming_severity_cmp and existing_severity_cmp != incoming_severity_cmp:
             change = SeverityChange(
                 repo=repo_full,
                 issue_number=existing.number,
                 rule_id=rule_id,
-                old_severity=old_severity,
-                new_severity=_severity,
+                old_severity=existing_severity_cmp,
+                new_severity=incoming_severity_cmp,
             )
             if dry_run:
-                print(
+                logging.info(
                     f"DRY-RUN: severity change on parent #{existing.number} "
-                    f"(rule_id={rule_id}): {old_severity} \u2192 {_severity}"
+                    f"(rule_id={rule_id}): {existing_severity_cmp} \u2192 {incoming_severity_cmp}"
                 )
             if severity_changes is not None:
                 severity_changes.append(change)
+
+        severity_stored = incoming_severity or existing_severity
 
         existing_secmeta.update(
             {
@@ -201,7 +203,7 @@ def ensure_parent_issue(
                 "repo": repo_full,
                 "source": existing_secmeta.get("source") or "code_scanning",
                 "tool": str(alert.get("tool") or existing_secmeta.get("tool") or ""),
-                "severity": _severity,
+                "severity": severity_stored,
                 "rule_id": rule_id,
                 "first_seen": first_seen_final,
                 "last_seen": last_seen_final,
@@ -211,26 +213,21 @@ def ensure_parent_issue(
 
         rebuilt = render_secmeta(existing_secmeta) + "\n\n" + render_markdown_template(
             PARENT_BODY_TEMPLATE,
-            build_parent_template_values(alert, rule_id=rule_id, severity=_severity),
+            build_parent_template_values(alert, rule_id=rule_id, severity=severity_stored),
         ).strip() + "\n"
         rebuilt = strip_sec_events_from_body(rebuilt)
 
-        if rebuilt != (existing.body or ""):
-            if dry_run:
-                print(f"DRY-RUN: would update parent issue #{existing.number} body to template (rule_id={rule_id})")
-                if is_verbose():
-                    print("DRY-RUN: body_preview_begin")
-                    print(rebuilt)
-                    print("DRY-RUN: body_preview_end")
-            else:
-                gh_issue_edit_body(repo_full, existing.number, rebuilt)
-                existing.body = rebuilt
+        # Snapshot the original body on first encounter so we can
+        # defer the API call until all alerts have been processed.
+        if parent_original_bodies is not None and existing.number not in parent_original_bodies:
+            parent_original_bodies[existing.number] = (repo_full, existing.body or "")
+        existing.body = rebuilt
 
         # Detect parent title drift and update when needed.
-        expected_title = build_parent_issue_title(rule_id, _severity)
+        expected_title = build_parent_issue_title(rule_id, severity_stored)
         if expected_title != (existing.title or ""):
             if dry_run:
-                print(
+                logging.info(
                     f"DRY-RUN: would update parent issue #{existing.number} title "
                     f"from {existing.title!r} to {expected_title!r}"
                 )
@@ -238,21 +235,20 @@ def ensure_parent_issue(
                 if gh_issue_edit_title(repo_full, existing.number, expected_title):
                     existing.title = expected_title
 
-        # Enqueue priority sync (bulk – resolved + flushed later).
         if priority_sync is not None:
-            priority_sync.enqueue(repo_full, existing.number, _severity, severity_priority_map or {})
+            priority_sync.enqueue(repo_full, existing.number, severity_stored, severity_priority_map or {})
 
         return existing
 
-    title = build_parent_issue_title(rule_id, str((alert.get("severity") or "unknown")).lower())
+    title = build_parent_issue_title(rule_id, str((alert.get("severity") or "unknown")))
     body = build_parent_issue_body(alert)
     labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT, LABEL_EPIC]
     if dry_run:
-        print(f"DRY-RUN: create parent rule_id={rule_id} title={title!r} labels={labels}")
-        if is_verbose():
-            print("DRY-RUN: body_preview_begin")
-            print(body)
-            print("DRY-RUN: body_preview_end")
+        logging.info(f"DRY-RUN: create parent rule_id={rule_id} title={title!r} labels={labels}")
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.debug("DRY-RUN: body_preview_begin")
+            logging.debug(body)
+            logging.debug("DRY-RUN: body_preview_end")
         return None
 
     num = gh_issue_create(repo_full, title, body, labels)
@@ -261,7 +257,7 @@ def ensure_parent_issue(
 
     # Parent lifecycle event (human visible): opened/created.
     if dry_run:
-        print(f"DRY-RUN: would comment parent open sec-event on issue #{num} (rule_id={rule_id})")
+        logging.info(f"DRY-RUN: would comment parent open sec-event on issue #{num} (rule_id={rule_id})")
     else:
         gh_issue_comment(
             repo_full,
@@ -272,7 +268,7 @@ def ensure_parent_issue(
                     "seen_at": iso_date(alert.get("created_at")),
                     "source": "code_scanning",
                     "rule_id": rule_id,
-                    "severity": str((alert.get("severity") or "unknown")).lower(),
+                    "severity": str((alert.get("severity") or "unknown")),
                 }
             ),
         )
@@ -280,12 +276,11 @@ def ensure_parent_issue(
     created = Issue(number=num, state="open", title=title, body=body)
     issues[num] = created
     index.parent_by_rule_id[rule_id] = created
-    print(f"Created parent issue #{num} for rule_id={rule_id}")
+    logging.info(f"Created parent issue #{num} for rule_id={rule_id}")
 
-    # Enqueue priority sync (bulk – resolved + flushed later).
     if priority_sync is not None:
         priority_sync.enqueue(
-            repo_full, num, str((alert.get("severity") or "unknown")).lower(),
+            repo_full, num, str((alert.get("severity") or "unknown")),
             severity_priority_map or {},
         )
 
@@ -342,8 +337,8 @@ def _handle_new_child_issue(
         "occurrence_count": "1",
         "last_occurrence_fp": ctx.occurrence_fp,
     }
-    if ctx.cwe:
-        secmeta["cwe"] = ctx.cwe
+    if ctx.cve:
+        secmeta["cve"] = ctx.cve
 
     human_body = build_child_issue_body(ctx.alert)
     body = render_secmeta(secmeta) + "\n\n" + human_body
@@ -354,20 +349,20 @@ def _handle_new_child_issue(
 
         loc = f"{ctx.path}:{ctx.start_line or ''}".rstrip(":")
         commit_short = ctx.commit_sha[:8] if ctx.commit_sha else ""
-        print(
+        logging.info(
             "DRY-RUN: create child "
             f"alert={ctx.alert_number} rule_id={ctx.rule_id} sev={ctx.severity} fp={ctx.fingerprint[:8]} tool={ctx.tool} "
             f"commit={commit_short} loc={loc} title={title!r} labels=[{','.join(labels)}] "
             f"| secmeta:first_seen={ctx.first_seen} last_seen={ctx.last_seen} occurrence_count=1 gh_alert_numbers=[{ctx.alert_number}]"
         )
         if parent_issue is None and ctx.rule_id:
-            print(f"DRY-RUN: add sub-issue link parent_rule_id={ctx.rule_id} child=(new) alert={ctx.alert_number}")
+            logging.info(f"DRY-RUN: add sub-issue link parent_rule_id={ctx.rule_id} child=(new) alert={ctx.alert_number}")
         elif parent_issue is not None:
-            print(f"DRY-RUN: add sub-issue link parent=#{parent_issue.number} child=(new) alert={ctx.alert_number}")
-        if is_verbose():
-            print("DRY-RUN: body_preview_begin")
-            print(body)
-            print("DRY-RUN: body_preview_end")
+            logging.info(f"DRY-RUN: add sub-issue link parent=#{parent_issue.number} child=(new) alert={ctx.alert_number}")
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.debug("DRY-RUN: body_preview_begin")
+            logging.debug(body)
+            logging.debug("DRY-RUN: body_preview_end")
 
         _append_notification(
             sync.notifications,
@@ -386,7 +381,7 @@ def _handle_new_child_issue(
     if num is None:
         return
 
-    print(f"Created issue #{num} for alert {ctx.alert_number} (fp={ctx.fingerprint[:8]})")
+    logging.info(f"Created issue #{num} for alert {ctx.alert_number} (fp={ctx.fingerprint[:8]})")
     created = Issue(number=num, state="open", title=title, body=body)
     sync.issues[num] = created
     sync.index.by_fingerprint[ctx.fingerprint] = created
@@ -410,7 +405,7 @@ def _handle_new_child_issue(
             context="new_child",
             child_issue_number=num,
         )
-        print(f"Add sub-issue link parent=#{parent_issue.number} child=#{num} (alert {ctx.alert_number})")
+        logging.info(f"Add sub-issue link parent=#{parent_issue.number} child=#{num} (alert {ctx.alert_number})")
         gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num)
 
     gh_issue_comment(
@@ -435,25 +430,27 @@ def _handle_new_child_issue(
         sync.priority_sync.enqueue(ctx.repo, num, ctx.severity, sync.severity_priority_map)
 
 
-def _handle_existing_child_issue(
+def _maybe_reopen_child(
     *,
     ctx: AlertContext,
     sync: SyncContext,
     issue: Issue,
     parent_issue: Issue | None,
-) -> None:
-    """Update an existing child issue with refreshed alert data."""
-    if parent_issue is None and ctx.rule_id:
-        parent_issue = find_parent_issue(sync.index, rule_id=ctx.rule_id)
+) -> bool:
+    """Reopen a closed child issue and cascade to its parent.
+
+    Returns ``True`` if the issue was reopened.
+    """
+    if issue.state.lower() != "closed":
+        return False
 
     reopened = False
-    if issue.state.lower() == "closed":
-        if sync.dry_run:
-            reopened = True
-            print(f"DRY-RUN: would reopen issue #{issue.number} (alert {ctx.alert_number})")
-        elif gh_issue_edit_state(ctx.repo, issue.number, "open"):
-            reopened = True
-            print(f"Reopened issue #{issue.number} (alert {ctx.alert_number})")
+    if sync.dry_run:
+        reopened = True
+        logging.info(f"DRY-RUN: would reopen issue #{issue.number} (alert {ctx.alert_number})")
+    elif gh_issue_edit_state(ctx.repo, issue.number, "open"):
+        reopened = True
+        logging.info(f"Reopened issue #{issue.number} (alert {ctx.alert_number})")
 
     if reopened:
         maybe_reopen_parent_issue(
@@ -478,6 +475,18 @@ def _handle_existing_child_issue(
         if sync.priority_sync is not None:
             sync.priority_sync.enqueue(ctx.repo, issue.number, ctx.severity, sync.severity_priority_map)
 
+    return reopened
+
+
+def _merge_child_secmeta(
+    *,
+    ctx: AlertContext,
+    issue: Issue,
+) -> tuple[dict[str, str], bool]:
+    """Merge incoming alert data into the child issue's secmeta.
+
+    Returns ``(updated_secmeta, new_occurrence)``.
+    """
     secmeta = load_secmeta(issue.body) or {"schema": "1"}
     secmeta.pop("alert_hash", None)
 
@@ -517,16 +526,48 @@ def _handle_existing_child_issue(
             "last_occurrence_fp": ctx.occurrence_fp or last_occ_fp,
         }
     )
-    if ctx.cwe:
-        secmeta["cwe"] = ctx.cwe
+    if ctx.cve:
+        secmeta["cve"] = ctx.cve
 
+    return secmeta, new_occurrence
+
+
+def _rebuild_and_apply_child_body(
+    *,
+    ctx: AlertContext,
+    sync: SyncContext,
+    issue: Issue,
+    secmeta: dict[str, str],
+) -> None:
+    """Render a fresh child body from *secmeta* + template and apply if changed."""
     human_body = build_child_issue_body(ctx.alert)
     new_body = render_secmeta(secmeta) + "\n\n" + human_body
     new_body = strip_sec_events_from_body(new_body)
 
+    if new_body != issue.body:
+        if sync.dry_run:
+            logging.info(f"DRY-RUN: would update issue #{issue.number} body to template (alert {ctx.alert_number})")
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
+                logging.debug("DRY-RUN: body_preview_begin")
+                logging.debug(new_body)
+                logging.debug("DRY-RUN: body_preview_end")
+        else:
+            gh_issue_edit_body(ctx.repo, issue.number, new_body)
+            issue.body = new_body
+
+
+def _comment_child_event(
+    *,
+    ctx: AlertContext,
+    sync: SyncContext,
+    issue: Issue,
+    reopened: bool,
+    new_occurrence: bool,
+) -> None:
+    """Post a reopen sec-event comment on the child issue."""
     if reopened:
         if sync.dry_run:
-            print(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {ctx.alert_number})")
+            logging.info(f"DRY-RUN: would comment reopen event on issue #{issue.number} (alert {ctx.alert_number})")
         else:
             gh_issue_comment(
                 ctx.repo,
@@ -540,44 +581,19 @@ def _handle_existing_child_issue(
                     }
                 ),
             )
-    elif new_occurrence:
-        if sync.dry_run:
-            print(f"DRY-RUN: would comment occurrence event on issue #{issue.number} (alert {ctx.alert_number})")
-        else:
-            gh_issue_comment(
-                ctx.repo,
-                issue.number,
-                render_sec_event(
-                    {
-                        "action": SEC_EVENT_OCCURRENCE,
-                        "seen_at": utc_today(),
-                        "source": "code_scanning",
-                        "gh_alert_number": str(ctx.alert_number),
-                        "occurrence_fp": str(ctx.occurrence_fp),
-                        "commit_sha": str(ctx.commit_sha),
-                        "path": str(ctx.path),
-                        "start_line": str(ctx.start_line or ""),
-                        "end_line": str(ctx.end_line or ""),
-                    }
-                ),
-            )
 
-    if new_body != issue.body:
-        if sync.dry_run:
-            print(f"DRY-RUN: would update issue #{issue.number} body to template (alert {ctx.alert_number})")
-            if is_verbose():
-                print("DRY-RUN: body_preview_begin")
-                print(new_body)
-                print("DRY-RUN: body_preview_end")
-        else:
-            gh_issue_edit_body(ctx.repo, issue.number, new_body)
-            issue.body = new_body
 
-    # Detect child title drift and update when needed.
+def _sync_child_title_and_labels(
+    *,
+    ctx: AlertContext,
+    sync: SyncContext,
+    issue: Issue,
+) -> None:
+    """Fix title drift and ensure required labels and priority on the child issue."""
     expected_title = build_issue_title(ctx.rule_name, ctx.rule_id, ctx.fingerprint)
     if expected_title != (issue.title or ""):
         if sync.dry_run:
-            print(
+            logging.info(
                 f"DRY-RUN: would update issue #{issue.number} title "
                 f"from {issue.title!r} to {expected_title!r}"
             )
@@ -586,7 +602,7 @@ def _handle_existing_child_issue(
                 issue.title = expected_title
 
     if sync.dry_run:
-        print(
+        logging.info(
             f"DRY-RUN: would ensure labels on issue #{issue.number}: "
             f"[{LABEL_SCOPE_SECURITY}, {LABEL_TYPE_TECH_DEBT}]"
         )
@@ -595,6 +611,24 @@ def _handle_existing_child_issue(
 
     if sync.priority_sync is not None:
         sync.priority_sync.enqueue(ctx.repo, issue.number, ctx.severity, sync.severity_priority_map)
+
+
+def _handle_existing_child_issue(
+    *,
+    ctx: AlertContext,
+    sync: SyncContext,
+    issue: Issue,
+    parent_issue: Issue | None,
+) -> None:
+    """Update an existing child issue with refreshed alert data."""
+    if parent_issue is None and ctx.rule_id:
+        parent_issue = find_parent_issue(sync.index, rule_id=ctx.rule_id)
+
+    reopened = _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=parent_issue)
+    secmeta, new_occurrence = _merge_child_secmeta(ctx=ctx, issue=issue)
+    _rebuild_and_apply_child_body(ctx=ctx, sync=sync, issue=issue, secmeta=secmeta)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=reopened, new_occurrence=new_occurrence)
+    _sync_child_title_and_labels(ctx=ctx, sync=sync, issue=issue)
 
 
 def ensure_issue(
@@ -607,6 +641,7 @@ def ensure_issue(
     severity_priority_map: dict[str, str] | None = None,
     priority_sync: ProjectPrioritySync | None = None,
     severity_changes: list[SeverityChange] | None = None,
+    parent_original_bodies: dict[int, tuple[str, str]] | None = None,
 ) -> None:
     """Process a single alert: create or update its child issue and parent."""
     alert_number = int(alert.get("alert_number"))
@@ -615,14 +650,14 @@ def ensure_issue(
     if alert_state and alert_state != "open":
         # This script is designed to process open alerts only.
         # Input is typically produced by collect_alert.sh with --state open (default).
-        vprint(f"Skip alert {alert_number}: state={alert_state!r} (only 'open' processed)")
+        logging.debug(f"Skip alert {alert_number}: state={alert_state!r} (only 'open' processed)")
         return
 
     tool = str(alert.get("tool") or "")
     rule_id = str(alert.get("rule_id") or "")
     rule_name = alert.get("rule_name")
-    severity = str((alert.get("severity") or "unknown")).lower()
-    cwe = extract_cwe(alert)
+    severity = str((alert.get("severity") or "unknown"))
+    cve = rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE
 
     path = normalize_path(alert.get("file"))
     start_line = alert.get("start_line")
@@ -656,6 +691,7 @@ def ensure_issue(
         alert, issues, index, dry_run=dry_run,
         severity_priority_map=_spm, priority_sync=priority_sync,
         severity_changes=severity_changes,
+        parent_original_bodies=parent_original_bodies,
     )
     matched = find_issue_in_index(
         index,
@@ -674,7 +710,7 @@ def ensure_issue(
         rule_id=rule_id,
         rule_name=str(rule_name or ""),
         severity=severity,
-        cwe=cwe,
+        cve=cve,
         path=path,
         start_line=start_line,
         end_line=end_line,
@@ -696,61 +732,66 @@ def ensure_issue(
     _handle_existing_child_issue(ctx=ctx, sync=sync_ctx, issue=matched, parent_issue=parent_issue)
 
 
-def sync_alerts_and_issues(
+def _init_priority_sync(
     alerts: dict[int, dict[str, Any]],
+    *,
+    severity_priority_map: dict[str, str],
+    project_number: int | None,
+    project_org: str,
+    dry_run: bool,
+) -> ProjectPrioritySync | None:
+    """Create and return a ``ProjectPrioritySync`` instance, or ``None``."""
+    if not severity_priority_map or not project_number:
+        return None
+
+    org = project_org or ""
+    if not org:
+        first_alert = next(iter(alerts.values()), None)
+        if first_alert:
+            repo_full = str(first_alert.get("_repo") or "")
+            org = repo_full.split("/", 1)[0] if "/" in repo_full else ""
+
+    if not org:
+        logging.warning("Cannot determine org for project priority – priority sync disabled")
+        return None
+
+    pf = gh_project_get_priority_field(org, project_number)
+    if pf is None:
+        logging.warning(f"Could not load project #{project_number} metadata – priority sync disabled")
+        return None
+
+    return ProjectPrioritySync(org, project_number, pf, dry_run=dry_run)
+
+
+def _flush_parent_body_updates(
+    parent_original_bodies: dict[int, tuple[str, str]],
     issues: dict[int, Issue],
     *,
-    dry_run: bool = False,
-    severity_priority_map: dict[str, str] | None = None,
-    project_number: int | None = None,
-    project_org: str = "",
-) -> SyncResult:
-    """Sync open alerts into issues.
-
-    Creates/updates child issues (keyed by fingerprint) and ensures a parent issue
-    per rule_id, then links children under the parent via GitHub sub-issues.
-
-    Returns a SyncResult with notifications and severity changes.
-    """
-
-    notifications: list[NotifiedIssue] = []
-    severity_changes: list[SeverityChange] = []
-    index = build_issue_index(issues)
-
-    # Initialise bulk priority sync (one-time prefetch of project items).
-    priority_sync: ProjectPrioritySync | None = None
-    spm = severity_priority_map or {}
-    if spm and project_number:
-        org = project_org or ""
-        if not org:
-            # Derive from the first alert's repo.
-            first_alert = next(iter(alerts.values()), None)
-            if first_alert:
-                repo_full = str(first_alert.get("_repo") or "")
-                org = repo_full.split("/", 1)[0] if "/" in repo_full else ""
-        if org:
-            pf = gh_project_get_priority_field(org, project_number)
-            if pf is not None:
-                priority_sync = ProjectPrioritySync(org, project_number, pf, dry_run=dry_run)
+    dry_run: bool,
+) -> None:
+    """Write deferred parent-issue body updates to GitHub."""
+    for num, (repo, original_body) in parent_original_bodies.items():
+        issue = issues.get(num)
+        if issue is None:
+            continue
+        if issue.body != original_body:
+            if dry_run:
+                logging.info(f"DRY-RUN: would update parent issue #{num} body to template")
+                if logging.getLogger().isEnabledFor(logging.DEBUG):
+                    logging.debug("DRY-RUN: body_preview_begin")
+                    logging.debug(issue.body)
+                    logging.debug("DRY-RUN: body_preview_end")
             else:
-                vprint(f"WARN: Could not load project #{project_number} metadata – priority sync disabled")
-        else:
-            vprint("WARN: Cannot determine org for project priority – priority sync disabled")
+                gh_issue_edit_body(repo, num, issue.body)
 
-    for alert in alerts.values():
-        ensure_issue(
-            alert, issues, index,
-            dry_run=dry_run, notifications=notifications,
-            severity_priority_map=severity_priority_map,
-            priority_sync=priority_sync,
-            severity_changes=severity_changes,
-        )
 
-    # Flush all pending priority mutations in bulk.
-    if priority_sync is not None:
-        priority_sync.flush()
-
-    # Detect child issues that have no matching open alert and label for closure.
+def _label_orphan_issues(
+    alerts: dict[int, dict[str, Any]],
+    index: IssueIndex,
+    *,
+    dry_run: bool,
+) -> None:
+    """Detect open child issues with no matching alert and add the adept-to-close label."""
     alert_fingerprints: set[str] = set()
     for alert in alerts.values():
         msg_params = alert.get("_message_params")
@@ -763,34 +804,76 @@ def sync_alerts_and_issues(
     orphan_fps = open_issue_fps - alert_fingerprints
 
     if not orphan_fps:
-        vprint("No orphan child issues detected – skipping sec:adept-to-close labelling")
-        return SyncResult(notifications=notifications, severity_changes=severity_changes)
+        logging.debug("No orphan child issues detected \u2013 skipping sec:adept-to-close labelling")
+        return
 
-    print(f"Detected {len(orphan_fps)} orphan child issue(s) (open issue without matching alert)")
+    logging.info(f"Detected {len(orphan_fps)} orphan child issue(s) (open issue without matching alert)")
 
     for fp in orphan_fps:
         issue = index.by_fingerprint[fp]
         repo = load_secmeta(issue.body).get("repo", "")
         if not repo:
-            vprint(f"Skip orphan labelling for issue #{issue.number}: no repo in secmeta")
+            logging.debug(f"Skip orphan labelling for issue #{issue.number}: no repo in secmeta")
             continue
-        # Skip if the issue already carries the label.
         if issue.labels and LABEL_SEC_ADEPT_TO_CLOSE in issue.labels:
-            vprint(
+            logging.debug(
                 f"Label {LABEL_SEC_ADEPT_TO_CLOSE!r} already on issue #{issue.number} "
                 f"(fingerprint={fp[:12]}…) – skipping"
             )
             continue
         if dry_run:
-            print(
+            logging.info(
                 f"DRY-RUN: would add label {LABEL_SEC_ADEPT_TO_CLOSE!r} "
-                f"to issue #{issue.number} (fingerprint={fp[:12]}…) – no matching open alert"
+                f"to issue #{issue.number} (fingerprint={fp[:12]}\u2026) \u2013 no matching open alert"
             )
         else:
-            print(
+            logging.info(
                 f"Adding label {LABEL_SEC_ADEPT_TO_CLOSE!r} to issue #{issue.number} "
                 f"(fingerprint={fp[:12]}…) – no matching open alert"
             )
             gh_issue_add_labels(repo, issue.number, [LABEL_SEC_ADEPT_TO_CLOSE])
+
+
+def sync_alerts_and_issues(
+    alerts: dict[int, dict[str, Any]],
+    issues: dict[int, Issue],
+    *,
+    dry_run: bool = False,
+    severity_priority_map: dict[str, str] | None = None,
+    project_number: int | None = None,
+    project_org: str = "",
+) -> SyncResult:
+    """Sync open alerts into issues."""
+
+    notifications: list[NotifiedIssue] = []
+    severity_changes: list[SeverityChange] = []
+    index = build_issue_index(issues)
+    spm = severity_priority_map or {}
+    parent_original_bodies: dict[int, tuple[str, str]] = {}
+
+    priority_sync = _init_priority_sync(
+        alerts,
+        severity_priority_map=spm,
+        project_number=project_number,
+        project_org=project_org,
+        dry_run=dry_run,
+    )
+
+    for alert in alerts.values():
+        ensure_issue(
+            alert, issues, index,
+            dry_run=dry_run, notifications=notifications,
+            severity_priority_map=severity_priority_map,
+            priority_sync=priority_sync,
+            severity_changes=severity_changes,
+            parent_original_bodies=parent_original_bodies,
+        )
+
+    _flush_parent_body_updates(parent_original_bodies, issues, dry_run=dry_run)
+
+    if priority_sync is not None:
+        priority_sync.flush()
+
+    _label_orphan_issues(alerts, index, dry_run=dry_run)
 
     return SyncResult(notifications=notifications, severity_changes=severity_changes)

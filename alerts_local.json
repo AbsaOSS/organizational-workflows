@@ -1,0 +1,141 @@
+{
+  "generated_at": "2026-02-27T11:42:43Z",
+  "repo": {
+    "id": 1129714123,
+    "name": "aquasec-scan-results",
+    "full_name": "AbsaOSS/aquasec-scan-results",
+    "private": false,
+    "html_url": "https://github.com/AbsaOSS/aquasec-scan-results",
+    "default_branch": "master",
+    "owner": {
+      "login": "AbsaOSS",
+      "id": 18133719,
+      "html_url": "https://github.com/AbsaOSS"
+    }
+  },
+  "query": {
+    "state": "open"
+  },
+  "alerts": [
+    {
+      "alert_number": 14,
+      "state": "open",
+      "created_at": "2026-02-25T08:14:30Z",
+      "updated_at": "2026-02-25T08:54:49Z",
+      "url": "https://api.github.com/repos/AbsaOSS/aquasec-scan-results/code-scanning/alerts/14",
+      "alert_url": "https://github.com/AbsaOSS/aquasec-scan-results/security/code-scanning/14",
+      "rule_id": "AVD-PIPELINE-0003",
+      "rule_name": "pipelineMisconfigurations",
+      "severity": "low",
+      "confidence": "note",
+      "impact": null,
+      "likelihood": null,
+      "tags": [
+        "LOW",
+        "pipelineMisconfigurations",
+        "security"
+      ],
+      "help_uri": null,
+      "tool": "AquaSec",
+      "tool_version": "1.0.0",
+      "ref": "refs/heads/master",
+      "commit_sha": "2c599611ab547e8b01c5e4eba27c71133bbf017e",
+      "message": "Artifact: .github/workflows/check_python.yml\nType: pipelineMisconfigurations\nVulnerability: AVD-PIPELINE-0003\nSeverity: LOW\nMessage: Consider removing variable printing from job 'Pylint Static Code Analysis', step 'Check Pylint score', line '99'\nRepository: AbsaOSS/aquasec-scan-results\nReachable: False\nScan date: 2026-02-26T08:28:27.338Z\nFirst seen: 2026-02-05T10:15:48.348Z\nSCM file: https://github.com/AbsaOSS/aquasec-scan-results/blob/4217730ca2a42378ce09e3042105b972f0814acd/.github/workflows/check_python.yml\nStart line: 99\nAlert hash: 607f02d9360cbb772bcb8fcc4e90dc24",
+      "instance_url": null,
+      "classifications": [],
+      "file": ".github/workflows/check_python.yml",
+      "start_line": 99,
+      "end_line": 99
+    },
+    {
+      "alert_number": 13,
+      "state": "open",
+      "created_at": "2026-02-25T08:14:30Z",
+      "updated_at": "2026-02-25T08:54:49Z",
+      "url": "https://api.github.com/repos/AbsaOSS/aquasec-scan-results/code-scanning/alerts/13",
+      "alert_url": "https://github.com/AbsaOSS/aquasec-scan-results/security/code-scanning/13",
+      "rule_id": "AVD-PIPELINE-0003",
+      "rule_name": "pipelineMisconfigurations",
+      "severity": "low",
+      "confidence": "note",
+      "impact": null,
+      "likelihood": null,
+      "tags": [
+        "LOW",
+        "pipelineMisconfigurations",
+        "security"
+      ],
+      "help_uri": null,
+      "tool": "AquaSec",
+      "tool_version": "1.0.0",
+      "ref": "refs/heads/master",
+      "commit_sha": "2c599611ab547e8b01c5e4eba27c71133bbf017e",
+      "message": "Artifact: .github/workflows/check_python.yml\nType: pipelineMisconfigurations\nVulnerability: AVD-PIPELINE-0003\nSeverity: LOW\nMessage: Consider removing variable printing from job 'Pylint Static Code Analysis', step 'Check Pylint score', line '98'\nRepository: AbsaOSS/aquasec-scan-results\nReachable: False\nScan date: 2026-02-26T08:28:27.338Z\nFirst seen: 2026-02-05T10:15:48.348Z\nSCM file: https://github.com/AbsaOSS/aquasec-scan-results/blob/4217730ca2a42378ce09e3042105b972f0814acd/.github/workflows/check_python.yml\nStart line: 98\nAlert hash: 777bf456db3d0aee4ad038030dae982a",
+      "instance_url": null,
+      "classifications": [],
+      "file": ".github/workflows/check_python.yml",
+      "start_line": 98,
+      "end_line": 98
+    },
+    {
+      "alert_number": 12,
+      "state": "open",
+      "created_at": "2026-02-25T08:14:30Z",
+      "updated_at": "2026-02-25T08:54:49Z",
+      "url": "https://api.github.com/repos/AbsaOSS/aquasec-scan-results/code-scanning/alerts/12",
+      "alert_url": "https://github.com/AbsaOSS/aquasec-scan-results/security/code-scanning/12",
+      "rule_id": "AVD-PIPELINE-0003",
+      "rule_name": "pipelineMisconfigurations",
+      "severity": "low",
+      "confidence": "note",
+      "impact": null,
+      "likelihood": null,
+      "tags": [
+        "LOW",
+        "pipelineMisconfigurations",
+        "security"
+      ],
+      "help_uri": null,
+      "tool": "AquaSec",
+      "tool_version": "1.0.0",
+      "ref": "refs/heads/master",
+      "commit_sha": "2c599611ab547e8b01c5e4eba27c71133bbf017e",
+      "message": "Artifact: .github/workflows/check_python.yml\nType: pipelineMisconfigurations\nVulnerability: AVD-PIPELINE-0003\nSeverity: LOW\nMessage: Consider removing variable printing from job 'Pylint Static Code Analysis', step 'Check Pylint score', line '102'\nRepository: AbsaOSS/aquasec-scan-results\nReachable: False\nScan date: 2026-02-26T08:28:27.338Z\nFirst seen: 2026-02-05T10:15:48.348Z\nSCM file: https://github.com/AbsaOSS/aquasec-scan-results/blob/4217730ca2a42378ce09e3042105b972f0814acd/.github/workflows/check_python.yml\nStart line: 102\nAlert hash: 1d7fde4efb9112220a6f5abbe867c8c5",
+      "instance_url": null,
+      "classifications": [],
+      "file": ".github/workflows/check_python.yml",
+      "start_line": 102,
+      "end_line": 102
+    },
+    {
+      "alert_number": 11,
+      "state": "open",
+      "created_at": "2026-02-25T08:14:30Z",
+      "updated_at": "2026-02-25T13:27:33Z",
+      "url": "https://api.github.com/repos/AbsaOSS/aquasec-scan-results/code-scanning/alerts/11",
+      "alert_url": "https://github.com/AbsaOSS/aquasec-scan-results/security/code-scanning/11",
+      "rule_id": "AVD-PIPELINE-0003",
+      "rule_name": "pipelineMisconfigurations",
+      "severity": "low",
+      "confidence": "note",
+      "impact": null,
+      "likelihood": null,
+      "tags": [
+        "LOW",
+        "pipelineMisconfigurations",
+        "security"
+      ],
+      "help_uri": null,
+      "tool": "AquaSec",
+      "tool_version": "1.0.0",
+      "ref": "refs/heads/master",
+      "commit_sha": "2c599611ab547e8b01c5e4eba27c71133bbf017e",
+      "message": "Artifact: .github/workflows/check_python.yml\nType: pipelineMisconfigurations\nVulnerability: AVD-PIPELINE-0003\nSeverity: LOW\nMessage: Consider removing variable printing from job 'Pylint Static Code Analysis', step 'Analyze code with Pylint', line '94'\nRepository: AbsaOSS/aquasec-scan-results\nReachable: False\nScan date: 2026-02-26T08:28:27.338Z\nFirst seen: 2026-02-05T10:15:48.348Z\nSCM file: https://github.com/AbsaOSS/aquasec-scan-results/blob/4217730ca2a42378ce09e3042105b972f0814acd/.github/workflows/check_python.yml\nStart line: 94\nAlert hash: ca4ef4013751899ad185ab6b0699f451",
+      "instance_url": null,
+      "classifications": [],
+      "file": ".github/workflows/check_python.yml",
+      "start_line": 94,
+      "end_line": 94
+    }
+  ]
+}

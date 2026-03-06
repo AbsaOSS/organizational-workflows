@@ -1,17 +1,39 @@
-# Organizational workflows
+# Organizational Workflows
 
-This repository is a small toolkit of repeatable, organization-level workflows for GitHub repositories.
-Each workflow lives next to its automation code under `github/` and is documented in a folder-level README.
+A toolkit of repeatable, organization-level GitHub Actions workflows.
+Each workflow solution has its own automation code and documentation.
 
-## Workflows
+## Solutions
 
-### Security automation (Code Scanning → Issues)
+| Solution | Description | Docs |
+|----------|-------------|------|
+| **Security** | Turns Code Scanning alerts (SARIF-based, e.g. AquaSec) into a managed GitHub Issues backlog | [docs/security.md](docs/security.md) |
 
-Turns GitHub Code Scanning alerts (SARIF-based tools such as AquaSec) into a managed GitHub Issues backlog.
-Issues become the system of record for ownership, postponement, lifecycle events, and reporting.
+## Quick start
 
-- Documentation and usage: [github/security/README.md](github/security/README.md)
+```bash
+# install the project (editable) with all dev dependencies
+pip install -e '.[dev]'
+
+# run all tests
+pytest
+```
+
+## Repository layout
+
+```
+.github/workflows/          # reusable GitHub Actions workflows (the product)
+github/
+  shared/                   # shared Python utilities used across solutions
+  security/                 # security automation scripts & code
+docs/                       # per-solution documentation
+```
+
+## Shared workflows
+
+Application repositories adopt a solution by adding a short **caller workflow** that delegates to the reusable workflow in this repo.
+See each solution's documentation for caller examples and required secrets.
 
 ## Next
 
-More workflows will be added over time, each with its own folder and README under `github/`.
+More workflow solutions will be added over time.

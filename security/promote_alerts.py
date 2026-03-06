@@ -59,7 +59,7 @@ from shared.priority import parse_severity_priority_map
 from utils.alert_parser import load_open_alerts_from_file
 from utils.constants import LABEL_SCOPE_SECURITY
 from utils.issue_sync import sync_alerts_and_issues
-from utils.logging_config import setup_logging
+from shared.logging_config import setup_logging
 from utils.teams import notify_teams, notify_teams_severity_changes
 
 

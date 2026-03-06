@@ -75,7 +75,7 @@ if _github_root not in sys.path:
     sys.path.insert(0, _github_root)
 
 from shared.common import parse_runner_debug
-from utils.logging_config import setup_logging
+from shared.logging_config import setup_logging
 
 
 def _text_block(text: str, **kwargs: Any) -> Dict[str, Any]:

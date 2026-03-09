@@ -24,6 +24,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from shared.models import Issue
+from utils.constants import LABEL_SEC_ADEPT_TO_CLOSE
 from utils.issue_sync import (
     _append_notification,
     _comment_child_event,
@@ -774,7 +775,7 @@ def test_label_orphan_found(mocker: MockerFixture) -> None:
     _label_orphan_issues(alerts, index, dry_run=False)
     mock_labels.assert_called_once()
     label_args = mock_labels.call_args[0][2]
-    assert "sec:adept-to-close" in label_args
+    assert LABEL_SEC_ADEPT_TO_CLOSE in label_args
 
 def test_label_orphan_dry_run() -> None:
     """Dry-run: logs but does not call gh."""
@@ -789,7 +790,7 @@ def test_label_orphan_skips_already_labelled() -> None:
     child = _issue_with_secmeta(1, {
         "type": "child", "fingerprint": "fp_orphan", "repo": "org/repo",
     })
-    child.labels = ["sec:adept-to-close"]
+    child.labels = [LABEL_SEC_ADEPT_TO_CLOSE]
     index = build_issue_index({1: child})
     _label_orphan_issues({}, index, dry_run=False)
 

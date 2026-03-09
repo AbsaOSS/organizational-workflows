@@ -1,0 +1,44 @@
+# Label configuration for the security automation pipeline.
+#
+# Each key is a logical label purpose; the value is the actual GitHub label
+# name used in your repository.  Override any value to match your own
+# labelling scheme.
+#
+# Example – if your repo uses "type:epic" instead of "epic":
+#   epic: "type:epic"
+#
+# The file is optional.  When absent or when a key is missing, the built-in
+# defaults (shown below) are used.
+
+# -- Core labels applied to every security issue 
+scope_security: "scope:security"
+type_tech_debt: "type:tech-debt"
+epic: "epic"
+
+# -- Lifecycle labels 
+adept_to_close: "sec:adept-to-close"
+
+# -- Source 
+src_aquasec_sarif: "sec:src/aquasec-sarif"
+
+# -- State 
+state_postponed: "sec:state/postponed"
+state_needs_review: "sec:state/needs-review"
+
+# -- Severity
+sev_critical: "sec:sev/critical"
+sev_high: "sec:sev/high"
+sev_medium: "sec:sev/medium"
+sev_low: "sec:sev/low"
+
+# -- Closure reasons 
+close_fixed: "sec:close/fixed"
+close_false_positive: "sec:close/false-positive"
+close_accepted_risk: "sec:close/accepted-risk"
+close_not_applicable: "sec:close/not-applicable"
+
+# -- Postpone reasons
+postpone_vendor: "sec:postpone/vendor"
+postpone_platform: "sec:postpone/platform"
+postpone_roadmap: "sec:postpone/roadmap"
+postpone_other: "sec:postpone/other"

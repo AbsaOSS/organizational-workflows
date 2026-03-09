@@ -15,25 +15,33 @@
 # limitations under the License.
 #
 # Check that required labels exist in a GitHub repo using gh + jq.
+# Labels are loaded from labels.yml when available; otherwise built-in
+# defaults are used.
+#
 # Usage:
 #   ./check_labels.sh --repo owner/repo
+#   ./check_labels.sh --repo owner/repo --label-config /path/to/labels.yml
 
 set -euo pipefail
 
-REQUIRED_LABELS=(
-  "scope:security"
-  "type:tech-debt"
-  "epic"
-  "sec:adept-to-close"
-)
+# -- Built-in defaults (same as labels.yml ships with) --------------------
+_DEFAULT_SCOPE_SECURITY="scope:security"
+_DEFAULT_TYPE_TECH_DEBT="type:tech-debt"
+_DEFAULT_EPIC="epic"
+_DEFAULT_ADEPT_TO_CLOSE="sec:adept-to-close"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LABEL_CONFIG=""
 
 repo=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo)
       repo="${2:-}"; shift 2;;
+    --label-config)
+      LABEL_CONFIG="${2:-}"; shift 2;;
     -h|--help)
-      echo "Usage: $0 --repo owner/repo"; exit 0;;
+      echo "Usage: $0 --repo owner/repo [--label-config path/to/labels.yml]"; exit 0;;
     *)
       echo "Unknown argument: $1" >&2; exit 2;;
   esac
@@ -43,6 +51,36 @@ if [[ -z "$repo" ]]; then
   echo "ERROR: --repo owner/repo is required" >&2
   exit 2
 fi
+
+if [[ -z "$LABEL_CONFIG" ]]; then
+  LABEL_CONFIG="$SCRIPT_DIR/labels.yml"
+fi
+
+# Helper: read a value from the flat YAML config 
+# Usage: _cfg_val <key> <default>
+_cfg_val() {
+  local key="$1" default="$2"
+  if [[ ! -f "$LABEL_CONFIG" ]]; then
+    printf '%s' "$default"
+    return
+  fi
+
+  local val
+  val="$(grep -E "^${key}\s*:" "$LABEL_CONFIG" 2>/dev/null | head -1 \
+       | sed -E 's/^[^:]+:\s*//; s/^["'"'"']//; s/["'"'"']\s*(#.*)?$//; s/\s*#.*$//' )" || true
+  if [[ -n "$val" ]]; then
+    printf '%s' "$val"
+  else
+    printf '%s' "$default"
+  fi
+}
+
+REQUIRED_LABELS=(
+  "$(_cfg_val scope_security "$_DEFAULT_SCOPE_SECURITY")"
+  "$(_cfg_val type_tech_debt "$_DEFAULT_TYPE_TECH_DEBT")"
+  "$(_cfg_val epic           "$_DEFAULT_EPIC")"
+  "$(_cfg_val adept_to_close "$_DEFAULT_ADEPT_TO_CLOSE")"
+)
 
 if ! json_out="$(gh label list --repo "$repo" --json name --limit 500 2>/dev/null)"; then
   echo "ERROR: failed to list labels for $repo" >&2

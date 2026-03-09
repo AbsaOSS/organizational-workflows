@@ -57,7 +57,7 @@ from shared.github_issues import gh_issue_list_by_label
 from shared.priority import parse_severity_priority_map
 
 from utils.alert_parser import load_open_alerts_from_file
-from utils.constants import LABEL_SCOPE_SECURITY
+from utils.constants import LABEL_SCOPE_SECURITY, reload_labels
 from utils.issue_sync import sync_alerts_and_issues
 from utils.logging_config import setup_logging
 from utils.teams import notify_teams, notify_teams_severity_changes
@@ -122,6 +122,13 @@ def parse_args() -> argparse.Namespace:
         help="Teams Incoming Webhook URL for new/reopened issue alerts (default: $TEAMS_WEBHOOK_URL). "
              "If not set, Teams notification is skipped.",
     )
+    p.add_argument(
+        "--label-config",
+        default=None,
+        help="Path to a labels.yml file that maps logical label purposes to actual "
+             "GitHub label names.  When omitted, the default labels.yml next to this "
+             "script is used (and if that file is absent, built-in defaults apply).",
+    )
     return p.parse_args()
 
 
@@ -135,8 +142,27 @@ def main() -> None:
     verbose = bool(args.verbose) or parse_runner_debug()
     setup_logging(verbose)
 
+    # Load custom label configuration (must happen before any label constant
+    # is resolved elsewhere, such as in issue_sync).  Calling reload_labels()
+    # refreshes the module-level LABEL_* attributes in constants.py.
+    label_config_path: str | None = args.label_config
+    reload_labels(label_config_path)
+
+    # If the user didn't explicitly pass --issue-label, use the (possibly
+    # reconfigured) scope_security label from the config file.
+    # Argparse captured the LABEL_SCOPE_SECURITY value at import time, so to 
+    # honour a runtime --label-config you must:
+    #   1. reload the constants
+    #   2. detect whether the user actually supplied a different --issue-label (vs. the stale default)
+    #   3. if not supplied, replace the stale default with the freshly loaded label
+    from utils.constants import LABEL_SCOPE_SECURITY as _resolved  # noqa: E402
+    issue_label = str(args.issue_label)
+    
+    if issue_label == LABEL_SCOPE_SECURITY:
+        issue_label = _resolved
+
     repo_full, open_alerts = load_open_alerts_from_file(args.file)
-    issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
+    issues = gh_issue_list_by_label(repo_full, issue_label)
 
     # Build severity → priority map from user input; empty by default (priority skipped).
     spm = parse_severity_priority_map(str(args.severity_priority_map or ""))

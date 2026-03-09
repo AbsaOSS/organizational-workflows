@@ -17,6 +17,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
   - [How to adopt a shared workflow](#how-to-adopt-a-shared-workflow)
     - [Aquasec Night Scan](#aquasec-night-scan)
     - [Remove sec:adept-to-close on close](#remove-secadept-to-close-on-close)
+- [Label configuration](#label-configuration)
 - [Labels (contract)](#labels-contract)
 - [Issue metadata (secmeta)](#issue-metadata-secmeta)
 - [Issue structure](#issue-structure)
@@ -41,6 +42,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 | `check_labels.sh` | Verify that all labels required by the automation exist in the repository | `gh` |
 | `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
 | `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
+| `labels.yml` | Label configuration: maps logical label purposes to actual GitHub label names | — |
 | `send_to_teams.py` | Send a Markdown message to a Microsoft Teams channel via Incoming Webhook | `requests` |
 | `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
 | `derive_team_security_metrics.py` | Compute metrics/deltas from snapshots | stdlib |
@@ -205,41 +207,170 @@ jobs:
 
 > **Note:** The calling repository must grant the permissions the reusable workflow needs (listed in each workflow file). For cross-organization calls the reusable workflow repository must be set to "Accessible from repositories in the organization" under **Settings → Actions → General**.
 
+## Label configuration
+
+The four core labels used by the automation pipeline are **configurable** via a `labels.yml` file placed in the `github/security/` directory (next to the scripts). This lets each consuming repository map the logical label purposes to its own label names.
+
+### Default `labels.yml`
+
+```yaml
+# Core
+scope_security: "scope:security"
+type_tech_debt: "type:tech-debt"
+epic: "epic"
+
+# Lifecycle
+adept_to_close: "sec:adept-to-close"
+
+# Source
+src_aquasec_sarif: "sec:src/aquasec-sarif"
+
+# State
+state_postponed: "sec:state/postponed"
+state_needs_review: "sec:state/needs-review"
+
+# Severity
+sev_critical: "sec:sev/critical"
+sev_high: "sec:sev/high"
+sev_medium: "sec:sev/medium"
+sev_low: "sec:sev/low"
+
+# Closure reasons
+close_fixed: "sec:close/fixed"
+close_false_positive: "sec:close/false-positive"
+close_accepted_risk: "sec:close/accepted-risk"
+close_not_applicable: "sec:close/not-applicable"
+
+# Postpone reasons
+postpone_vendor: "sec:postpone/vendor"
+postpone_platform: "sec:postpone/platform"
+postpone_roadmap: "sec:postpone/roadmap"
+postpone_other: "sec:postpone/other"
+```
+
+### Customising labels
+
+To override any label, edit `labels.yml` in your copy of the scripts (or provide a path at runtime). For example, if your repository uses `type:epic` instead of `epic`:
+
+```yaml
+epic: "type:epic"
+```
+
+Only the keys you include are overridden; missing keys fall back to the built-in defaults shown above.
+
+### Passing a custom config path
+
+All three entrypoints accept a `--label-config` flag:
+
+```bash
+# Shell wrapper
+./sync_security_alerts.sh --repo my-org/my-repo --label-config /path/to/labels.yml
+
+# Label check only
+./check_labels.sh --repo my-org/my-repo --label-config /path/to/labels.yml
+
+# Python promote step
+python3 promote_alerts.py --file alerts.json --label-config /path/to/labels.yml
+```
+
+When `--label-config` is omitted, the scripts look for `labels.yml` in their own directory. If that file is absent, built-in defaults are used (identical to the table above).
+
+### Configurable keys
+
+#### Core (applied by the pipeline)
+
+| Key | Default value | Purpose |
+| --- | --- | --- |
+| `scope_security` | `scope:security` | Applied to every security issue; used to mine existing issues |
+| `type_tech_debt` | `type:tech-debt` | Applied to every security issue |
+| `epic` | `epic` | Applied to parent (grouping) issues |
+| `adept_to_close` | `sec:adept-to-close` | Applied to orphan child issues that no longer have a matching alert |
+
+#### Source
+
+| Key | Default value | Purpose |
+| --- | --- | --- |
+| `src_aquasec_sarif` | `sec:src/aquasec-sarif` | Identifies the scan source |
+
+#### State
+
+| Key | Default value | Purpose |
+| --- | --- | --- |
+| `state_postponed` | `sec:state/postponed` | Issue has been postponed |
+| `state_needs_review` | `sec:state/needs-review` | Issue needs manual review |
+
+#### Severity
+
+| Key | Default value | Purpose |
+| --- | --- | --- |
+| `sev_critical` | `sec:sev/critical` | Critical severity |
+| `sev_high` | `sec:sev/high` | High severity |
+| `sev_medium` | `sec:sev/medium` | Medium severity |
+| `sev_low` | `sec:sev/low` | Low severity |
+
+#### Closure reasons
+
+| Key | Default value | Purpose |
+| --- | --- | --- |
+| `close_fixed` | `sec:close/fixed` | Fixed in code |
+| `close_false_positive` | `sec:close/false-positive` | Not a real finding |
+| `close_accepted_risk` | `sec:close/accepted-risk` | Risk acknowledged |
+| `close_not_applicable` | `sec:close/not-applicable` | Not applicable to this repo |
+
+#### Postpone reasons
+
+| Key | Default value | Purpose |
+| --- | --- | --- |
+| `postpone_vendor` | `sec:postpone/vendor` | Waiting on vendor fix |
+| `postpone_platform` | `sec:postpone/platform` | Platform constraint |
+| `postpone_roadmap` | `sec:postpone/roadmap` | Scheduled for a later milestone |
+| `postpone_other` | `sec:postpone/other` | Other reason (detail in comment) |
+
 ## Labels (contract)
 
-This repository contains multiple scripts with different “label contracts”:
+All label names used by this automation are configurable via `labels.yml` (see [Label configuration](#label-configuration) above). The values below are the **defaults**.
 
 - `promote_alerts.py` mines existing issues by `--issue-label` (default: `scope:security`) and ensures baseline labels `scope:security` and `type:tech-debt` on child/parent issues it creates/updates.
 
 ### Source
 
-- `sec:src/aquasec-sarif`
+| Config key | Default label |
+| --- | --- |
+| `src_aquasec_sarif` | `sec:src/aquasec-sarif` |
 
 ### State
 
-- `sec:state/postponed`
-- `sec:state/needs-review`
+| Config key | Default label |
+| --- | --- |
+| `state_postponed` | `sec:state/postponed` |
+| `state_needs_review` | `sec:state/needs-review` |
 
 ### Severity
 
-- `sec:sev/critical`
-- `sec:sev/high`
-- `sec:sev/medium`
-- `sec:sev/low`
+| Config key | Default label |
+| --- | --- |
+| `sev_critical` | `sec:sev/critical` |
+| `sev_high` | `sec:sev/high` |
+| `sev_medium` | `sec:sev/medium` |
+| `sev_low` | `sec:sev/low` |
 
 ### Closure reasons
 
-- `sec:close/fixed`
-- `sec:close/false-positive`
-- `sec:close/accepted-risk`
-- `sec:close/not-applicable`
+| Config key | Default label |
+| --- | --- |
+| `close_fixed` | `sec:close/fixed` |
+| `close_false_positive` | `sec:close/false-positive` |
+| `close_accepted_risk` | `sec:close/accepted-risk` |
+| `close_not_applicable` | `sec:close/not-applicable` |
 
 ### Postpone reasons
 
-- `sec:postpone/vendor`
-- `sec:postpone/platform`
-- `sec:postpone/roadmap`
-- `sec:postpone/other`
+| Config key | Default label |
+| --- | --- |
+| `postpone_vendor` | `sec:postpone/vendor` |
+| `postpone_platform` | `sec:postpone/platform` |
+| `postpone_roadmap` | `sec:postpone/roadmap` |
+| `postpone_other` | `sec:postpone/other` |
 
 ## Issue metadata (secmeta)
 

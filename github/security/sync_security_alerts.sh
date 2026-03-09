@@ -21,6 +21,7 @@ REPO=""
 STATE="open"            # open | dismissed | fixed | all
 OUT_FILE="alerts.json"
 ISSUE_LABEL="scope:security"
+LABEL_CONFIG=""
 SEVERITY_PRIORITY_MAP="${SEVERITY_PRIORITY_MAP:-}"
 PROJECT_NUMBER="${PROJECT_NUMBER:-}"
 PROJECT_ORG="${PROJECT_ORG:-}"
@@ -47,6 +48,8 @@ Options:
   --state <state>       open | dismissed | fixed | all (default: open)
   --out <file>          Output file for alerts JSON (default: alerts.json)
   --issue-label <label> Mine existing issues with this label (default: scope:security)
+  --label-config <file>  Path to labels.yml config file that maps logical label
+                        purposes to actual label names (default: <script_dir>/labels.yml)
   --severity-priority-map <map>
                         Comma-separated severity=priority pairs, e.g.
                         'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor,Unknown=Normal'
@@ -123,6 +126,10 @@ while [[ $# -gt 0 ]]; do
       ISSUE_LABEL="$2"
       shift 2
       ;;
+    --label-config)
+      LABEL_CONFIG="$2"
+      shift 2
+      ;;
     --severity-priority-map)
       SEVERITY_PRIORITY_MAP="$2"
       shift 2
@@ -187,8 +194,12 @@ esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+CHECK_LABELS_ARGS=("$SCRIPT_DIR/check_labels.sh" --repo "$REPO")
+if [[ -n "$LABEL_CONFIG" ]]; then
+  CHECK_LABELS_ARGS+=(--label-config "$LABEL_CONFIG")
+fi
 if (( ! SKIP_LABEL_CHECK )); then
-  "$SCRIPT_DIR/check_labels.sh" --repo "$REPO"
+  "${CHECK_LABELS_ARGS[@]}"
 fi
 
 if [[ -f "$OUT_FILE" ]]; then
@@ -203,6 +214,9 @@ fi
 "$SCRIPT_DIR/collect_alert.sh" --repo "$REPO" --state "$STATE" --out "$OUT_FILE"
 
 PROMOTE_ARGS=("$SCRIPT_DIR/promote_alerts.py" --file "$OUT_FILE" --issue-label "$ISSUE_LABEL")
+if [[ -n "$LABEL_CONFIG" ]]; then
+  PROMOTE_ARGS+=(--label-config "$LABEL_CONFIG")
+fi
 if (( DRY_RUN )); then
   PROMOTE_ARGS+=(--dry-run)
 fi

@@ -65,17 +65,16 @@ from typing import Any, Dict, List
 
 import requests
 
-# Ensure the github/ root is on sys.path so `shared.*` is importable,
-# and the security/ dir so `utils.*` is importable.
+# Ensure the repo root is on sys.path so `shared.*` is importable.
 _script_dir = os.path.dirname(os.path.abspath(__file__))
 if _script_dir not in sys.path:
     sys.path.insert(0, _script_dir)
-_github_root = os.path.normpath(os.path.join(_script_dir, ".."))
-if _github_root not in sys.path:
-    sys.path.insert(0, _github_root)
+_repo_root = os.path.normpath(os.path.join(_script_dir, ".."))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 from shared.common import parse_runner_debug
-from utils.logging_config import setup_logging
+from shared.logging_config import setup_logging
 
 
 def _text_block(text: str, **kwargs: Any) -> Dict[str, Any]:

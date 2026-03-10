@@ -118,10 +118,10 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
-          cache-dependency-path: org-workflows/github/security/requirements.txt
+          cache-dependency-path: org-workflows/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r org-workflows/github/security/requirements.txt
+        run: pip install -r org-workflows/requirements.txt
 
       - name: Run alert-to-issue sync
         env:
@@ -131,4 +131,4 @@ jobs:
           PROJECT_NUMBER: ${{ inputs.project-number }}
           PROJECT_ORG: ${{ inputs.project-org }}
         run: |
-          org-workflows/github/security/sync_security_alerts.sh
+          org-workflows/security/sync_security_alerts.sh

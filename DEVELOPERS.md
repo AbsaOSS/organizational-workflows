@@ -1,7 +1,7 @@
 # Developer Guide — Security Automation
 
 This document covers everything needed to develop, test, and maintain the
-scripts in `github/security/`.
+scripts in `src/security/`.
 
 ## Prerequisites
 
@@ -21,9 +21,14 @@ pip install -r requirements-dev.txt    # dev deps     (pytest, pytest-cov)
 ## Project layout
 
 ```text
-github/security/
-├── tests/                   # All unit tests
+src/security/
+├── utils/                   # Core library modules
+├── promote_alerts.py        # Main sync entrypoint (Python)
+├── send_to_teams.py         # Teams notification helper
+tests/
+├── security/
 │   ├── conftest.py          # Shared fixtures (synthetic alert payloads)
+│   ├── test_promote_alerts.py
 │   ├── test_send_to_teams.py
 │   └── utils/               # Mirrors utils/ module structure
 │       ├── test_alert_parser.py
@@ -35,17 +40,13 @@ github/security/
 │       ├── test_secmeta.py
 │       ├── test_teams.py
 │       └── test_templates.py
-├── utils/                   # Core library modules
-├── promote_alerts.py        # Main sync entrypoint (Python)
-├── send_to_teams.py         # Teams notification helper
-├── pyproject.toml           # pytest & coverage config
-├── requirements.txt         # Runtime dependencies
-└── requirements-dev.txt     # Development dependencies
+pyproject.toml               # pytest & coverage config
+requirements.txt             # Runtime + dev dependencies
 ```
 
 ## Running tests
 
-All commands assume your working directory is `github/security/`.
+All commands assume your working directory is the repository root.
 
 ### Quick run
 
@@ -81,7 +82,7 @@ python3 -m pytest tests/utils/test_models.py::test_severity_direction_escalate -
 
 - **Framework:** [pytest](https://docs.pytest.org/) — strictly plain
   `test_` functions; **no test classes**.
-- **Fixtures** are defined in `tests/conftest.py` (shared) or at the top of
+- **Fixtures** are defined in `tests/security/conftest.py` or at the top of
   each test module (local).
 - **Test data** uses synthetic/generic identifiers (`test-org/test-repo`).
   Do **not** embed real organisation or repository names.

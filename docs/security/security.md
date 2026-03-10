@@ -1,16 +1,16 @@
-# Security automation (Code Scanning → Issues)
+# Security Automation (Code Scanning → Issues)
 
-This folder contains the scripts and conventions to turn GitHub **Code Scanning alerts** (SARIF-based, e.g. AquaSec) into a managed **GitHub Issues** backlog.
+Turns GitHub **Code Scanning alerts** (SARIF-based, e.g. AquaSec) into a managed **GitHub Issues** backlog.
 
 In one sentence: SARIF uploads create alerts; these scripts sync alerts into Issues; labels + structured comments drive lifecycle; reporting is derived from Issues.
 
 ## Table of contents
 
-- [What this is (and what it isn’t)](#what-this-is-and-what-it-isnt)
+- [What this is (and what it isn't)](#what-this-is-and-what-it-isnt)
 - [Contents](#contents)
 - [Quick start (local)](#quick-start-local)
-  - [Recommended (expected): `sync_security_alerts.sh`](#recommended-expected-sync_security_alertssh)
-  - [Advanced (expert): individual steps](#advanced-expert-individual-steps)
+  - [Recommended: `sync_security_alerts.sh`](#recommended-sync_security_alertssh)
+  - [Advanced: individual steps](#advanced-individual-steps)
 - [Run in GitHub Actions (minimal example)](#run-in-github-actions-minimal-example)
 - [Shared workflows](#shared-workflows)
   - [Available reusable workflows](#available-reusable-workflows)
@@ -20,17 +20,17 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [Labels (contract)](#labels-contract)
 - [Issue metadata (secmeta)](#issue-metadata-secmeta)
 - [Issue structure](#issue-structure)
-- [How you “say duplicate / grouped / dismissed / reopened”](#how-you-say-duplicate--grouped--dismissed--reopened)
+- [How you "say duplicate / grouped / dismissed / reopened"](#how-you-say-duplicate--grouped--dismissed--reopened)
 - [Known data manipulations](#known-data-manipulations)
 - [Design: fingerprints and matching](#design-fingerprints-and-matching)
 - [Current implementation status](#current-implementation-status)
 - [Troubleshooting](#troubleshooting)
 - [References](#references)
 
-## What this is (and what it isn’t)
+## What this is (and what it isn't)
 
 - This is an **organizational toolkit**: copy the scripts (or vendor them) into an application repository and wire them into Actions.
-- SARIF is **write-only input**. Automation reads from GitHub’s Code Scanning alerts API and from GitHub Issues.
+- SARIF is **write-only input**. Automation reads from GitHub's Code Scanning alerts API and from GitHub Issues.
 - Issues are the **system of record** for operational work (ownership, postponement, closure reasons, reporting).
 
 ## Contents
@@ -45,51 +45,58 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 | `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
 | `derive_team_security_metrics.py` | Compute metrics/deltas from snapshots | stdlib |
 
+All scripts live under `src/security/` in the repository root.
+
 ## Quick start (local)
 
-Prereqs:
+### Prerequisites
 
 - Install and authenticate GitHub CLI: `gh auth login`
 - Install `jq`
 - Python 3.14+ recommended
+- Install Python dependencies:
 
-### Recommended (expected): `sync_security_alerts.sh`
+```bash
+pip install -e '.[security]'
+```
+
+### Recommended: `sync_security_alerts.sh`
 
 This is the normal entrypoint for day-to-day use. It runs `check_labels.sh`, `collect_alert.sh`, and then `promote_alerts.py`.
 
-1. Collect + promote in one command:
+Collect + promote in one command:
 
 ```bash
-./sync_security_alerts.sh --repo <owner/repo>
+./src/security/sync_security_alerts.sh --repo <owner/repo>
 ```
 
-To do a safe preview (no issue writes):
+Safe preview (no issue writes):
 
 ```bash
-./sync_security_alerts.sh --repo <owner/repo> --dry-run
+./src/security/sync_security_alerts.sh --repo <owner/repo> --dry-run
 ```
 
 To see full body previews in dry-run, use `--verbose` (or set `RUNNER_DEBUG=1`).
 
-### Advanced (expert): individual steps
+### Advanced: individual steps
 
 You can run the individual steps when you need finer control or want to debug the pipeline:
 
 1. Collect open alerts:
 
 ```bash
-./collect_alert.sh --repo <owner/repo> --state open --out alerts.json
+./src/security/collect_alert.sh --repo <owner/repo> --state open --out alerts.json
 ```
 
 2. Promote alerts to Issues:
 
 ```bash
-python3 promote_alerts.py --file alerts.json
+python3 src/security/promote_alerts.py --file alerts.json
 ```
 
 ## Run in GitHub Actions (minimal example)
 
-This is the simplest “after SARIF upload, sync issues” job.
+This is the simplest "after SARIF upload, sync issues" job.
 
 The expected entrypoint is `sync_security_alerts.sh` (the individual scripts are still available when you need finer control).
 
@@ -119,7 +126,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./github/security/sync_security_alerts.sh --state open --out alerts.json
+          ./src/security/sync_security_alerts.sh --state open --out alerts.json
 ```
 
 ## Shared workflows
@@ -127,19 +134,19 @@ jobs:
 This repository provides **reusable GitHub Actions workflows** in `.github/workflows/`.
 Application repositories call them with a short caller workflow instead of duplicating the logic.
 
-The `workflows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
+The `docs/security/example_workflows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
 
 ### Available reusable workflows
 
 | Workflow | Trigger (caller) | Purpose |
 | --- | --- | --- |
-| `aquasec-night-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `sync_security_alerts.sh` |
+| `aquasec-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `sync_security_alerts.sh` |
 | `remove-adept-to-close-on-issue-close.yml` | `issues: [closed]` | Removes the `sec:adept-to-close` label from security issues when they are closed |
 
 ### How to adopt a shared workflow
 
 1. Pick a workflow from the table above.
-2. Copy the matching example caller from `worklows/` into your application repository at `.github/workflows/`.
+2. Copy the matching example caller from `docs/security/example_workflows/` into your application repository at `.github/workflows/`.
 
 #### Aquasec Night Scan
 
@@ -153,7 +160,7 @@ The caller needs the following **repository secrets** configured:
 | `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
 
-Example caller (already available in `workflows/aquasec-night-scan.yml`):
+Example caller (already available in `docs/security/example_workflows/aquasec-night-scan.yml`):
 
 ```yaml
 name: Aquasec Night Scan
@@ -175,7 +182,7 @@ permissions:
 
 jobs:
   scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-night-scan.yml@master
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@master
     secrets:
       AQUA_KEY: ${{ secrets.AQUA_KEY }}
       AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
@@ -186,7 +193,7 @@ jobs:
 
 #### Remove sec:adept-to-close on close
 
-Example caller (already available in `workflows/remove-adept-to-close-on-issue-close.yml`):
+Example caller (already available in `docs/security/example_workflows/remove-adept-to-close-on-issue-close.yml`):
 
 ```yaml
 name: Remove sec:adept-to-close on close
@@ -207,39 +214,15 @@ jobs:
 
 ## Labels (contract)
 
-This repository contains multiple scripts with different “label contracts”:
+The automation requires exactly these five labels to exist in the target repository (enforced by `check_labels.sh`):
 
-- `promote_alerts.py` mines existing issues by `--issue-label` (default: `scope:security`) and ensures baseline labels `scope:security` and `type:tech-debt` on child/parent issues it creates/updates.
-
-### Source
-
-- `sec:src/aquasec-sarif`
-
-### State
-
-- `sec:state/postponed`
-- `sec:state/needs-review`
-
-### Severity
-
-- `sec:sev/critical`
-- `sec:sev/high`
-- `sec:sev/medium`
-- `sec:sev/low`
-
-### Closure reasons
-
-- `sec:close/fixed`
-- `sec:close/false-positive`
-- `sec:close/accepted-risk`
-- `sec:close/not-applicable`
-
-### Postpone reasons
-
-- `sec:postpone/vendor`
-- `sec:postpone/platform`
-- `sec:postpone/roadmap`
-- `sec:postpone/other`
+| Label | Purpose |
+| --- | --- |
+| `scope:security` | Applied to every security Issue; used by `promote_alerts.py --issue-label` to discover existing Issues |
+| `type:tech-debt` | Marks security findings as tech-debt items |
+| `sec:src/aquasec-sarif` | Source tag — identifies the scanner that produced the finding |
+| `sec:adept-to-close` | Signals that a finding is ready to be closed by automation |
+| `epic` | Applied to parent (rule-level) Issues so they act as epics grouping child findings |
 
 ## Issue metadata (secmeta)
 
@@ -325,7 +308,7 @@ reason=vendor
 [/sec-event]
 ```
 
-## How you “say duplicate / grouped / dismissed / reopened”
+## How you "say duplicate / grouped / dismissed / reopened"
 
 Use Issue comments to express intent, and have automation translate that intent into labels / state changes / (optionally) GitHub alert actions.
 
@@ -411,7 +394,7 @@ Even with your own Issue fingerprint, you want GitHub alerts to remain stable:
 
 ## Current implementation status
 
-As of 2026-02, [github/security/promote_alerts.py](promote_alerts.py) implements the fingerprint-based sync loop described above:
+As of 2026-02, `promote_alerts.py` implements the fingerprint-based sync loop described above:
 
 - Matches issues strictly by `secmeta.fingerprint` (from the alert message `Alert hash: ...`)
 - Ensures a parent issue per `rule_id` (`secmeta.type=parent`) and links child issues under the parent using GitHub sub-issues
@@ -421,7 +404,7 @@ As of 2026-02, [github/security/promote_alerts.py](promote_alerts.py) implements
 
 ## Troubleshooting
 
-- `gh: command not found`: install GitHub CLI and ensure it’s on `PATH`.
+- `gh: command not found`: install GitHub CLI and ensure it's on `PATH`.
 - `gh auth status` fails: run `gh auth login` locally, or set `GH_TOKEN` in Actions.
 - Permission errors in Actions: ensure the workflow has `security-events: read` and `issues: write` permissions.
 - `Output file alerts.json exists`: `collect_alert.sh` refuses to overwrite output; delete the file or pass a different `--out` path.

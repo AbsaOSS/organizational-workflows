@@ -59,6 +59,7 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 
 CHILD_BODY_TEMPLATE = """## General Information
 
+- **Category:** {{ category }}
 - **AVD ID:** {{ avd_id }}
 - **Alert hash:** {{ alert_hash }}
 - **Title:** {{ title }}

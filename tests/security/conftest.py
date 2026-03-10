@@ -22,21 +22,8 @@ The ``_message_params`` key is pre-populated by
 """
 
 import copy
-import sys
-import os
 
 import pytest
-
-# ------------------------------------------------------------------
-# Ensure the ``security/`` directory is on sys.path so that both
-# ``utils.*`` and ``shared.*`` can be imported in tests exactly the
-# same way as they are in production code.
-# ------------------------------------------------------------------
-_SECURITY_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-_GITHUB_DIR = os.path.normpath(os.path.join(_SECURITY_DIR, ".."))
-for _p in (_SECURITY_DIR, _GITHUB_DIR):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
 
 from utils.alert_parser import parse_alert_message_params
 

@@ -1,7 +1,7 @@
 # Developer Guide — Security Automation
 
 This document covers everything needed to develop, test, and maintain the
-scripts in `github/security/`.
+scripts in `src/security/`.
 
 ## Prerequisites
 
@@ -21,9 +21,14 @@ pip install -r requirements-dev.txt    # dev deps     (pytest, pytest-cov)
 ## Project layout
 
 ```text
-github/security/
-├── tests/                   # All unit tests
-│   ├── conftest.py          # Shared fixtures (synthetic alert payloads)
+src/security/
+├── utils/                   # Core library modules
+├── promote_alerts.py        # Main sync entrypoint (Python)
+├── send_to_teams.py         # Teams notification helper
+tests/
+├── conftest.py              # Shared fixtures (synthetic alert payloads)
+├── security/
+│   ├── test_promote_alerts.py
 │   ├── test_send_to_teams.py
 │   └── utils/               # Mirrors utils/ module structure
 │       ├── test_alert_parser.py
@@ -35,12 +40,8 @@ github/security/
 │       ├── test_secmeta.py
 │       ├── test_teams.py
 │       └── test_templates.py
-├── utils/                   # Core library modules
-├── promote_alerts.py        # Main sync entrypoint (Python)
-├── send_to_teams.py         # Teams notification helper
-├── pyproject.toml           # pytest & coverage config
-├── requirements.txt         # Runtime dependencies
-└── requirements-dev.txt     # Development dependencies
+pyproject.toml               # pytest & coverage config
+requirements.txt             # Runtime + dev dependencies
 ```
 
 ## Running tests

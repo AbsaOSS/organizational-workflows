@@ -16,10 +16,10 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = [".", "security"]
+pythonpath = [".", "src", "src/security"]
 
 [tool.coverage.run]
-source = ["shared", "security"]
+source = ["src/shared", "src/security"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",

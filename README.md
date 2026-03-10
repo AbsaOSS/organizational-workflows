@@ -23,18 +23,20 @@ pytest
 
 ```
 .github/workflows/          # reusable GitHub Actions workflows (the product)
-shared/                     # shared Python utilities used across solutions
-security/                   # security automation scripts & code
-  utils/                    # security-specific helper modules
-  workflows/                # example caller workflow snippets
+src/
+  shared/                   # shared Python utilities used across solutions
+  security/                 # security automation scripts & code
+    utils/                  # security-specific helper modules
 tests/                      # all tests (security + shared)
 docs/                       # per-solution documentation
+  workflows/                # example caller workflows ready to copy into target repos
 ```
 
 ## Shared workflows
 
 Application repositories adopt a solution by adding a short **caller workflow** that delegates to the reusable workflow in this repo.
-See each solution's documentation for caller examples and required secrets.
+Ready-to-copy example caller workflows are located in [`docs/workflows/`](docs/workflows/).
+See each solution's documentation for details and required secrets.
 
 ## Next
 

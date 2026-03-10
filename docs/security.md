@@ -45,7 +45,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 | `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
 | `derive_team_security_metrics.py` | Compute metrics/deltas from snapshots | stdlib |
 
-All scripts live under `github/security/` in the repository root.
+All scripts live under `src/security/` in the repository root.
 
 ## Quick start (local)
 
@@ -67,13 +67,13 @@ This is the normal entrypoint for day-to-day use. It runs `check_labels.sh`, `co
 Collect + promote in one command:
 
 ```bash
-./github/security/sync_security_alerts.sh --repo <owner/repo>
+./src/security/sync_security_alerts.sh --repo <owner/repo>
 ```
 
 Safe preview (no issue writes):
 
 ```bash
-./github/security/sync_security_alerts.sh --repo <owner/repo> --dry-run
+./src/security/sync_security_alerts.sh --repo <owner/repo> --dry-run
 ```
 
 To see full body previews in dry-run, use `--verbose` (or set `RUNNER_DEBUG=1`).
@@ -85,13 +85,13 @@ You can run the individual steps when you need finer control or want to debug th
 1. Collect open alerts:
 
 ```bash
-./github/security/collect_alert.sh --repo <owner/repo> --state open --out alerts.json
+./src/security/collect_alert.sh --repo <owner/repo> --state open --out alerts.json
 ```
 
 2. Promote alerts to Issues:
 
 ```bash
-python3 github/security/promote_alerts.py --file alerts.json
+python3 src/security/promote_alerts.py --file alerts.json
 ```
 
 ## Run in GitHub Actions (minimal example)
@@ -126,7 +126,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./github/security/sync_security_alerts.sh --state open --out alerts.json
+          ./src/security/sync_security_alerts.sh --state open --out alerts.json
 ```
 
 ## Shared workflows
@@ -134,7 +134,7 @@ jobs:
 This repository provides **reusable GitHub Actions workflows** in `.github/workflows/`.
 Application repositories call them with a short caller workflow instead of duplicating the logic.
 
-The `github/security/workflows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
+The `docs/workflows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
 
 ### Available reusable workflows
 
@@ -146,7 +146,7 @@ The `github/security/workflows/` directory contains ready-to-copy **example call
 ### How to adopt a shared workflow
 
 1. Pick a workflow from the table above.
-2. Copy the matching example caller from `github/security/workflows/` into your application repository at `.github/workflows/`.
+2. Copy the matching example caller from `docs/workflows/` into your application repository at `.github/workflows/`.
 
 #### Aquasec Night Scan
 
@@ -160,7 +160,7 @@ The caller needs the following **repository secrets** configured:
 | `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
 
-Example caller (already available in `github/security/workflows/aquasec-night-scan.yml`):
+Example caller (already available in `docs/workflows/aquasec-night-scan.yml`):
 
 ```yaml
 name: Aquasec Night Scan
@@ -193,7 +193,7 @@ jobs:
 
 #### Remove sec:adept-to-close on close
 
-Example caller (already available in `github/security/workflows/remove-adept-to-close-on-issue-close.yml`):
+Example caller (already available in `docs/workflows/remove-adept-to-close-on-issue-close.yml`):
 
 ```yaml
 name: Remove sec:adept-to-close on close
@@ -214,39 +214,15 @@ jobs:
 
 ## Labels (contract)
 
-This repository contains multiple scripts with different "label contracts":
+The automation requires exactly these five labels to exist in the target repository (enforced by `check_labels.sh`):
 
-- `promote_alerts.py` mines existing issues by `--issue-label` (default: `scope:security`) and ensures baseline labels `scope:security` and `type:tech-debt` on child/parent issues it creates/updates.
-
-### Source
-
-- `sec:src/aquasec-sarif`
-
-### State
-
-- `sec:state/postponed`
-- `sec:state/needs-review`
-
-### Severity
-
-- `sec:sev/critical`
-- `sec:sev/high`
-- `sec:sev/medium`
-- `sec:sev/low`
-
-### Closure reasons
-
-- `sec:close/fixed`
-- `sec:close/false-positive`
-- `sec:close/accepted-risk`
-- `sec:close/not-applicable`
-
-### Postpone reasons
-
-- `sec:postpone/vendor`
-- `sec:postpone/platform`
-- `sec:postpone/roadmap`
-- `sec:postpone/other`
+| Label | Purpose |
+| --- | --- |
+| `scope:security` | Applied to every security Issue; used by `promote_alerts.py --issue-label` to discover existing Issues |
+| `type:tech-debt` | Marks security findings as tech-debt items |
+| `sec:src/aquasec-sarif` | Source tag — identifies the scanner that produced the finding |
+| `sec:adept-to-close` | Signals that a finding is ready to be closed by automation |
+| `epic` | Applied to parent (rule-level) Issues so they act as epics grouping child findings |
 
 ## Issue metadata (secmeta)
 

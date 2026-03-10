@@ -1,5 +1,5 @@
 .DS_Store
-github/security/__pycache__/
+src/security/__pycache__/
 **/__pycache__/
 *.pyc
 /.idea
@@ -8,7 +8,7 @@ target
 .idea
 *.iml
 .vscode
-github/security/alerts*.json
-github/security/.coverage
+src/security/alerts*.json
+src/security/.coverage
 security/alerts_aul.json
 security/alerts_local.json

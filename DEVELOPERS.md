@@ -8,8 +8,7 @@ scripts in `src/security/`.
 | Tool | Version | Purpose |
 | --- | --- | --- |
 | Python | 3.14+ | Runtime for all Python scripts |
-| `gh` | latest | GitHub CLI (used by shell scripts) |
-| `jq` | latest | JSON processing in shell scripts |
+| `gh` | latest | GitHub CLI (used by Python scripts) |
 
 Install runtime **and** development dependencies:
 
@@ -23,13 +22,17 @@ pip install -r requirements-dev.txt    # dev deps     (pytest, pytest-cov)
 ```text
 src/security/
 ├── utils/                   # Core library modules
-├── promote_alerts.py        # Main sync entrypoint (Python)
+├── sync_security_alerts.py  # Main orchestrator (check labels → collect → promote)
+├── collect_alert.py         # Fetch & normalise code-scanning alerts
+├── promote_alerts.py        # Create / update GitHub Issues from alerts JSON
 ├── send_to_teams.py         # Teams notification helper
 tests/
 ├── security/
 │   ├── conftest.py          # Shared fixtures (synthetic alert payloads)
+│   ├── test_collect_alert.py
 │   ├── test_promote_alerts.py
 │   ├── test_send_to_teams.py
+│   ├── test_sync_security_alerts.py
 │   └── utils/               # Mirrors utils/ module structure
 │       ├── test_alert_parser.py
 │       ├── test_constants.py

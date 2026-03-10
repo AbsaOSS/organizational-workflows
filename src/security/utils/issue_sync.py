@@ -649,7 +649,7 @@ def ensure_issue(
     alert_state = str(alert.get("state") or "").lower().strip()
     if alert_state and alert_state != "open":
         # This script is designed to process open alerts only.
-        # Input is typically produced by collect_alert.sh with --state open (default).
+        # Input is typically produced by collect_alert.py with --state open (default).
         logging.debug(f"Skip alert {alert_number}: state={alert_state!r} (only 'open' processed)")
         return
 

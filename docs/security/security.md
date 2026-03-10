@@ -9,7 +9,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [What this is (and what it isn't)](#what-this-is-and-what-it-isnt)
 - [Contents](#contents)
 - [Quick start (local)](#quick-start-local)
-  - [Recommended: `sync_security_alerts.sh`](#recommended-sync_security_alertssh)
+  - [Recommended: `sync_security_alerts.py`](#recommended-sync_security_alertspy)
   - [Advanced: individual steps](#advanced-individual-steps)
 - [Run in GitHub Actions (minimal example)](#run-in-github-actions-minimal-example)
 - [Shared workflows](#shared-workflows)
@@ -37,9 +37,9 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 
 | Script | Purpose | Requires |
 | --- | --- | --- |
-| `sync_security_alerts.sh` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `jq`, `python3` |
+| `sync_security_alerts.py` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `python3` |
 | `check_labels.py` | Verify that all labels required by the automation exist in the repository | `gh`, `python3` |
-| `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
+| `collect_alert.py` | Fetch and normalise code-scanning alerts into `alerts.json` | `gh`, `python3` |
 | `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
 | `send_to_teams.py` | Send a Markdown message to a Microsoft Teams channel via Incoming Webhook | `requests` |
 | `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
@@ -52,7 +52,6 @@ All scripts live under `src/security/` in the repository root.
 ### Prerequisites
 
 - Install and authenticate GitHub CLI: `gh auth login`
-- Install `jq`
 - Python 3.14+ recommended
 - Install Python dependencies:
 
@@ -60,20 +59,20 @@ All scripts live under `src/security/` in the repository root.
 pip install -e '.[security]'
 ```
 
-### Recommended: `sync_security_alerts.sh`
+### Recommended: `sync_security_alerts.py`
 
-This is the normal entrypoint for day-to-day use. It runs `check_labels.py`, `collect_alert.sh`, and then `promote_alerts.py`.
+This is the normal entrypoint for day-to-day use. It runs `check_labels.py`, `collect_alert.py`, and then `promote_alerts.py`.
 
 Collect + promote in one command:
 
 ```bash
-./src/security/sync_security_alerts.sh --repo <owner/repo>
+python3 src/security/sync_security_alerts.py --repo <owner/repo>
 ```
 
 Safe preview (no issue writes):
 
 ```bash
-./src/security/sync_security_alerts.sh --repo <owner/repo> --dry-run
+python3 src/security/sync_security_alerts.py --repo <owner/repo> --dry-run
 ```
 
 To see full body previews in dry-run, use `--verbose` (or set `RUNNER_DEBUG=1`).
@@ -85,7 +84,7 @@ You can run the individual steps when you need finer control or want to debug th
 1. Collect open alerts:
 
 ```bash
-./src/security/collect_alert.sh --repo <owner/repo> --state open --out alerts.json
+python3 src/security/collect_alert.py --repo <owner/repo> --state open --out alerts.json
 ```
 
 2. Promote alerts to Issues:
@@ -98,7 +97,7 @@ python3 src/security/promote_alerts.py --file alerts.json
 
 This is the simplest "after SARIF upload, sync issues" job.
 
-The expected entrypoint is `sync_security_alerts.sh` (the individual scripts are still available when you need finer control).
+The expected entrypoint is `sync_security_alerts.py` (the individual scripts are still available when you need finer control).
 
 ```yaml
 name: Promote code scanning alerts to issues
@@ -126,7 +125,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./src/security/sync_security_alerts.sh --state open --out alerts.json
+          python3 src/security/sync_security_alerts.py --state open --out alerts.json
 ```
 
 ## Shared workflows
@@ -140,7 +139,7 @@ The `docs/security/example_workflows/` directory contains ready-to-copy **exampl
 
 | Workflow | Trigger (caller) | Purpose |
 | --- | --- | --- |
-| `aquasec-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `sync_security_alerts.sh` |
+| `aquasec-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `sync_security_alerts.py` |
 | `remove-adept-to-close-on-issue-close.yml` | `issues: [closed]` | Removes the `sec:adept-to-close` label from security issues when they are closed |
 
 ### How to adopt a shared workflow
@@ -407,7 +406,7 @@ As of 2026-02, `promote_alerts.py` implements the fingerprint-based sync loop de
 - `gh: command not found`: install GitHub CLI and ensure it's on `PATH`.
 - `gh auth status` fails: run `gh auth login` locally, or set `GH_TOKEN` in Actions.
 - Permission errors in Actions: ensure the workflow has `security-events: read` and `issues: write` permissions.
-- `Output file alerts.json exists`: `collect_alert.sh` refuses to overwrite output; delete the file or pass a different `--out` path.
+- `Output file alerts.json exists`: `collect_alert.py` refuses to overwrite output; delete the file, pass a different `--out` path, or use `--force`.
 - `missing 'alert hash' in alert message`: the scanner/collector needs to include an `Alert hash: ...` line in the alert instance message text.
 
 ## References

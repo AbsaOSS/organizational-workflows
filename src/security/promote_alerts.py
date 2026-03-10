@@ -18,7 +18,7 @@
 """Promote collected Code Scanning alerts JSON into GitHub Issues.
 
 Input:
-- JSON produced by `collect_alert.sh` (default: alerts.json)
+- JSON produced by `collect_alert.py` (default: alerts.json)
 
 Design intent:
 - One Issue per *finding* (stable identity), not per GitHub alert.
@@ -63,14 +63,14 @@ from shared.logging_config import setup_logging
 from utils.teams import notify_teams, notify_teams_severity_changes
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse and return CLI arguments."""
     p = argparse.ArgumentParser(description="Promote alerts JSON to GitHub issues using gh CLI")
     p.add_argument(
         "--file",
         "-f",
         default="alerts.json",
-        help="alerts JSON file produced by collect_alert.sh (default: alerts.json)",
+        help="alerts JSON file produced by collect_alert.py (default: alerts.json)",
     )
     p.add_argument(
         "--dry-run",
@@ -122,14 +122,14 @@ def parse_args() -> argparse.Namespace:
         help="Teams Incoming Webhook URL for new/reopened issue alerts (default: $TEAMS_WEBHOOK_URL). "
              "If not set, Teams notification is skipped.",
     )
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     """CLI entry-point: load alerts, sync to issues, notify Teams."""
     if shutil.which("gh") is None:
         raise SystemExit("ERROR: gh CLI is required. Install and authenticate (gh auth login).")
-    args = parse_args()
+    args = parse_args(argv)
 
     dry_run = bool(args.dry_run)
     verbose = bool(args.verbose) or parse_runner_debug()

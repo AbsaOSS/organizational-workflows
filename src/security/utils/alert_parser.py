@@ -16,7 +16,7 @@
 
 """Alert data parsing – extracting structured fields from raw alert dicts
 (message parameters, CVE, occurrence fingerprint) and loading the alerts
-JSON file produced by ``collect_alert.sh``.
+JSON file produced by ``collect_alert.py``.
 """
 
 

@@ -131,4 +131,4 @@ jobs:
           PROJECT_NUMBER: ${{ inputs.project-number }}
           PROJECT_ORG: ${{ inputs.project-org }}
         run: |
-          org-workflows/security/sync_security_alerts.sh
+          python3 org-workflows/security/sync_security_alerts.py

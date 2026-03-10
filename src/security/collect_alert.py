@@ -35,6 +35,27 @@ from shared.logging_config import setup_logging
 
 VALID_STATES = {"open", "dismissed", "fixed", "all"}
 
+RULE_DETAIL_KEYS = [
+    "Type",
+    "Severity",
+    "CWE",
+    "Fixed version",
+    "Published date",
+    "Package name",
+    "Category",
+    "Impact",
+    "Confidence",
+    "Likelihood",
+    "Remediation",
+    "OWASP",
+    "References",
+]
+
+
+def _snake_case(name: str) -> str:
+    """Convert a display name to snake_case."""
+    return name.strip().lower().replace(" ", "_")
+
 
 def _help_value(rule_help: str, name: str) -> str | None:
     """Extract a value from ``**Name:** value`` markup in the rule help text."""
@@ -42,13 +63,21 @@ def _help_value(rule_help: str, name: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _msg_value(message_text: str, name: str) -> str | None:
-    """Extract a value from ``Name: value`` lines in the alert message."""
+def _parse_rule_details(rule_help: str) -> dict[str, str | None]:
+    """Extract known rule detail fields from ``**Key:** value`` markup in rule help."""
+    return {_snake_case(key): _help_value(rule_help, key) for key in RULE_DETAIL_KEYS}
+
+
+def _parse_alert_details(message_text: str) -> dict[str, str]:
+    """Parse all ``Key: value`` lines from the alert message text."""
+    details: dict[str, str] = {}
     for line in message_text.split("\n"):
-        if re.match(rf"^{re.escape(name)}\s*:", line, re.IGNORECASE):
-            value = re.sub(rf"^{re.escape(name)}\s*:\s*", "", line, flags=re.IGNORECASE)
-            return value.rstrip("\r")
-    return None
+        m = re.match(r"^([A-Za-z][\w\s]*?)\s*:\s*(.*)", line)
+        if m:
+            key = _snake_case(m.group(1))
+            value = m.group(2).rstrip("\r")
+            details[key] = value
+    return details
 
 
 def _gh_api_json(endpoint: str) -> dict | list:
@@ -81,7 +110,7 @@ def _gh_api_paginate(endpoint: str) -> list[dict]:
 
 
 def _normalise_alert(alert: dict) -> dict:
-    """Transform a raw GitHub code-scanning alert into the canonical schema."""
+    """Transform a raw GitHub code-scanning alert into metadata, alert_details and rule_details."""
     rule = alert.get("rule") or {}
     tool = alert.get("tool") or {}
     instance = alert.get("most_recent_instance") or {}
@@ -90,31 +119,31 @@ def _normalise_alert(alert: dict) -> dict:
     rule_help = rule.get("help") or ""
 
     return {
-        "alert_number": alert.get("number"),
-        "state": alert.get("state"),
-        "created_at": alert.get("created_at"),
-        "updated_at": alert.get("updated_at"),
-        "url": alert.get("url"),
-        "alert_url": alert.get("html_url"),
-        "rule_id": rule.get("id"),
-        "rule_name": rule.get("name"),
-        "severity": rule.get("security_severity_level"),
-        "confidence": rule.get("severity"),
-        "impact": _help_value(rule_help, "Impact"),
-        "likelihood": _help_value(rule_help, "Likelihood"),
-        "reachable": _msg_value(message_text, "Reachable"),
-        "tags": rule.get("tags") or [],
-        "help_uri": rule.get("help_uri"),
-        "tool": tool.get("name"),
-        "tool_version": tool.get("version"),
-        "ref": instance.get("ref"),
-        "commit_sha": instance.get("commit_sha"),
-        "message": message_text,
-        "instance_url": instance.get("html_url"),
-        "classifications": instance.get("classifications") or [],
-        "file": location.get("path"),
-        "start_line": location.get("start_line"),
-        "end_line": location.get("end_line"),
+        "metadata": {
+            "alert_number": alert.get("number"),
+            "state": alert.get("state"),
+            "created_at": alert.get("created_at"),
+            "updated_at": alert.get("updated_at"),
+            "url": alert.get("url"),
+            "alert_url": alert.get("html_url"),
+            "rule_id": rule.get("id"),
+            "rule_name": rule.get("name"),
+            "severity": rule.get("security_severity_level"),
+            "confidence": rule.get("severity"),
+            "tags": rule.get("tags") or [],
+            "help_uri": rule.get("help_uri"),
+            "tool": tool.get("name"),
+            "tool_version": tool.get("version"),
+            "ref": instance.get("ref"),
+            "commit_sha": instance.get("commit_sha"),
+            "instance_url": instance.get("html_url"),
+            "classifications": instance.get("classifications") or [],
+            "file": location.get("path"),
+            "start_line": location.get("start_line"),
+            "end_line": location.get("end_line"),
+        },
+        "alert_details": _parse_alert_details(message_text),
+        "rule_details": _parse_rule_details(rule_help),
     }
 
 

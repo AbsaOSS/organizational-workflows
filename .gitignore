@@ -12,3 +12,4 @@ src/security/alerts*.json
 src/security/.coverage
 security/alerts_aul.json
 security/alerts_local.json
+.coverage

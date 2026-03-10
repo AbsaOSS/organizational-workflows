@@ -38,7 +38,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 | Script | Purpose | Requires |
 | --- | --- | --- |
 | `sync_security_alerts.sh` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `jq`, `python3` |
-| `check_labels.sh` | Verify that all labels required by the automation exist in the repository | `gh` |
+| `check_labels.py` | Verify that all labels required by the automation exist in the repository | `gh`, `python3` |
 | `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
 | `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
 | `send_to_teams.py` | Send a Markdown message to a Microsoft Teams channel via Incoming Webhook | `requests` |
@@ -62,7 +62,7 @@ pip install -e '.[security]'
 
 ### Recommended: `sync_security_alerts.sh`
 
-This is the normal entrypoint for day-to-day use. It runs `check_labels.sh`, `collect_alert.sh`, and then `promote_alerts.py`.
+This is the normal entrypoint for day-to-day use. It runs `check_labels.py`, `collect_alert.sh`, and then `promote_alerts.py`.
 
 Collect + promote in one command:
 
@@ -214,7 +214,7 @@ jobs:
 
 ## Labels (contract)
 
-The automation requires exactly these five labels to exist in the target repository (enforced by `check_labels.sh`):
+The automation requires exactly these five labels to exist in the target repository (enforced by `check_labels.py`):
 
 | Label | Purpose |
 | --- | --- |

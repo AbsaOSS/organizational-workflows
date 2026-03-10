@@ -35,7 +35,7 @@ usage() {
 Usage: sync_security_alerts.sh --repo <owner/repo> [options]
 
 This is a thin wrapper that runs:
-  1) check_labels.sh   -> verify required labels exist
+  1) check_labels.py   -> verify required labels exist
   2) collect_alert.sh  -> writes alerts.json
   3) promote_alerts.py -> creates/updates Issues from alerts.json
 
@@ -188,7 +188,7 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if (( ! SKIP_LABEL_CHECK )); then
-  "$SCRIPT_DIR/check_labels.sh" --repo "$REPO"
+  python3 "$SCRIPT_DIR/check_labels.py" --repo "$REPO"
 fi
 
 if [[ -f "$OUT_FILE" ]]; then

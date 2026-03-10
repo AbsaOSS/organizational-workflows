@@ -7,7 +7,7 @@ Each solution is self-contained: a reusable workflow, Python automation scripts,
 
 | Solution | Description | Docs |
 |----------|-------------|------|
-| **Security** | Turns Code Scanning alerts (SARIF-based, e.g. AquaSec) into a managed GitHub Issues backlog | [docs/security.md](docs/security.md) |
+| **Security** | Turns Code Scanning alerts (SARIF-based, e.g. AquaSec) into a managed GitHub Issues backlog | [docs/security/](docs/security/security.md) |
 
 ## Quick start
 
@@ -29,13 +29,14 @@ src/
     utils/                  # security-specific helper modules
 tests/                      # all tests (security + shared)
 docs/                       # per-solution documentation
-  workflows/                # example caller workflows ready to copy into target repos
+  security/                 # security solution docs & example workflows
+    example_workflows/      # example caller workflows ready to copy into target repos
 ```
 
 ## Shared workflows
 
 Application repositories adopt a solution by adding a short **caller workflow** that delegates to the reusable workflow in this repo.
-Ready-to-copy example caller workflows are located in [`docs/workflows/`](docs/workflows/).
+Ready-to-copy example caller workflows are located in [`docs/security/example_workflows/`](docs/security/example_workflows/).
 See each solution's documentation for details and required secrets.
 
 ## Next

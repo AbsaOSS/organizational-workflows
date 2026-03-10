@@ -134,7 +134,7 @@ jobs:
 This repository provides **reusable GitHub Actions workflows** in `.github/workflows/`.
 Application repositories call them with a short caller workflow instead of duplicating the logic.
 
-The `docs/workflows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
+The `docs/security/example_workflows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
 
 ### Available reusable workflows
 
@@ -146,7 +146,7 @@ The `docs/workflows/` directory contains ready-to-copy **example caller workflow
 ### How to adopt a shared workflow
 
 1. Pick a workflow from the table above.
-2. Copy the matching example caller from `docs/workflows/` into your application repository at `.github/workflows/`.
+2. Copy the matching example caller from `docs/security/example_workflows/` into your application repository at `.github/workflows/`.
 
 #### Aquasec Night Scan
 
@@ -160,7 +160,7 @@ The caller needs the following **repository secrets** configured:
 | `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
 
-Example caller (already available in `docs/workflows/aquasec-night-scan.yml`):
+Example caller (already available in `docs/security/example_workflows/aquasec-night-scan.yml`):
 
 ```yaml
 name: Aquasec Night Scan
@@ -193,7 +193,7 @@ jobs:
 
 #### Remove sec:adept-to-close on close
 
-Example caller (already available in `docs/workflows/remove-adept-to-close-on-issue-close.yml`):
+Example caller (already available in `docs/security/example_workflows/remove-adept-to-close-on-issue-close.yml`):
 
 ```yaml
 name: Remove sec:adept-to-close on close

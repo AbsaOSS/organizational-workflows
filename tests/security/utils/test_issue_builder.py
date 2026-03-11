@@ -116,7 +116,7 @@ def test_published_date_from_rule_details(sast_alert: Alert) -> None:
     vals = build_parent_template_values(
         sast_alert, rule_id="test", severity="high"
     )
-    # SAST fixture has rule_details.published_date = "N/A"
+    # SAST fixture has rule_details.published_date = None; absent dates map to N/A
     assert vals["published_date"] == "N/A"
 
 def test_extra_data_synthesised(sast_alert: Alert) -> None:

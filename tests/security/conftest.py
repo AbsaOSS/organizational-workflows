@@ -67,7 +67,6 @@ _SAST_ALERT_303: dict = {
             "64c62d98a7db5dbd80ae8b0affd531099cf54280/"
             "scripts/create_catalog_tables_and_refresh_partitions/list_domains.py"
         ),
-        "installed_version": "N/A",
         "start_line": "95",
         "end_line": "95",
         "message": (
@@ -82,15 +81,15 @@ _SAST_ALERT_303: dict = {
     "rule_details": {
         "type": "sast",
         "severity": "HIGH",
-        "cwe": "N/A",
-        "fixed_version": "N/A",
-        "published_date": "N/A",
-        "package_name": "N/A",
-        "category": "N/A",
+        "cwe": None,
+        "fixed_version": None,
+        "published_date": None,
+        "package_name": None,
+        "category": None,
         "impact": "medium",
         "confidence": "error",
         "likelihood": "medium",
-        "remediation": "N/A",
+        "remediation": None,
         "owasp": "https://owasp.org/Top10/A07_2021-Injection/",
         "references": (
             "- https://github.com/test-org/test-repo/security/code-scanning/303\n"
@@ -156,16 +155,16 @@ _VULN_ALERT_312: dict = {
     "rule_details": {
         "type": "vulnerabilities",
         "severity": "HIGH",
-        "cwe": "N/A",
+        "cwe": None,
         "fixed_version": "4.2.0",
         "published_date": "2026-02-20T18:30:18.304Z",
         "package_name": "jspdf",
-        "category": "N/A",
+        "category": None,
         "impact": "high",
         "confidence": "error",
         "likelihood": "high",
-        "remediation": "N/A",
-        "owasp": "N/A",
+        "remediation": None,
+        "owasp": None,
         "references": "- https://access.redhat.com/security/cve/CVE-2026-25755",
     },
 }
@@ -209,9 +208,7 @@ _PIPELINE_ALERT_317: dict = {
             "64c62d98a7db5dbd80ae8b0affd531099cf54280/"
             ".github/workflows/aquasec-night-scan.yml"
         ),
-        "installed_version": "N/A",
         "start_line": "21",
-        "end_line": "N/A",
         "message": (
             "Dependency AbsaOSS/aquasec-scan-results master version "
             "should be pinned to the commit sha"
@@ -220,17 +217,17 @@ _PIPELINE_ALERT_317: dict = {
     "rule_details": {
         "type": "pipelineMisconfigurations",
         "severity": "MEDIUM",
-        "cwe": "N/A",
-        "fixed_version": "N/A",
-        "published_date": "N/A",
-        "package_name": "N/A",
-        "category": "N/A",
+        "cwe": None,
+        "fixed_version": None,
+        "published_date": None,
+        "package_name": None,
+        "category": None,
         "impact": "low",
         "confidence": "warning",
         "likelihood": "medium",
-        "remediation": "N/A",
-        "owasp": "N/A",
-        "references": "N/A",
+        "remediation": None,
+        "owasp": None,
+        "references": None,
     },
 }
 

@@ -22,6 +22,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [Issue structure](#issue-structure)
 - [How you "say duplicate / grouped / dismissed / reopened"](#how-you-say-duplicate--grouped--dismissed--reopened)
 - [Known data manipulations](#known-data-manipulations)
+- [Collector output contract (alerts.json schema)](#collector-output-contract-alertsjson-schema)
 - [Design: fingerprints and matching](#design-fingerprints-and-matching)
 - [Current implementation status](#current-implementation-status)
 - [Troubleshooting](#troubleshooting)
@@ -354,6 +355,56 @@ The normalised path is used only for matching and fingerprint computation; the o
 path string from the alert is never written back to the issue body.
 
 Implementation: `shared/common.py → normalize_path()`.
+
+## Collector output contract (alerts.json schema)
+
+`collect_alert.py` produces a JSON file with the following top-level structure:
+
+```json
+{
+  "generated_at": "<ISO-8601 UTC timestamp>",
+  "repo": { "id": ..., "name": ..., "full_name": ..., "private": ...,
+             "html_url": ..., "default_branch": ..., "owner": { ... } },
+  "query": { "state": "<open|dismissed|fixed|all>" },
+  "alerts": [ ... ]
+}
+```
+
+Each element of `alerts` is a normalised alert object with three sub-objects:
+
+### `metadata`
+
+Fixed keys extracted directly from the GitHub code-scanning alert API response.
+All keys are always present; values are `null` when the API does not provide them
+(e.g. `instance_url`, `help_uri`, `end_line` for single-line findings).
+
+Key fields: `alert_number`, `state`, `created_at`, `updated_at`, `url`, `alert_url`,
+`rule_id`, `rule_name`, `severity`, `confidence`, `tags`, `help_uri`, `tool`,
+`tool_version`, `ref`, `commit_sha`, `instance_url`, `classifications`, `file`,
+`start_line`, `end_line`.
+
+### `alert_details`
+
+Key/value pairs parsed from the free-text `message.text` field of the most-recent
+alert instance. **Only keys that actually appear in the message are included**; no
+default or placeholder values are injected for absent keys.
+
+For AquaSec scans the message embeds lines in the form `Key: Value`. Known keys
+(see `AlertMessageKey` in `utils/alert_parser.py`) include `artifact`, `type`,
+`vulnerability`, `severity`, `message`, `repository`, `reachable`, `scan_date`,
+`first_seen`, `scm_file`, `installed_version`, `start_line`, `end_line`, `alert_hash`.
+
+Note: `installed_version` is present only in vulnerability-type alerts (e.g.
+`CVE-*`). It is absent from SAST and pipeline misconfiguration alerts because the
+scanner does not include that field in those message types.
+
+### `rule_details`
+
+Fields extracted from `**Key:** value` markup in the rule help text, using the fixed
+set of keys listed in `RULE_DETAIL_KEYS` in `collect_alert.py`. **All keys are always
+present**; missing fields are set to `null` (not `"N/A"` or an empty string). Keys
+include: `type`, `severity`, `cwe`, `fixed_version`, `published_date`, `package_name`,
+`category`, `impact`, `confidence`, `likelihood`, `remediation`, `owasp`, `references`.
 
 ## Design: fingerprints and matching
 

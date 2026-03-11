@@ -105,6 +105,12 @@ jobs:
     needs: aquasec-scan
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          persist-credentials: false
+          path: caller-repo
+
       - name: Checkout security scripts
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
         with:
@@ -131,4 +137,11 @@ jobs:
           PROJECT_NUMBER: ${{ inputs.project-number }}
           PROJECT_ORG: ${{ inputs.project-org }}
         run: |
-          org-workflows/github/security/sync_security_alerts.sh
+          SYNC_ARGS=()
+          # If the caller repo ships a .github/labels.yml, use it to override
+          # the default label names.
+          CALLER_LABELS="caller-repo/.github/labels.yml"
+          if [[ -f "$CALLER_LABELS" ]]; then
+            SYNC_ARGS+=(--label-config "$CALLER_LABELS")
+          fi
+          org-workflows/github/security/sync_security_alerts.sh "${SYNC_ARGS[@]}"

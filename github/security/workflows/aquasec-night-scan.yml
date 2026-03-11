@@ -18,6 +18,21 @@
 # .github/workflows/aquasec-night-scan.yml
 #
 # It delegates to the reusable workflow in the organizational-workflows repo.
+#
+# Label customisation
+# -------------------
+# By default the workflow uses the built-in label names (scope:security, epic,
+# sec:adept-to-close, etc.).  To override any of them, add a file at
+#
+#   .github/labels.yml
+#
+# in THIS (caller) repository with only the keys that differ, e.g.:
+#
+#   scope_security: "type:security"
+#   epic:           "type:epic"
+#
+# The full list of configurable keys is documented in:
+#   https://github.com/AbsaOSS/organizational-workflows/blob/master/github/security/labels.yml
 
 name: Aquasec Night Scan
 

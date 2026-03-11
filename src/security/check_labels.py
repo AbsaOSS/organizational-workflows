@@ -49,6 +49,9 @@ REQUIRED_LABELS: list[str] = [
 def fetch_repo_labels(repo: str) -> list[str]:
     """Return all label names in *repo* via ``gh label list``."""
     result = run_gh(["label", "list", "--repo", repo, "--json", "name", "--limit", "500"])
+    if result.returncode != 0:
+        logger.error("gh label list failed for %s:\n%s", repo, result.stderr)
+        raise SystemExit(1)
     labels = json.loads(result.stdout)
     return [entry["name"] for entry in labels if entry.get("name")]
 

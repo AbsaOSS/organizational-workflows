@@ -406,7 +406,7 @@ As of 2026-02, `promote_alerts.py` implements the fingerprint-based sync loop de
 - `gh: command not found`: install GitHub CLI and ensure it's on `PATH`.
 - `gh auth status` fails: run `gh auth login` locally, or set `GH_TOKEN` in Actions.
 - Permission errors in Actions: ensure the workflow has `security-events: read` and `issues: write` permissions.
-- `Output file alerts.json exists`: `collect_alert.py` refuses to overwrite output; delete the file, pass a different `--out` path, or use `--force`.
+- `Output file alerts.json exists`: `collect_alert.py` refuses to overwrite output; delete the file, pass a different `--out` path, or run via `sync_security_alerts.py --force` (which deletes the file before invoking the collector).
 - `missing 'alert hash' in alert message`: the scanner/collector needs to include an `Alert hash: ...` line in the alert instance message text.
 
 ## References

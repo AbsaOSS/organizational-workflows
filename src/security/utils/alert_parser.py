@@ -99,12 +99,16 @@ def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]
     alerts = data.get("alerts", [])
     logging.info(f"Loaded {len(alerts)} alerts from {path} (repo={repo_full})")
 
-    open_alerts = [a for a in alerts if str((a.get("state") or "")).lower() == "open"]
+    open_alerts = [
+        a for a in alerts
+        if str((a.get("metadata") or {}).get("state") or "").lower() == "open"
+    ]
     logging.info(f"Found {len(open_alerts)} open alerts")
 
     open_by_number: dict[int, dict[str, Any]] = {}
     for alert in open_alerts:
-        alert_number = alert.get("alert_number")
+        metadata = alert.get("metadata") or {}
+        alert_number = metadata.get("alert_number")
         if alert_number is None:
             logging.warning(f"Skipping alert with missing alert_number: {alert}")
             continue
@@ -116,7 +120,6 @@ def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]
             continue
 
         alert["_repo"] = repo_full
-        alert["_message_params"] = parse_alert_message_params(alert.get("message"))
         open_by_number[alert_number_int] = alert
 
         if os.getenv("DEBUG_ALERTS") == "1":

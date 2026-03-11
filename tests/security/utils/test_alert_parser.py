@@ -30,14 +30,72 @@ from utils.alert_parser import (
 )
 
 
+# ── Raw message strings for parse_alert_message_params tests ──────────
+
+_RAW_SAST_MESSAGE = (
+    "Artifact: scripts/create_catalog_tables_and_refresh_partitions/list_domains.py\n"
+    "Type: sast\n"
+    "Vulnerability: req-with-very-false-aquasec-python\n"
+    "Severity: HIGH\n"
+    "Message: Detected the use of the requests module with verify=False, "
+    "which disables server certificate validation.\n"
+    "Repository: test-org/test-repo\n"
+    "Reachable: False\n"
+    "Scan date: 2026-02-24T19:24:35.755Z\n"
+    "First seen: 2025-09-17T12:46:48.271Z\n"
+    "SCM file: https://github.com/test-org/test-repo/blob/"
+    "64c62d98a7db5dbd80ae8b0affd531099cf54280/"
+    "scripts/create_catalog_tables_and_refresh_partitions/list_domains.py\n"
+    "Start line: 95\n"
+    "End line: 95\n"
+    "Alert hash: 3e9c8c338f318e0d06647c2f79406fd4"
+)
+
+_RAW_VULN_MESSAGE = (
+    "Artifact: aul-ui/package.json\n"
+    "Type: vulnerabilities\n"
+    "Vulnerability: CVE-2026-25755\n"
+    "Severity: HIGH\n"
+    "Message: jsPDF is a library to generate PDFs in JavaScript.\n"
+    "Repository: test-org/test-repo\n"
+    "Reachable: True\n"
+    "Scan date: 2026-02-24T19:24:35.755Z\n"
+    "First seen: 2026-02-20T18:30:18.304Z\n"
+    "SCM file: https://github.com/test-org/test-repo/blob/"
+    "64c62d98a7db5dbd80ae8b0affd531099cf54280/aul-ui/package.json\n"
+    "Installed version: 3.0.3\n"
+    "Start line: 54\n"
+    "End line: 54\n"
+    "Alert hash: 068f963657211cd416dac1f9b30d606c"
+)
+
+_RAW_PIPELINE_MESSAGE = (
+    "Artifact: .github/workflows/aquasec-night-scan.yml\n"
+    "Type: pipelineMisconfigurations\n"
+    "Vulnerability: AVD-PIPELINE-0008\n"
+    "Severity: MEDIUM\n"
+    "Message: Dependency AbsaOSS/aquasec-scan-results master version "
+    "should be pinned to the commit sha\n"
+    "Repository: test-org/test-repo\n"
+    "Reachable: False\n"
+    "Scan date: 2026-02-24T19:24:35.755Z\n"
+    "First seen: 2026-02-09T15:51:33.454Z\n"
+    "SCM file: https://github.com/test-org/test-repo/blob/"
+    "64c62d98a7db5dbd80ae8b0affd531099cf54280/"
+    ".github/workflows/aquasec-night-scan.yml\n"
+    "Start line: 21\n"
+    "Alert hash: bed23a624d7f1f07f56a07c6349bcd8b"
+)
+
+
 # =====================================================================
 # parse_alert_message_params
 # =====================================================================
 
 
-def test_sast_message_all_keys(sast_alert: dict) -> None:
-    """All expected keys are extracted from a SAST alert message."""
-    params = parse_alert_message_params(sast_alert["message"])
+def test_sast_message_all_keys() -> None:
+    """All expected keys are extracted from a SAST raw message."""
+    params = parse_alert_message_params(_RAW_SAST_MESSAGE)
 
     assert params["artifact"] == (
         "scripts/create_catalog_tables_and_refresh_partitions/list_domains.py"
@@ -55,18 +113,18 @@ def test_sast_message_all_keys(sast_alert: dict) -> None:
     assert params["end line"] == "95"
     assert params["alert hash"] == "3e9c8c338f318e0d06647c2f79406fd4"
 
-def test_vuln_message_installed_version(vuln_alert: dict) -> None:
+def test_vuln_message_installed_version() -> None:
     """Vulnerability alert messages include 'Installed version'."""
-    params = parse_alert_message_params(vuln_alert["message"])
+    params = parse_alert_message_params(_RAW_VULN_MESSAGE)
 
     assert params["installed version"] == "3.0.3"
     assert params["vulnerability"] == "CVE-2026-25755"
     assert params["reachable"] == "True"
     assert params["alert hash"] == "068f963657211cd416dac1f9b30d606c"
 
-def test_pipeline_message_no_installed_version(pipeline_alert: dict) -> None:
+def test_pipeline_message_no_installed_version() -> None:
     """Pipeline misconfiguration alerts have no 'Installed version' or 'End line'."""
-    params = parse_alert_message_params(pipeline_alert["message"])
+    params = parse_alert_message_params(_RAW_PIPELINE_MESSAGE)
 
     assert "installed version" not in params
     assert "end line" not in params
@@ -104,9 +162,9 @@ def test_all_documented_keys_present() -> None:
     enum_values = {member.value for member in AlertMessageKey}
     assert enum_values == _EXPECTED_KEYS
 
-def test_sast_message_keys_subset(sast_alert: dict) -> None:
+def test_sast_message_keys_subset() -> None:
     """Every enum value that appears in a SAST message is parseable."""
-    params = parse_alert_message_params(sast_alert["message"])
+    params = parse_alert_message_params(_RAW_SAST_MESSAGE)
     for key in AlertMessageKey:
         if key.value in params:
             assert params[key.value], f"Key '{key.value}' parsed but empty"
@@ -151,8 +209,8 @@ def _write_alerts_file(alerts: list[dict], repo_full: str = "org/repo") -> str:
 
 def test_loads_open_alerts() -> None:
     path = _write_alerts_file([
-        {"alert_number": 1, "state": "open", "message": "Alert hash: abc\nType: sast"},
-        {"alert_number": 2, "state": "dismissed", "message": "Alert hash: def\nType: sast"},
+        {"metadata": {"alert_number": 1, "state": "open"}, "alert_details": {}, "rule_details": {}},
+        {"metadata": {"alert_number": 2, "state": "dismissed"}, "alert_details": {}, "rule_details": {}},
     ])
     try:
         repo, alerts = load_open_alerts_from_file(path)
@@ -162,16 +220,14 @@ def test_loads_open_alerts() -> None:
     finally:
         os.unlink(path)
 
-def test_enriches_repo_and_message_params() -> None:
+def test_enriches_repo() -> None:
     path = _write_alerts_file([
-        {"alert_number": 10, "state": "open", "message": "Alert hash: xyz\nSeverity: HIGH"},
+        {"metadata": {"alert_number": 10, "state": "open"}, "alert_details": {"alert_hash": "xyz"}, "rule_details": {}},
     ])
     try:
         repo, alerts = load_open_alerts_from_file(path)
         alert = alerts[10]
         assert alert["_repo"] == "org/repo"
-        assert isinstance(alert["_message_params"], dict)
-        assert alert["_message_params"]["alert hash"] == "xyz"
     finally:
         os.unlink(path)
 
@@ -191,7 +247,7 @@ def test_missing_repo_full_name_exits() -> None:
 
 def test_skips_alert_without_number() -> None:
     path = _write_alerts_file([
-        {"state": "open", "message": "no number"},
+        {"metadata": {"state": "open"}, "alert_details": {}, "rule_details": {}},
     ])
     try:
         _, alerts = load_open_alerts_from_file(path)
@@ -202,7 +258,7 @@ def test_skips_alert_without_number() -> None:
 def test_skips_alert_with_invalid_number() -> None:
     """Non-integer alert_number values are skipped with a warning."""
     path = _write_alerts_file([
-        {"alert_number": "not-a-number", "state": "open", "message": "Type: sast"},
+        {"metadata": {"alert_number": "not-a-number", "state": "open"}, "alert_details": {}, "rule_details": {}},
     ])
     try:
         _, alerts = load_open_alerts_from_file(path)

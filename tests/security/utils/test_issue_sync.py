@@ -628,7 +628,7 @@ def test_ensure_parent_creates_new(mocker: MockerFixture, sast_alert: dict) -> N
     assert result is not None
     assert result.number == 99
     mock_create.assert_called_once()
-    assert sast_alert["rule_id"] in index.parent_by_rule_id
+    assert sast_alert["metadata"]["rule_id"] in index.parent_by_rule_id
 
 def test_ensure_parent_dry_run(sast_alert: dict) -> None:
     """Dry-run does not create an issue, returns None."""
@@ -641,7 +641,7 @@ def test_ensure_parent_existing_returns_existing(sast_alert: dict) -> None:
     """Returns the existing parent issue if one already exists."""
     parent = _issue_with_secmeta(10, {
         "type": "parent",
-        "rule_id": sast_alert["rule_id"],
+        "rule_id": sast_alert["metadata"]["rule_id"],
         "severity": "high",
         "first_seen": "2026-01-01",
         "last_seen": "2026-01-01",
@@ -656,7 +656,7 @@ def test_ensure_parent_severity_change_detected(sast_alert: dict) -> None:
     """Severity change is detected and recorded."""
     parent = _issue_with_secmeta(10, {
         "type": "parent",
-        "rule_id": sast_alert["rule_id"],
+        "rule_id": sast_alert["metadata"]["rule_id"],
         "severity": "low",
         "first_seen": "2026-01-01",
         "last_seen": "2026-01-01",
@@ -671,7 +671,7 @@ def test_ensure_parent_severity_change_detected(sast_alert: dict) -> None:
 
 def test_ensure_parent_no_rule_id() -> None:
     """Returns None when alert has no rule_id."""
-    alert: dict[str, Any] = {"_repo": "org/repo", "rule_id": ""}
+    alert: dict[str, Any] = {"_repo": "org/repo", "metadata": {"rule_id": ""}, "alert_details": {}, "rule_details": {}}
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
     assert ensure_parent_issue(alert, issues, index, dry_run=False) is None
@@ -688,7 +688,7 @@ def test_ensure_parent_body_deferred(sast_alert: dict) -> None:
     """Parent body update is deferred (snapshot captured in parent_original_bodies)."""
     parent = _issue_with_secmeta(10, {
         "type": "parent",
-        "rule_id": sast_alert["rule_id"],
+        "rule_id": sast_alert["metadata"]["rule_id"],
         "severity": "high",
         "first_seen": "2026-01-01",
         "last_seen": "2026-01-01",
@@ -706,7 +706,7 @@ def test_ensure_parent_title_drift_corrected(mocker: MockerFixture, sast_alert: 
     mock_title = mocker.patch("utils.issue_sync.gh_issue_edit_title", return_value=True)
     parent = _issue_with_secmeta(10, {
         "type": "parent",
-        "rule_id": sast_alert["rule_id"],
+        "rule_id": sast_alert["metadata"]["rule_id"],
         "severity": "high",
         "first_seen": "2026-01-01",
         "last_seen": "2026-01-01",
@@ -759,7 +759,7 @@ def test_label_orphan_no_orphans() -> None:
     child = _issue_with_secmeta(1, {"type": "child", "fingerprint": "fp1"})
     index = build_issue_index({1: child})
     alerts: dict[int, dict] = {
-        100: {"_message_params": {"alert hash": "fp1"}, "state": "open"},
+        100: {"metadata": {"state": "open"}, "alert_details": {"alert_hash": "fp1"}, "rule_details": {}},
     }
     _label_orphan_issues(alerts, index, dry_run=False)
 
@@ -848,10 +848,10 @@ def test_ensure_issue_dry_run(sast_alert: dict) -> None:
 def test_ensure_issue_skips_non_open() -> None:
     """Alerts with state != 'open' are skipped."""
     alert: dict[str, Any] = {
-        "alert_number": 1,
-        "state": "dismissed",
+        "metadata": {"alert_number": 1, "state": "dismissed"},
+        "alert_details": {},
+        "rule_details": {},
         "_repo": "org/repo",
-        "_message_params": {},
     }
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
@@ -860,43 +860,41 @@ def test_ensure_issue_skips_non_open() -> None:
 def test_ensure_issue_missing_alert_hash_raises() -> None:
     """Raises SystemExit when alert hash is missing."""
     alert: dict[str, Any] = {
-        "alert_number": 1,
-        "state": "open",
+        "metadata": {"alert_number": 1, "state": "open", "rule_id": "R1", "severity": "high"},
+        "alert_details": {},
+        "rule_details": {},
         "_repo": "org/repo",
-        "_message_params": {},
-        "rule_id": "R1",
-        "severity": "high",
     }
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    with pytest.raises(SystemExit, match="alert hash"):
+    with pytest.raises(SystemExit, match="alert_hash"):
         ensure_issue(alert, issues, index, dry_run=True)
 
-def test_ensure_issue_missing_message_params_raises() -> None:
-    """Raises SystemExit when _message_params is not a dict."""
+def test_ensure_issue_missing_alert_details_raises() -> None:
+    """Raises SystemExit when alert_details has no alert_hash."""
     alert: dict[str, Any] = {
-        "alert_number": 1,
-        "state": "open",
+        "metadata": {"alert_number": 1, "state": "open"},
+        "alert_details": {},
+        "rule_details": {},
         "_repo": "org/repo",
-        "_message_params": None,
     }
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    with pytest.raises(SystemExit, match="missing parsed message"):
+    with pytest.raises(SystemExit, match="alert_hash"):
         ensure_issue(alert, issues, index, dry_run=True)
 
 def test_ensure_issue_existing_child_updates(mocker: MockerFixture, sast_alert: dict) -> None:
     """When a child issue already exists, it is updated (not duplicated)."""
     mocker.patch("utils.issue_sync.gh_issue_edit_body")
     mocker.patch("utils.issue_sync.gh_issue_add_labels")
-    fp = sast_alert["_message_params"]["alert hash"]
+    fp = sast_alert["alert_details"]["alert_hash"]
     child = _issue_with_secmeta(5, {
         "type": "child", "fingerprint": fp,
         "occurrence_count": "1", "first_seen": "2026-01-01",
         "last_seen": "2026-01-01", "last_occurrence_fp": "old_occ",
     })
     parent = _issue_with_secmeta(10, {
-        "type": "parent", "rule_id": sast_alert["rule_id"],
+        "type": "parent", "rule_id": sast_alert["metadata"]["rule_id"],
         "severity": "high", "first_seen": "2026-01-01", "last_seen": "2026-01-01",
     })
     issues = {5: child, 10: parent}
@@ -941,7 +939,7 @@ def test_sync_creates_issues(
 def test_sync_severity_change_detected(sast_alert: dict) -> None:
     """Severity change on existing parent is captured in result."""
     parent = _issue_with_secmeta(10, {
-        "type": "parent", "rule_id": sast_alert["rule_id"],
+        "type": "parent", "rule_id": sast_alert["metadata"]["rule_id"],
         "severity": "low", "first_seen": "2026-01-01", "last_seen": "2026-01-01",
     })
     issues = {10: parent}

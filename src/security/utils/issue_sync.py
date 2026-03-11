@@ -39,7 +39,7 @@ from shared.github_projects import ProjectPrioritySync, gh_project_get_priority_
 from shared.models import Issue
 from shared.templates import render_markdown_template
 
-from .alert_parser import AlertMessageKey, compute_occurrence_fp
+from .alert_parser import compute_occurrence_fp
 from .constants import (
     LABEL_EPIC,
     LABEL_SCOPE_SECURITY,
@@ -159,7 +159,8 @@ def ensure_parent_issue(
     parent_original_bodies: dict[int, tuple[str, str]] | None = None,
 ) -> Issue | None:
     """Find or create the parent issue for the alert's ``rule_id``."""
-    rule_id = str(alert.get("rule_id") or "").strip()
+    metadata = alert.get("metadata") or {}
+    rule_id = str(metadata.get("rule_id") or "").strip()
     if not rule_id:
         return None
 
@@ -168,14 +169,14 @@ def ensure_parent_issue(
     if existing is not None:
         # Keep parent issues aligned to the template as alerts evolve.
         existing_secmeta = load_secmeta(existing.body) or {"schema": "1"}
-        existing_first = existing_secmeta.get("first_seen") or iso_date(alert.get("created_at"))
-        existing_last = existing_secmeta.get("last_seen") or iso_date(alert.get("updated_at"))
-        first_seen_final = min(existing_first, iso_date(alert.get("created_at")))
-        last_seen_final = max(existing_last, iso_date(alert.get("updated_at")))
+        existing_first = existing_secmeta.get("first_seen") or iso_date(metadata.get("created_at"))
+        existing_last = existing_secmeta.get("last_seen") or iso_date(metadata.get("updated_at"))
+        first_seen_final = min(existing_first, iso_date(metadata.get("created_at")))
+        last_seen_final = max(existing_last, iso_date(metadata.get("updated_at")))
 
         existing_severity = str(existing_secmeta.get("severity") or "unknown")
         existing_severity_cmp = existing_severity.lower()
-        incoming_severity = str(alert.get("severity") or "").strip()
+        incoming_severity = str(metadata.get("severity") or "").strip()
         incoming_severity_cmp = incoming_severity.lower()
 
         if incoming_severity_cmp and existing_severity_cmp != incoming_severity_cmp:
@@ -202,7 +203,7 @@ def ensure_parent_issue(
                 "type": SECMETA_TYPE_PARENT,
                 "repo": repo_full,
                 "source": existing_secmeta.get("source") or "code_scanning",
-                "tool": str(alert.get("tool") or existing_secmeta.get("tool") or ""),
+                "tool": str(metadata.get("tool") or existing_secmeta.get("tool") or ""),
                 "severity": severity_stored,
                 "rule_id": rule_id,
                 "first_seen": first_seen_final,
@@ -240,7 +241,7 @@ def ensure_parent_issue(
 
         return existing
 
-    title = build_parent_issue_title(rule_id, str((alert.get("severity") or "unknown")))
+    title = build_parent_issue_title(rule_id, str(metadata.get("severity") or "unknown"))
     body = build_parent_issue_body(alert)
     labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT, LABEL_EPIC]
     if dry_run:
@@ -265,10 +266,10 @@ def ensure_parent_issue(
             render_sec_event(
                 {
                     "action": SEC_EVENT_OPEN,
-                    "seen_at": iso_date(alert.get("created_at")),
+                    "seen_at": iso_date(metadata.get("created_at")),
                     "source": "code_scanning",
                     "rule_id": rule_id,
-                    "severity": str((alert.get("severity") or "unknown")),
+                    "severity": str(metadata.get("severity") or "unknown"),
                 }
             ),
         )
@@ -280,7 +281,7 @@ def ensure_parent_issue(
 
     if priority_sync is not None:
         priority_sync.enqueue(
-            repo_full, num, str((alert.get("severity") or "unknown")),
+            repo_full, num, str(metadata.get("severity") or "unknown"),
             severity_priority_map or {},
         )
 
@@ -644,46 +645,42 @@ def ensure_issue(
     parent_original_bodies: dict[int, tuple[str, str]] | None = None,
 ) -> None:
     """Process a single alert: create or update its child issue and parent."""
-    alert_number = int(alert.get("alert_number"))
+    metadata = alert.get("metadata") or {}
+    alert_details = alert.get("alert_details") or {}
 
-    alert_state = str(alert.get("state") or "").lower().strip()
+    alert_number = int(metadata.get("alert_number"))
+
+    alert_state = str(metadata.get("state") or "").lower().strip()
     if alert_state and alert_state != "open":
         # This script is designed to process open alerts only.
         # Input is typically produced by collect_alert.py with --state open (default).
         logging.debug(f"Skip alert {alert_number}: state={alert_state!r} (only 'open' processed)")
         return
 
-    tool = str(alert.get("tool") or "")
-    rule_id = str(alert.get("rule_id") or "")
-    rule_name = alert.get("rule_name")
-    severity = str((alert.get("severity") or "unknown"))
+    tool = str(metadata.get("tool") or "")
+    rule_id = str(metadata.get("rule_id") or "")
+    rule_name = metadata.get("rule_name")
+    severity = str(metadata.get("severity") or "unknown")
     cve = rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE
 
-    path = normalize_path(alert.get("file"))
-    start_line = alert.get("start_line")
-    end_line = alert.get("end_line")
-    commit_sha = str(alert.get("commit_sha") or "")
+    path = normalize_path(metadata.get("file"))
+    start_line = metadata.get("start_line")
+    end_line = metadata.get("end_line")
+    commit_sha = str(metadata.get("commit_sha") or "")
 
-    msg_params = alert.get("_message_params")
-    if not isinstance(msg_params, dict):
-        raise SystemExit(
-            "ERROR: missing parsed message params on alert. "
-            "Expected alert['_message_params'] to be set by load_open_alerts_from_file()."
-        )
-
-    fingerprint = str(msg_params.get(AlertMessageKey.ALERT_HASH.value) or "").strip()
+    fingerprint = str(alert_details.get("alert_hash") or "").strip()
 
     if not fingerprint:
         raise SystemExit(
-            f"ERROR: missing {AlertMessageKey.ALERT_HASH.value!r} in alert message parameters for alert_number={alert_number}. "
+            f"ERROR: missing 'alert_hash' in alert_details for alert_number={alert_number}. "
             "Ensure the collector/scanner includes an 'Alert hash: ...' line."
         )
 
     occurrence_fp = compute_occurrence_fp(commit_sha, path, start_line, end_line)
 
     repo_full = alert["_repo"]
-    first_seen = iso_date(alert.get("created_at"))
-    last_seen = iso_date(alert.get("updated_at"))
+    first_seen = iso_date(metadata.get("created_at"))
+    last_seen = iso_date(metadata.get("updated_at"))
 
     _spm = severity_priority_map or {}
 
@@ -794,11 +791,10 @@ def _label_orphan_issues(
     """Detect open child issues with no matching alert and add the adept-to-close label."""
     alert_fingerprints: set[str] = set()
     for alert in alerts.values():
-        msg_params = alert.get("_message_params")
-        if isinstance(msg_params, dict):
-            fp = str(msg_params.get(AlertMessageKey.ALERT_HASH.value) or "").strip()
-            if fp:
-                alert_fingerprints.add(fp)
+        alert_details = alert.get("alert_details") or {}
+        fp = str(alert_details.get("alert_hash") or "").strip()
+        if fp:
+            alert_fingerprints.add(fp)
 
     open_issue_fps = {fp for fp, issue in index.by_fingerprint.items() if issue.state.lower() == "open"}
     orphan_fps = open_issue_fps - alert_fingerprints

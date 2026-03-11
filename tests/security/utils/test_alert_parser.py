@@ -28,6 +28,7 @@ from utils.alert_parser import (
     load_open_alerts_from_file,
     parse_alert_message_params,
 )
+from utils.models import LoadedAlerts
 
 
 # ── Raw message strings for parse_alert_message_params tests ──────────
@@ -213,10 +214,10 @@ def test_loads_open_alerts() -> None:
         {"metadata": {"alert_number": 2, "state": "dismissed"}, "alert_details": {}, "rule_details": {}},
     ])
     try:
-        repo, alerts = load_open_alerts_from_file(path)
-        assert repo == "org/repo"
-        assert 1 in alerts
-        assert 2 not in alerts
+        result = load_open_alerts_from_file(path)
+        assert result.repo_full == "org/repo"
+        assert 1 in result.open_by_number
+        assert 2 not in result.open_by_number
     finally:
         os.unlink(path)
 
@@ -225,9 +226,9 @@ def test_enriches_repo() -> None:
         {"metadata": {"alert_number": 10, "state": "open"}, "alert_details": {"alert_hash": "xyz"}, "rule_details": {}},
     ])
     try:
-        repo, alerts = load_open_alerts_from_file(path)
-        alert = alerts[10]
-        assert alert["_repo"] == "org/repo"
+        result = load_open_alerts_from_file(path)
+        alert = result.open_by_number[10]
+        assert alert.repo == "org/repo"
     finally:
         os.unlink(path)
 
@@ -250,8 +251,8 @@ def test_skips_alert_without_number() -> None:
         {"metadata": {"state": "open"}, "alert_details": {}, "rule_details": {}},
     ])
     try:
-        _, alerts = load_open_alerts_from_file(path)
-        assert len(alerts) == 0
+        result = load_open_alerts_from_file(path)
+        assert len(result.open_by_number) == 0
     finally:
         os.unlink(path)
 
@@ -261,7 +262,7 @@ def test_skips_alert_with_invalid_number() -> None:
         {"metadata": {"alert_number": "not-a-number", "state": "open"}, "alert_details": {}, "rule_details": {}},
     ])
     try:
-        _, alerts = load_open_alerts_from_file(path)
-        assert len(alerts) == 0
+        result = load_open_alerts_from_file(path)
+        assert len(result.open_by_number) == 0
     finally:
         os.unlink(path)

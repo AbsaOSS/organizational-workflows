@@ -21,9 +21,9 @@ Alerts use the nested schema (``metadata`` / ``alert_details`` / ``rule_details`
 produced by ``collect_alert.py``.
 """
 
-import copy
-
 import pytest
+
+from utils.models import Alert
 
 
 # ── Raw alert payloads (read-only module-level originals) ──────────────
@@ -235,28 +235,26 @@ _PIPELINE_ALERT_317: dict = {
 }
 
 
-def _enrich(raw: dict) -> dict:
+def _enrich(raw: dict) -> Alert:
     """Simulate the enrichment that ``load_open_alerts_from_file`` performs."""
-    alert = copy.deepcopy(raw)
-    alert["_repo"] = "test-org/test-repo"
-    return alert
+    return Alert.from_dict(raw, repo="test-org/test-repo")
 
 
 # ── Public fixtures ────────────────────────────────────────────────────
 
 @pytest.fixture()
-def sast_alert() -> dict:
+def sast_alert() -> Alert:
     """SAST finding (alert 303) — ``verify=False`` in Python requests."""
     return _enrich(_SAST_ALERT_303)
 
 
 @pytest.fixture()
-def vuln_alert() -> dict:
+def vuln_alert() -> Alert:
     """Vulnerability finding (alert 312) — jsPDF CVE with installed version."""
     return _enrich(_VULN_ALERT_312)
 
 
 @pytest.fixture()
-def pipeline_alert() -> dict:
+def pipeline_alert() -> Alert:
     """Pipeline misconfiguration finding (alert 317) — unpinned action."""
     return _enrich(_PIPELINE_ALERT_317)

@@ -23,7 +23,6 @@ This is the main business-logic module that ties together all other
 """
 
 import logging
-from typing import Any
 
 from shared.common import iso_date, normalize_path, utc_today
 from shared.github_issues import (
@@ -59,7 +58,7 @@ from .issue_builder import (
     build_parent_template_values,
     classify_category,
 )
-from .models import AlertContext, IssueIndex, NotifiedIssue, SeverityChange, SyncContext, SyncResult
+from .models import Alert, AlertContext, IssueIndex, NotifiedIssue, SeverityChange, SyncContext, SyncResult
 from .sec_events import render_sec_event, strip_sec_events_from_body
 from .secmeta import json_list, load_secmeta, parse_json_list, render_secmeta
 from .templates import PARENT_BODY_TEMPLATE
@@ -148,7 +147,7 @@ def maybe_reopen_parent_issue(
 
 
 def ensure_parent_issue(
-    alert: dict[str, Any],
+    alert: Alert,
     issues: dict[int, Issue],
     index: IssueIndex,
     *,
@@ -159,24 +158,23 @@ def ensure_parent_issue(
     parent_original_bodies: dict[int, tuple[str, str]] | None = None,
 ) -> Issue | None:
     """Find or create the parent issue for the alert's ``rule_id``."""
-    metadata = alert.get("metadata") or {}
-    rule_id = str(metadata.get("rule_id") or "").strip()
+    rule_id = alert.metadata.rule_id
     if not rule_id:
         return None
 
-    repo_full = str(alert.get("_repo") or "")
+    repo_full = alert.repo
     existing = find_parent_issue(index, rule_id=rule_id)
     if existing is not None:
         # Keep parent issues aligned to the template as alerts evolve.
         existing_secmeta = load_secmeta(existing.body) or {"schema": "1"}
-        existing_first = existing_secmeta.get("first_seen") or iso_date(metadata.get("created_at"))
-        existing_last = existing_secmeta.get("last_seen") or iso_date(metadata.get("updated_at"))
-        first_seen_final = min(existing_first, iso_date(metadata.get("created_at")))
-        last_seen_final = max(existing_last, iso_date(metadata.get("updated_at")))
+        existing_first = existing_secmeta.get("first_seen") or iso_date(alert.metadata.created_at)
+        existing_last = existing_secmeta.get("last_seen") or iso_date(alert.metadata.updated_at)
+        first_seen_final = min(existing_first, iso_date(alert.metadata.created_at))
+        last_seen_final = max(existing_last, iso_date(alert.metadata.updated_at))
 
         existing_severity = str(existing_secmeta.get("severity") or "unknown")
         existing_severity_cmp = existing_severity.lower()
-        incoming_severity = str(metadata.get("severity") or "").strip()
+        incoming_severity = alert.metadata.severity
         incoming_severity_cmp = incoming_severity.lower()
 
         if incoming_severity_cmp and existing_severity_cmp != incoming_severity_cmp:
@@ -203,7 +201,7 @@ def ensure_parent_issue(
                 "type": SECMETA_TYPE_PARENT,
                 "repo": repo_full,
                 "source": existing_secmeta.get("source") or "code_scanning",
-                "tool": str(metadata.get("tool") or existing_secmeta.get("tool") or ""),
+                "tool": alert.metadata.tool or existing_secmeta.get("tool") or "",
                 "severity": severity_stored,
                 "rule_id": rule_id,
                 "first_seen": first_seen_final,
@@ -241,7 +239,7 @@ def ensure_parent_issue(
 
         return existing
 
-    title = build_parent_issue_title(rule_id, str(metadata.get("severity") or "unknown"))
+    title = build_parent_issue_title(rule_id, alert.metadata.severity)
     body = build_parent_issue_body(alert)
     labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT, LABEL_EPIC]
     if dry_run:
@@ -266,10 +264,10 @@ def ensure_parent_issue(
             render_sec_event(
                 {
                     "action": SEC_EVENT_OPEN,
-                    "seen_at": iso_date(metadata.get("created_at")),
+                    "seen_at": iso_date(alert.metadata.created_at),
                     "source": "code_scanning",
                     "rule_id": rule_id,
-                    "severity": str(metadata.get("severity") or "unknown"),
+                    "severity": alert.metadata.severity,
                 }
             ),
         )
@@ -281,7 +279,7 @@ def ensure_parent_issue(
 
     if priority_sync is not None:
         priority_sync.enqueue(
-            repo_full, num, str(metadata.get("severity") or "unknown"),
+            repo_full, num, alert.metadata.severity,
             severity_priority_map or {},
         )
 
@@ -633,7 +631,7 @@ def _handle_existing_child_issue(
 
 
 def ensure_issue(
-    alert: dict[str, Any],
+    alert: Alert,
     issues: dict[int, Issue],
     index: IssueIndex,
     *,
@@ -645,30 +643,24 @@ def ensure_issue(
     parent_original_bodies: dict[int, tuple[str, str]] | None = None,
 ) -> None:
     """Process a single alert: create or update its child issue and parent."""
-    metadata = alert.get("metadata") or {}
-    alert_details = alert.get("alert_details") or {}
+    alert_number = alert.metadata.alert_number
 
-    alert_number = int(metadata.get("alert_number"))
-
-    alert_state = str(metadata.get("state") or "").lower().strip()
+    alert_state = alert.metadata.state
     if alert_state and alert_state != "open":
-        # This script is designed to process open alerts only.
+        # This script is designed to process open alerts only!
         # Input is typically produced by collect_alert.py with --state open (default).
         logging.debug(f"Skip alert {alert_number}: state={alert_state!r} (only 'open' processed)")
         return
 
-    tool = str(metadata.get("tool") or "")
-    rule_id = str(metadata.get("rule_id") or "")
-    rule_name = metadata.get("rule_name")
-    severity = str(metadata.get("severity") or "unknown")
+    rule_id = alert.metadata.rule_id
     cve = rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE
 
-    path = normalize_path(metadata.get("file"))
-    start_line = metadata.get("start_line")
-    end_line = metadata.get("end_line")
-    commit_sha = str(metadata.get("commit_sha") or "")
+    path = normalize_path(alert.metadata.file)
+    start_line = alert.metadata.start_line
+    end_line = alert.metadata.end_line
+    commit_sha = alert.metadata.commit_sha
 
-    fingerprint = str(alert_details.get("alert_hash") or "").strip()
+    fingerprint = alert.alert_details.alert_hash
 
     if not fingerprint:
         raise SystemExit(
@@ -678,9 +670,9 @@ def ensure_issue(
 
     occurrence_fp = compute_occurrence_fp(commit_sha, path, start_line, end_line)
 
-    repo_full = alert["_repo"]
-    first_seen = iso_date(metadata.get("created_at"))
-    last_seen = iso_date(metadata.get("updated_at"))
+    repo_full = alert.repo
+    first_seen = iso_date(alert.metadata.created_at)
+    last_seen = iso_date(alert.metadata.updated_at)
 
     _spm = severity_priority_map or {}
 
@@ -703,10 +695,10 @@ def ensure_issue(
         repo=repo_full,
         first_seen=first_seen,
         last_seen=last_seen,
-        tool=tool,
+        tool=alert.metadata.tool,
         rule_id=rule_id,
-        rule_name=str(rule_name or ""),
-        severity=severity,
+        rule_name=alert.metadata.rule_name,
+        severity=alert.metadata.severity,
         cve=cve,
         path=path,
         start_line=start_line,
@@ -730,7 +722,7 @@ def ensure_issue(
 
 
 def _init_priority_sync(
-    alerts: dict[int, dict[str, Any]],
+    alerts: dict[int, Alert],
     *,
     severity_priority_map: dict[str, str],
     project_number: int | None,
@@ -745,7 +737,7 @@ def _init_priority_sync(
     if not org:
         first_alert = next(iter(alerts.values()), None)
         if first_alert:
-            repo_full = str(first_alert.get("_repo") or "")
+            repo_full = first_alert.repo
             org = repo_full.split("/", 1)[0] if "/" in repo_full else ""
 
     if not org:
@@ -783,7 +775,7 @@ def _flush_parent_body_updates(
 
 
 def _label_orphan_issues(
-    alerts: dict[int, dict[str, Any]],
+    alerts: dict[int, Alert],
     index: IssueIndex,
     *,
     dry_run: bool,
@@ -791,8 +783,7 @@ def _label_orphan_issues(
     """Detect open child issues with no matching alert and add the adept-to-close label."""
     alert_fingerprints: set[str] = set()
     for alert in alerts.values():
-        alert_details = alert.get("alert_details") or {}
-        fp = str(alert_details.get("alert_hash") or "").strip()
+        fp = alert.alert_details.alert_hash
         if fp:
             alert_fingerprints.add(fp)
 
@@ -831,7 +822,7 @@ def _label_orphan_issues(
 
 
 def sync_alerts_and_issues(
-    alerts: dict[int, dict[str, Any]],
+    alerts: dict[int, Alert],
     issues: dict[int, Issue],
     *,
     dry_run: bool = False,

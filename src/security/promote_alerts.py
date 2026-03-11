@@ -135,7 +135,10 @@ def main(argv: list[str] | None = None) -> None:
     verbose = bool(args.verbose) or parse_runner_debug()
     setup_logging(verbose)
 
-    repo_full, open_alerts = load_open_alerts_from_file(args.file)
+    loaded_alerts = load_open_alerts_from_file(args.file)
+    repo_full = loaded_alerts.repo_full
+    open_alerts = loaded_alerts.open_by_number
+
     issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
 
     # Build severity → priority map from user input; empty by default (priority skipped).

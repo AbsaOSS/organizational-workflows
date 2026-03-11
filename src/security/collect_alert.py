@@ -33,6 +33,8 @@ if _repo_root not in sys.path:
 from shared.common import parse_runner_debug, run_gh
 from shared.logging_config import setup_logging
 
+logger = logging.getLogger(__name__)
+
 VALID_STATES = {"open", "dismissed", "fixed", "all"}
 
 RULE_DETAIL_KEYS = [
@@ -84,7 +86,7 @@ def _gh_api_json(endpoint: str) -> dict | list:
     """Call ``gh api`` and return parsed JSON."""
     res = run_gh(["api", "-H", "Accept: application/vnd.github+json", endpoint])
     if res.returncode != 0:
-        logging.error("gh api %s failed:\n%s", endpoint, res.stderr)
+        logger.error("gh api %s failed:\n%s", endpoint, res.stderr)
         raise SystemExit(1)
     return json.loads(res.stdout)
 
@@ -93,7 +95,7 @@ def _gh_api_paginate(endpoint: str) -> list[dict]:
     """Call ``gh api --paginate`` and return the concatenated list of results."""
     res = run_gh(["api", "-H", "Accept: application/vnd.github+json", "--paginate", endpoint])
     if res.returncode != 0:
-        logging.error("gh api %s failed:\n%s", endpoint, res.stderr)
+        logger.error("gh api %s failed:\n%s", endpoint, res.stderr)
         raise SystemExit(1)
     # --paginate may emit multiple JSON arrays back-to-back; decode all of them.
     decoder = json.JSONDecoder()
@@ -184,31 +186,31 @@ def main(argv: list[str] | None = None) -> None:
 
     # Validate repo format
     if "/" not in repo:
-        logging.error("--repo must be in owner/repo format")
+        logger.error("--repo must be in owner/repo format")
         raise SystemExit(1)
 
     # Ensure gh CLI is available
     if not shutil.which("gh"):
-        logging.error("gh CLI is required")
+        logger.error("gh CLI is required")
         raise SystemExit(1)
 
     # Ensure gh is authenticated
     auth = run_gh(["auth", "status"])
     if auth.returncode != 0:
-        logging.error("gh is not authenticated")
+        logger.error("gh is not authenticated")
         raise SystemExit(1)
 
     # Refuse to overwrite
     if os.path.exists(out_file):
-        print(f"Output file {out_file} exists. Exiting")
+        logger.error("Output file %s exists. Exiting", out_file)
         raise SystemExit(1)
 
     # Fetch repository metadata
-    print(f"Fetching repository metadata for {repo}...")
+    logger.info("Fetching repository metadata for %s...", repo)
     repo_data = _gh_api_json(f"/repos/{repo}")
 
     # Fetch alerts
-    print(f"Fetching code scanning alerts (state={state})...")
+    logger.info("Fetching code scanning alerts (state=%s)...", state)
     endpoint = f"/repos/{repo}/code-scanning/alerts?per_page=100"
     if state != "all":
         endpoint += f"&state={state}"
@@ -240,11 +242,11 @@ def main(argv: list[str] | None = None) -> None:
         f.write("\n")
 
     count = len(output["alerts"])
-    print("Done.")
-    print(f"Repository : {repo}")
-    print(f"State      : {state}")
-    print(f"Alerts     : {count}")
-    print(f"Output     : {out_file}")
+    logger.info("Done.")
+    logger.info("Repository : %s", repo)
+    logger.info("State      : %s", state)
+    logger.info("Alerts     : %d", count)
+    logger.info("Output     : %s", out_file)
 
 
 if __name__ == "__main__":

@@ -107,9 +107,15 @@ class RuleDetails:
     def __post_init__(self) -> None:
         # Normalize all empty display fields; callers never need to supply NOT_AVAILABLE defaults.
         for _f in (
-            "fixed_version", "published_date", "package_name",
-            "impact", "confidence", "likelihood",
-            "remediation", "owasp", "references",
+            "fixed_version",
+            "published_date",
+            "package_name",
+            "impact",
+            "confidence",
+            "likelihood",
+            "remediation",
+            "owasp",
+            "references",
         ):
             if not getattr(self, _f):
                 setattr(self, _f, NOT_AVAILABLE)

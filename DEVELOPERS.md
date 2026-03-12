@@ -134,6 +134,44 @@ end-to-end tests.
 3. Write plain `test_` functions — do not wrap them in classes.
 4. Run `python3 -m pytest tests/ -v --cov` to verify coverage.
 
+## Linting and static analysis
+
+All commands assume your working directory is the repository root.
+
+### Black (formatting)
+
+Check only (CI mode):
+```bash
+python3 -m black --check src/ tests/
+```
+
+Auto-fix formatting:
+```bash
+python3 -m black src/ tests/
+```
+
+### Pylint (static analysis)
+
+The project requires a score ≥ **9.5/10** (enforced by `fail-under` in `.pylintrc`).
+
+```bash
+python3 -m pylint src/
+```
+
+### Mypy (type checking)
+
+```bash
+python3 -m mypy src/
+```
+
+### Run all checks at once
+
+```bash
+python3 -m black --check src/ tests/ && \
+python3 -m mypy src/ && \
+python3 -m pylint src/
+```
+
 ## Style guide
 
 - Formatting follows [Black](https://black.readthedocs.io/) with

@@ -635,7 +635,7 @@ def _handle_existing_child_issue(
         parent_issue = find_parent_issue(sync.index, rule_id=ctx.rule_id)
 
     reopened = _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=parent_issue)
-    secmeta, new_occurrence = _merge_child_secmeta(ctx=ctx, issue=issue)
+    secmeta, _ = _merge_child_secmeta(ctx=ctx, issue=issue)
     _rebuild_and_apply_child_body(ctx=ctx, sync=sync, issue=issue, secmeta=secmeta)
     _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=reopened)
     _sync_child_title_and_labels(ctx=ctx, sync=sync, issue=issue)

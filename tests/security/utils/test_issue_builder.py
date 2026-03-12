@@ -408,3 +408,44 @@ def test_all_template_sections_rendered(vuln_alert: Alert) -> None:
     assert "## Location" in body
     assert "## Dependency Details" in body
     assert "## Detection Timeline" in body
+
+
+def test_scan_date_falls_back_to_metadata_updated_at() -> None:
+    """When alert_details.scan_date is absent, fall back to metadata.updated_at."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "X",
+            "updated_at": "2026-01-15T10:00:00Z",
+            "created_at": "2025-12-01T08:00:00Z",
+        },
+        "alert_details": {},  # scan_date absent → defaults to ""
+        "rule_details": {},
+    })
+    body = build_child_issue_body(alert)
+    assert "2026-01-15" in body
+
+
+def test_first_seen_falls_back_to_metadata_created_at() -> None:
+    """When alert_details.first_seen is absent, fall back to metadata.created_at."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "X",
+            "updated_at": "2026-01-15T10:00:00Z",
+            "created_at": "2025-12-01T08:00:00Z",
+        },
+        "alert_details": {},  # first_seen absent → defaults to ""
+        "rule_details": {},
+    })
+    body = build_child_issue_body(alert)
+    assert "2025-12-01" in body
+
+
+def test_scan_date_and_first_seen_yield_na_when_no_fallback() -> None:
+    """When neither alert_details nor metadata provide dates, render N/A."""
+    alert = Alert.from_dict({
+        "metadata": {"rule_id": "X"},  # no updated_at / created_at
+        "alert_details": {},
+        "rule_details": {},
+    })
+    body = build_child_issue_body(alert)
+    assert body.count("N/A") >= 2

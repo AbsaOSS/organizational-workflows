@@ -74,8 +74,8 @@ class AlertDetails:
     first_seen: str = ""
     scm_file: str = ""
     installed_version: str = ""
-    start_line: str = ""  # may be "N/A"
-    end_line: str = ""  # may be "N/A"
+    start_line: str = ""
+    end_line: str = ""
     message: str = ""
 
     def __post_init__(self) -> None:

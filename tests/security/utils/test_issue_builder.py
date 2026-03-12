@@ -163,6 +163,58 @@ def test_extra_data_references(vuln_alert: Alert) -> None:
     refs = vals["extraData"]["references"]
     assert "redhat.com" in refs
 
+
+def test_references_fallback_to_metadata_urls() -> None:
+    """When rule_details.references is absent, fall back to metadata.help_uri / alert_url."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "RULE-1",
+            "help_uri": "https://example.com/rule",
+            "alert_url": "https://github.com/org/repo/security/code-scanning/1",
+        },
+        "rule_details": {},  # references will be normalised to N/A
+    })
+    extra = alert_extra_data(alert)
+    assert "https://example.com/rule" in extra["references"]
+    assert "https://github.com/org/repo/security/code-scanning/1" in extra["references"]
+
+
+def test_references_fallback_help_uri_only() -> None:
+    """Fallback uses only help_uri when alert_url is absent."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "RULE-2",
+            "help_uri": "https://docs.example.com/cve",
+        },
+        "rule_details": {},
+    })
+    extra = alert_extra_data(alert)
+    assert "https://docs.example.com/cve" in extra["references"]
+
+
+def test_references_no_fallback_urls_yields_na() -> None:
+    """Fallback returns N/A when metadata has no useful URLs either."""
+    alert = Alert.from_dict({
+        "metadata": {"rule_id": "RULE-3"},
+        "rule_details": {},
+    })
+    extra = alert_extra_data(alert)
+    assert extra["references"] == "N/A"
+
+
+def test_references_not_overridden_when_present() -> None:
+    """rule_details.references is used as-is when it contains a value."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "RULE-4",
+            "help_uri": "https://should-not-appear.example.com",
+        },
+        "rule_details": {"references": "- https://explicit-ref.example.com"},
+    })
+    extra = alert_extra_data(alert)
+    assert "https://explicit-ref.example.com" in extra["references"]
+    assert "should-not-appear" not in extra["references"]
+
 def test_all_template_keys_present(sast_alert: Alert) -> None:
     """Every placeholder in PARENT_BODY_TEMPLATE has a corresponding value."""
     vals = build_parent_template_values(

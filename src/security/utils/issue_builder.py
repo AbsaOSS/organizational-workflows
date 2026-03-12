@@ -27,9 +27,22 @@ from .secmeta import render_secmeta
 from .templates import CHILD_BODY_TEMPLATE, PARENT_BODY_TEMPLATE
 
 
+def _synthesize_references(alert: Alert) -> str:
+    """Build a markdown bullet list from metadata URLs when rule_details.references is absent."""
+    lines = []
+    if alert.metadata.help_uri:
+        lines.append(f"- {alert.metadata.help_uri}")
+    if alert.metadata.alert_url:
+        lines.append(f"- {alert.metadata.alert_url}")
+    return "\n".join(lines) if lines else NOT_AVAILABLE
+
+
 def alert_extra_data(alert: Alert) -> dict[str, Any]:
     """Build the extra-data dict for parent issue templates from nested alert data."""
     rule_id = alert.metadata.rule_id
+    references = alert.rule_details.references
+    if references == NOT_AVAILABLE:
+        references = _synthesize_references(alert)
 
     return {
         "cve": rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE,
@@ -39,7 +52,7 @@ def alert_extra_data(alert: Alert) -> dict[str, Any]:
         "likelihood": alert.rule_details.likelihood,
         "confidence": alert.rule_details.confidence,
         "remediation": alert.rule_details.remediation,
-        "references": alert.rule_details.references,
+        "references": references,
     }
 
 

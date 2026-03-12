@@ -52,11 +52,11 @@ class AlertMetadata:
     end_line: int | None = None
 
     def __post_init__(self) -> None:
-        self.rule_id = self.rule_id.strip()
-        self.rule_name = self.rule_name.strip()
-        self.severity = self.severity.strip() or "unknown"
-        self.state = self.state.lower().strip()
-        self.tool = self.tool.strip()
+        self.rule_id = (self.rule_id or "").strip()
+        self.rule_name = (self.rule_name or "").strip()
+        self.severity = (self.severity or "").strip() or "unknown"
+        self.state = (self.state or "").lower().strip()
+        self.tool = (self.tool or "").strip()
 
 
 @dataclass

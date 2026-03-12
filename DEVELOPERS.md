@@ -10,11 +10,10 @@ scripts in `src/security/`.
 | Python | 3.14+ | Runtime for all Python scripts |
 | `gh` | latest | GitHub CLI (used by Python scripts) |
 
-Install runtime **and** development dependencies:
+Install all dependencies:
 
 ```bash
-pip install -r requirements.txt        # runtime deps (requests)
-pip install -r requirements-dev.txt    # dev deps     (pytest, pytest-cov)
+pip install -r requirements.txt
 ```
 
 ## Project layout
@@ -77,8 +76,8 @@ open htmlcov/index.html
 ### Running a single test file or test
 
 ```bash
-python3 -m pytest tests/utils/test_alert_parser.py -v
-python3 -m pytest tests/utils/test_models.py::test_severity_direction_escalate -v
+python3 -m pytest tests/security/utils/test_alert_parser.py -v
+python3 -m pytest tests/security/utils/test_models.py::test_severity_change_creation -v
 ```
 
 ## Test conventions
@@ -99,8 +98,12 @@ Coverage is configured in `pyproject.toml`:
 
 ```toml
 [tool.coverage.run]
-source = ["."]
-omit = ["tests/*", "__pycache__/*"]
+source = ["src/shared", "src/security"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/htmlcov/*",
+]
 
 [tool.coverage.report]
 show_missing = true

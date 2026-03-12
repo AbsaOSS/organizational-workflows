@@ -214,13 +214,12 @@ jobs:
 
 ## Labels (contract)
 
-The automation requires exactly these five labels to exist in the target repository (enforced by `check_labels.py`):
+The automation requires exactly these four labels to exist in the target repository (enforced by `check_labels.py`):
 
 | Label | Purpose |
 | --- | --- |
 | `scope:security` | Applied to every security Issue; used by `promote_alerts.py --issue-label` to discover existing Issues |
 | `type:tech-debt` | Marks security findings as tech-debt items |
-| `sec:src/aquasec-sarif` | Source tag — identifies the scanner that produced the finding |
 | `sec:adept-to-close` | Signals that a finding is ready to be closed by automation |
 | `epic` | Applied to parent (rule-level) Issues so they act as epics grouping child findings |
 
@@ -376,7 +375,7 @@ Each element of `alerts` is a normalised alert object with three sub-objects:
 
 Fixed keys extracted directly from the GitHub code-scanning alert API response.
 All keys are always present; values are `null` when the API does not provide them
-(e.g. `instance_url`, `help_uri`, `end_line` for single-line findings).
+(e.g. `instance_url`, `help_uri`).
 
 Key fields: `alert_number`, `state`, `created_at`, `updated_at`, `url`, `alert_url`,
 `rule_id`, `rule_name`, `severity`, `confidence`, `tags`, `help_uri`, `tool`,
@@ -389,8 +388,10 @@ Key/value pairs parsed from the free-text `message.text` field of the most-recen
 alert instance. **Only keys that actually appear in the message are included**; no
 default or placeholder values are injected for absent keys.
 
-For AquaSec scans the message embeds lines in the form `Key: Value`. Known keys
-(see `AlertMessageKey` in `utils/alert_parser.py`) include `artifact`, `type`,
+For AquaSec scans the message embeds lines in the form `Key: Value`. The raw message
+keys (defined in `AlertMessageKey` in `utils/alert_parser.py`) are space-separated
+(e.g. `scan date`, `alert hash`); `collect_alert.py`'s `_parse_alert_details` converts
+them to snake_case via `_snake_case`. Known output keys include `artifact`, `type`,
 `vulnerability`, `severity`, `message`, `repository`, `reachable`, `scan_date`,
 `first_seen`, `scm_file`, `installed_version`, `start_line`, `end_line`, `alert_hash`.
 

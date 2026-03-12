@@ -37,16 +37,25 @@ def _synthesize_references(alert: Alert) -> str:
     return "\n".join(lines) if lines else NOT_AVAILABLE
 
 
+def _synthesize_owasp(alert: Alert) -> str:
+    """Build a markdown bullet list from OWASP-related tags when rule_details.owasp is absent."""
+    lines = [f"- {tag}" for tag in alert.metadata.tags if "owasp" in tag.lower()]
+    return "\n".join(lines) if lines else NOT_AVAILABLE
+
+
 def alert_extra_data(alert: Alert) -> dict[str, Any]:
     """Build the extra-data dict for parent issue templates from nested alert data."""
     rule_id = alert.metadata.rule_id
     references = alert.rule_details.references
     if references == NOT_AVAILABLE:
         references = _synthesize_references(alert)
+    owasp = alert.rule_details.owasp
+    if owasp == NOT_AVAILABLE:
+        owasp = _synthesize_owasp(alert)
 
     return {
         "cve": rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE,
-        "owasp": alert.rule_details.owasp,
+        "owasp": owasp,
         "category": alert.metadata.rule_name or NOT_AVAILABLE,
         "impact": alert.rule_details.impact,
         "likelihood": alert.rule_details.likelihood,

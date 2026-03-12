@@ -65,6 +65,7 @@ def check_labels(repo: str, required: list[str] | None = None) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Check labels exist in the repository and report any that are missing."""
     parser = argparse.ArgumentParser(description="Check that required labels exist in a GitHub repo.")
     parser.add_argument("--repo", required=True, help="GitHub repository (owner/repo)")
     args = parser.parse_args(argv)

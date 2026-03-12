@@ -19,7 +19,6 @@
 JSON file produced by ``collect_alert.py``.
 """
 
-
 import json
 import logging
 import os
@@ -35,6 +34,7 @@ class AlertMessageKey(StrEnum):
     Each value corresponds to the normalised (lowercased, whitespace-collapsed)
     key emitted by the AquaSec scan-results action.
     """
+
     ARTIFACT = "artifact"
     TYPE = "type"
     VULNERABILITY = "vulnerability"
@@ -78,6 +78,7 @@ def parse_alert_message_params(message: str | None) -> dict[str, str]:
 
 
 def compute_occurrence_fp(commit_sha: str, path: str, start_line: int | None, end_line: int | None) -> str:
+    """Compute a SHA-256 fingerprint for a specific alert occurrence location."""
     return sha256_hex(f"{commit_sha}|{path}|{start_line or ''}|{end_line or ''}")
 
 
@@ -100,10 +101,7 @@ def load_open_alerts_from_file(path: str) -> LoadedAlerts:
     alerts = data.get("alerts", [])
     logging.info(f"Loaded {len(alerts)} alerts from {path} (repo={repo_full})")
 
-    open_alerts = [
-        a for a in alerts
-        if str((a.get("metadata") or {}).get("state") or "").lower() == "open"
-    ]
+    open_alerts = [a for a in alerts if str((a.get("metadata") or {}).get("state") or "").lower() == "open"]
     logging.info(f"Found {len(open_alerts)} open alerts")
 
     open_by_number: dict[int, Alert] = {}
@@ -145,8 +143,7 @@ def load_open_alerts_from_file(path: str) -> LoadedAlerts:
 
         if os.getenv("DEBUG_ALERTS") == "1":
             logging.debug(
-                f"Full alert payload for alert_number={alert_number_int}:\n"
-                + json.dumps(raw, indent=2, sort_keys=True)
+                f"Full alert payload for alert_number={alert_number_int}:\n" + json.dumps(raw, indent=2, sort_keys=True)
             )
 
     return LoadedAlerts(repo_full=repo_full, open_by_number=open_by_number)

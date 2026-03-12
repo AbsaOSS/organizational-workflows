@@ -55,7 +55,6 @@ cat reports/summary.md | python3 send_to_teams.py --title "Daily digest"
 python3 send_to_teams.py --body-file reports/summary.md --dry-run
 """
 
-
 import argparse
 import json
 import logging
@@ -105,19 +104,23 @@ def _build_card_body(
             header_items.append(
                 _text_block(subtitle, isSubtle=True, spacing="None"),
             )
-        elements.append({
-            "type": "Container",
-            "style": "accent",
-            "bleed": True,
-            "items": header_items,
-        })
+        elements.append(
+            {
+                "type": "Container",
+                "style": "accent",
+                "bleed": True,
+                "items": header_items,
+            }
+        )
 
     # Body container
-    elements.append({
-        "type": "Container",
-        "separator": bool(title),
-        "items": [_text_block(body)],
-    })
+    elements.append(
+        {
+            "type": "Container",
+            "separator": bool(title),
+            "items": [_text_block(body)],
+        }
+    )
 
     return elements
 
@@ -156,9 +159,7 @@ def send_to_teams(webhook_url: str, payload: Dict[str, Any]) -> None:
     # Teams webhooks return 200 with body "1" on success.
     if resp.status_code != 200 or resp.text.strip() not in ("1", ""):
         raise SystemExit(
-            f"Teams webhook request failed.\n"
-            f"  Status : {resp.status_code}\n"
-            f"  Body   : {resp.text}"
+            f"Teams webhook request failed.\n" f"  Status : {resp.status_code}\n" f"  Body   : {resp.text}"
         )
     logging.info("Message sent to Teams successfully.")
 
@@ -225,9 +226,7 @@ def _resolve_body(args: argparse.Namespace) -> str:
     if not sys.stdin.isatty():
         return sys.stdin.read()
 
-    raise SystemExit(
-        "No message body provided. Use --body, --body-file, or pipe content via stdin."
-    )
+    raise SystemExit("No message body provided. Use --body, --body-file, or pipe content via stdin.")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -242,9 +241,7 @@ def main(argv: list[str] | None = None) -> None:
 
     webhook_url = args.webhook_url
     if not webhook_url and not args.dry_run:
-        raise SystemExit(
-            "No webhook URL provided. Set TEAMS_WEBHOOK_URL or pass --webhook-url."
-        )
+        raise SystemExit("No webhook URL provided. Set TEAMS_WEBHOOK_URL or pass --webhook-url.")
 
     payload = build_payload(body, title=args.title, subtitle=args.subtitle)
 

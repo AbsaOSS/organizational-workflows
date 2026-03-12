@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+# pylint: skip-file
 """
 Derive team security metrics from issue snapshots (Issues-only).
 
@@ -34,15 +35,14 @@ Outputs:
 import json
 import logging
 import os
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Any, Dict, List, Optional
 
 SNAPSHOT_CUR = os.environ.get("SNAPSHOT_CURRENT", "data/issues_snapshot.json")
 SNAPSHOT_PREV = os.environ.get("SNAPSHOT_PREVIOUS", "data/issues_snapshot.prev.json")
 
 OUT_METRICS_JSON = os.environ.get("OUT_METRICS_JSON", "reports/metrics.json")
 OUT_SUMMARY_MD = os.environ.get("OUT_SUMMARY_MD", "reports/summary.md")
+
 
 def require_env(key: str) -> str:
     """Return the value of environment variable *key*, or exit."""
@@ -101,7 +101,9 @@ def _severity_from_labels(labels: List[str]) -> str:
 def main() -> None:
     """Derive and write team security metrics from issue snapshots."""
     # TODO decide about changes related to this script
-    logging.warning("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
+    logging.warning(
+        "This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics."
+    )
     return
 
     cur = _load_json(SNAPSHOT_CUR)

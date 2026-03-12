@@ -16,7 +16,6 @@
 
 """Security-specific Markdown body templates."""
 
-
 PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 
 ## General Information
@@ -85,6 +84,3 @@ CHILD_BODY_TEMPLATE = """## General Information
 - **Scan date:** {{ scan_date }}
 - **First seen:** {{ first_seen }}
 """
-
-
-

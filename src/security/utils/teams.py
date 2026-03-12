@@ -18,7 +18,6 @@
 ``send_to_teams.py`` for new / reopened issues.
 """
 
-
 import logging
 import os
 import subprocess
@@ -77,17 +76,14 @@ def _post_to_teams(
             logging.info(f"DRY-RUN: {label} webhook configured; no delivery will occur")
         else:
             logging.info(
-                f"DRY-RUN: no Teams Incoming Webhook URL configured. "
-                f"No {label.lower()} post to Teams will be made."
+                f"DRY-RUN: no Teams Incoming Webhook URL configured. " f"No {label.lower()} post to Teams will be made."
             )
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     send_script = os.path.join(os.path.dirname(script_dir), "send_to_teams.py")
 
     if not os.path.exists(send_script):
-        logging.warning(
-            f"send_to_teams.py not found at {send_script} – skipping {label.lower()}"
-        )
+        logging.warning(f"send_to_teams.py not found at {send_script} – skipping {label.lower()}")
         return
 
     body_file: str | None = None
@@ -103,16 +99,19 @@ def _post_to_teams(
             body_file = tmp.name
 
         cmd = [
-            sys.executable, send_script,
-            "--body-file", body_file,
-            "--title", title,
+            sys.executable,
+            send_script,
+            "--body-file",
+            body_file,
+            "--title",
+            title,
         ]
         if dry_run:
             cmd.append("--dry-run")
         else:
             cmd.extend(["--webhook-url", webhook_url])
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             logging.warning(f"{label} failed: {result.stderr}")
         else:

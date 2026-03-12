@@ -16,7 +16,6 @@
 
 """Issue title / body construction from Alert dataclasses."""
 
-
 from typing import Any
 
 from shared.common import iso_date
@@ -32,16 +31,15 @@ def alert_extra_data(alert: Alert) -> dict[str, Any]:
     """Build the extra-data dict for parent issue templates from nested alert data."""
     rule_id = alert.metadata.rule_id
 
-    # TODO - all NOT_AVAILABLE defaults should ideally be handled during parsing or loading, not here in the template-value logic
     return {
         "cve": rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE,
-        "owasp": alert.rule_details.owasp or NOT_AVAILABLE,
+        "owasp": alert.rule_details.owasp,
         "category": alert.metadata.rule_name or NOT_AVAILABLE,
-        "impact": alert.rule_details.impact or NOT_AVAILABLE,
-        "likelihood": alert.rule_details.likelihood or NOT_AVAILABLE,
-        "confidence": alert.rule_details.confidence or NOT_AVAILABLE,
-        "remediation": alert.rule_details.remediation or NOT_AVAILABLE,
-        "references": alert.rule_details.references or NOT_AVAILABLE,
+        "impact": alert.rule_details.impact,
+        "likelihood": alert.rule_details.likelihood,
+        "confidence": alert.rule_details.confidence,
+        "remediation": alert.rule_details.remediation,
+        "references": alert.rule_details.references,
     }
 
 
@@ -69,9 +67,9 @@ def build_parent_template_values(alert: Alert, *, rule_id: str, severity: str) -
         "avd_id": alert.alert_details.vulnerability or rule_id,
         "title": rule_id,
         "severity": severity,
-        "published_date": iso_date(alert.rule_details.published_date) if alert.rule_details.published_date else NOT_AVAILABLE,
-        "package_name": alert.rule_details.package_name or NOT_AVAILABLE,
-        "fixed_version": alert.rule_details.fixed_version or NOT_AVAILABLE,
+        "published_date": iso_date(alert.rule_details.published_date),
+        "package_name": alert.rule_details.package_name,
+        "fixed_version": alert.rule_details.fixed_version,
         "extraData": extra,
     }
 
@@ -111,14 +109,14 @@ def build_child_issue_body(alert: Alert) -> str:
     """Render the human-readable body for a child issue from alert data."""
     repo_full = alert.repo.strip()
     if not repo_full:
-        repo_full = alert.alert_details.repository or NOT_AVAILABLE
+        repo_full = alert.alert_details.repository
 
     vulnerability = alert.alert_details.vulnerability
     avd_id = vulnerability if vulnerability.startswith("AVD-") else NOT_AVAILABLE
 
     title = alert.metadata.rule_id
 
-    scm_file = alert.alert_details.scm_file or NOT_AVAILABLE
+    scm_file = alert.alert_details.scm_file
     start_line = alert.metadata.start_line
     start_line_str = str(start_line) if start_line is not None else ""
 
@@ -132,7 +130,7 @@ def build_child_issue_body(alert: Alert) -> str:
         file_display = file_name or NOT_AVAILABLE
 
     alert_hash = alert.alert_details.alert_hash
-    message = alert.alert_details.message or NOT_AVAILABLE
+    message = alert.alert_details.message
 
     category = classify_category(alert)
 
@@ -145,10 +143,10 @@ def build_child_issue_body(alert: Alert) -> str:
         "repository_full_name": repo_full,
         "file_display": file_display,
         "file_permalink": file_permalink,
-        "package_name": alert.rule_details.package_name or NOT_AVAILABLE,
-        "installed_version": alert.alert_details.installed_version or NOT_AVAILABLE,
-        "fixed_version": alert.rule_details.fixed_version or NOT_AVAILABLE,
-        "reachable": alert.alert_details.reachable or NOT_AVAILABLE,
+        "package_name": alert.rule_details.package_name,
+        "installed_version": alert.alert_details.installed_version,
+        "fixed_version": alert.rule_details.fixed_version,
+        "reachable": alert.alert_details.reachable,
         "scan_date": iso_date(alert.alert_details.scan_date),
         "first_seen": iso_date(alert.alert_details.first_seen),
     }

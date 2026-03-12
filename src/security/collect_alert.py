@@ -150,6 +150,7 @@ def _normalise_alert(alert: dict) -> dict:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse and return CLI arguments."""
     parser = argparse.ArgumentParser(
         description="Collect GitHub code-scanning alerts and write a normalised JSON file.",
     )
@@ -175,6 +176,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Entry point: collect code-scanning alerts and write normalised JSON."""
     args = parse_args(argv)
 
     verbose = bool(args.verbose) or parse_runner_debug()
@@ -208,6 +210,7 @@ def main(argv: list[str] | None = None) -> None:
     # Fetch repository metadata
     logger.info("Fetching repository metadata for %s...", repo)
     repo_data = _gh_api_json(f"/repos/{repo}")
+    assert isinstance(repo_data, dict)
 
     # Fetch alerts
     logger.info("Fetching code scanning alerts (state=%s)...", state)

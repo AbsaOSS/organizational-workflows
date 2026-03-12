@@ -50,8 +50,7 @@ def _resolve_repo(cli_repo: str) -> str:
     repo = cli_repo or os.environ.get("GITHUB_REPOSITORY", "")
     if not repo or "/" not in repo:
         raise SystemExit(
-            "ERROR: repo not specified or invalid. "
-            "Use --repo owner/repo or set GITHUB_REPOSITORY=owner/repo."
+            "ERROR: repo not specified or invalid. " "Use --repo owner/repo or set GITHUB_REPOSITORY=owner/repo."
         )
     return repo
 

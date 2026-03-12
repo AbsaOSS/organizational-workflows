@@ -210,10 +210,15 @@ def ensure_parent_issue(
             }
         )
 
-        rebuilt = render_secmeta(existing_secmeta) + "\n\n" + render_markdown_template(
-            PARENT_BODY_TEMPLATE,
-            build_parent_template_values(alert, rule_id=rule_id, severity=severity_stored),
-        ).strip() + "\n"
+        rebuilt = (
+            render_secmeta(existing_secmeta)
+            + "\n\n"
+            + render_markdown_template(
+                PARENT_BODY_TEMPLATE,
+                build_parent_template_values(alert, rule_id=rule_id, severity=severity_stored),
+            ).strip()
+            + "\n"
+        )
         rebuilt = strip_sec_events_from_body(rebuilt)
 
         # Snapshot the original body on first encounter so we can
@@ -279,7 +284,9 @@ def ensure_parent_issue(
 
     if priority_sync is not None:
         priority_sync.enqueue(
-            repo_full, num, alert.metadata.severity,
+            repo_full,
+            num,
+            alert.metadata.severity,
             severity_priority_map or {},
         )
 
@@ -350,14 +357,20 @@ def _handle_new_child_issue(
         commit_short = ctx.commit_sha[:8] if ctx.commit_sha else ""
         logging.info(
             "DRY-RUN: create child "
-            f"alert={ctx.alert_number} rule_id={ctx.rule_id} sev={ctx.severity} fp={ctx.fingerprint[:8]} tool={ctx.tool} "
-            f"commit={commit_short} loc={loc} title={title!r} labels=[{','.join(labels)}] "
-            f"| secmeta:first_seen={ctx.first_seen} last_seen={ctx.last_seen} occurrence_count=1 gh_alert_numbers=[{ctx.alert_number}]"
+            f"alert={ctx.alert_number} rule_id={ctx.rule_id} sev={ctx.severity}"
+            f" fp={ctx.fingerprint[:8]} tool={ctx.tool} commit={commit_short}"
+            f" loc={loc} title={title!r} labels=[{','.join(labels)}]"
+            f" | secmeta:first_seen={ctx.first_seen} last_seen={ctx.last_seen}"
+            f" occurrence_count=1 gh_alert_numbers=[{ctx.alert_number}]"
         )
         if parent_issue is None and ctx.rule_id:
-            logging.info(f"DRY-RUN: add sub-issue link parent_rule_id={ctx.rule_id} child=(new) alert={ctx.alert_number}")
+            logging.info(
+                f"DRY-RUN: add sub-issue link parent_rule_id={ctx.rule_id} child=(new) alert={ctx.alert_number}"
+            )
         elif parent_issue is not None:
-            logging.info(f"DRY-RUN: add sub-issue link parent=#{parent_issue.number} child=(new) alert={ctx.alert_number}")
+            logging.info(
+                f"DRY-RUN: add sub-issue link parent=#{parent_issue.number} child=(new) alert={ctx.alert_number}"
+            )
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             logging.debug("DRY-RUN: body_preview_begin")
             logging.debug(body)
@@ -561,7 +574,6 @@ def _comment_child_event(
     sync: SyncContext,
     issue: Issue,
     reopened: bool,
-    new_occurrence: bool,
 ) -> None:
     """Post a reopen sec-event comment on the child issue."""
     if reopened:
@@ -593,8 +605,7 @@ def _sync_child_title_and_labels(
     if expected_title != (issue.title or ""):
         if sync.dry_run:
             logging.info(
-                f"DRY-RUN: would update issue #{issue.number} title "
-                f"from {issue.title!r} to {expected_title!r}"
+                f"DRY-RUN: would update issue #{issue.number} title " f"from {issue.title!r} to {expected_title!r}"
             )
         else:
             if gh_issue_edit_title(ctx.repo, issue.number, expected_title):
@@ -626,7 +637,7 @@ def _handle_existing_child_issue(
     reopened = _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=parent_issue)
     secmeta, new_occurrence = _merge_child_secmeta(ctx=ctx, issue=issue)
     _rebuild_and_apply_child_body(ctx=ctx, sync=sync, issue=issue, secmeta=secmeta)
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=reopened, new_occurrence=new_occurrence)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=reopened)
     _sync_child_title_and_labels(ctx=ctx, sync=sync, issue=issue)
 
 
@@ -677,8 +688,12 @@ def ensure_issue(
     _spm = severity_priority_map or {}
 
     parent_issue = ensure_parent_issue(
-        alert, issues, index, dry_run=dry_run,
-        severity_priority_map=_spm, priority_sync=priority_sync,
+        alert,
+        issues,
+        index,
+        dry_run=dry_run,
+        severity_priority_map=_spm,
+        priority_sync=priority_sync,
         severity_changes=severity_changes,
         parent_original_bodies=parent_original_bodies,
     )
@@ -848,8 +863,11 @@ def sync_alerts_and_issues(
 
     for alert in alerts.values():
         ensure_issue(
-            alert, issues, index,
-            dry_run=dry_run, notifications=notifications,
+            alert,
+            issues,
+            index,
+            dry_run=dry_run,
+            notifications=notifications,
             severity_priority_map=severity_priority_map,
             priority_sync=priority_sync,
             severity_changes=severity_changes,

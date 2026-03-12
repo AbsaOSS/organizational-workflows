@@ -91,36 +91,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--severity-priority-map",
         default=os.environ.get("SEVERITY_PRIORITY_MAP", ""),
         help="Comma-separated severity=priority pairs that define which priority string "
-             "to assign for each alert severity. Severities: Critical, High, Medium, Low, Unknown. "
-             "Example: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor,Unknown=Normal'. "
-             "Only listed severities get a priority; unlisted ones are left empty. "
-             "When not set at all, priority is skipped for every severity. "
-             "Priority values must match the option names of the Priority single-select field "
-             "in the target GitHub Project. "
-             "Default: $SEVERITY_PRIORITY_MAP env var.",
+        "to assign for each alert severity. Severities: Critical, High, Medium, Low, Unknown. "
+        "Example: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor,Unknown=Normal'. "
+        "Only listed severities get a priority; unlisted ones are left empty. "
+        "When not set at all, priority is skipped for every severity. "
+        "Priority values must match the option names of the Priority single-select field "
+        "in the target GitHub Project. "
+        "Default: $SEVERITY_PRIORITY_MAP env var.",
     )
     p.add_argument(
         "--project-number",
         type=int,
         default=int(os.environ.get("PROJECT_NUMBER", "0")) or None,
         help="GitHub Projects V2 number (org-level) where a Priority single-select field "
-             "will be set for each promoted issue.  Required together with --severity-priority-map. "
-             "When omitted, project-level priority is skipped. "
-             "Default: $PROJECT_NUMBER env var.",
+        "will be set for each promoted issue.  Required together with --severity-priority-map. "
+        "When omitted, project-level priority is skipped. "
+        "Default: $PROJECT_NUMBER env var.",
     )
     p.add_argument(
         "--project-org",
         default=os.environ.get("PROJECT_ORG", ""),
         help="GitHub organisation that owns the Projects V2 board.  "
-             "Use this when the project lives in a different org than the scanned repo. "
-             "When omitted, the org is derived from the repo name. "
-             "Default: $PROJECT_ORG env var.",
+        "Use this when the project lives in a different org than the scanned repo. "
+        "When omitted, the org is derived from the repo name. "
+        "Default: $PROJECT_ORG env var.",
     )
     p.add_argument(
         "--teams-webhook-url",
         default=os.environ.get("TEAMS_WEBHOOK_URL"),
         help="Teams Incoming Webhook URL for new/reopened issue alerts (default: $TEAMS_WEBHOOK_URL). "
-             "If not set, Teams notification is skipped.",
+        "If not set, Teams notification is skipped.",
     )
     return p.parse_args(argv)
 

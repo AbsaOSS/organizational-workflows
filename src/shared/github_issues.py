@@ -58,7 +58,7 @@ def gh_issue_add_sub_issue(repo: str, parent_number: int, sub_issue_id: int) -> 
             f"Failed to add sub-issue link parent=#{parent_number} sub_issue_id={sub_issue_id}: {res.stderr}"
         )
         return False
-    
+
     return True
 
 
@@ -68,7 +68,7 @@ def gh_issue_add_sub_issue_by_number(repo: str, parent_number: int, child_number
 
     if child_id is None:
         return False
-    
+
     return gh_issue_add_sub_issue(repo, parent_number, child_id)
 
 
@@ -115,10 +115,7 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
         except Exception:
             continue
         raw_labels = obj.get("labels") or []
-        label_names = [
-            str(lbl.get("name") or lbl) if isinstance(lbl, dict) else str(lbl)
-            for lbl in raw_labels
-        ]
+        label_names = [str(lbl.get("name") or lbl) if isinstance(lbl, dict) else str(lbl) for lbl in raw_labels]
         issues[number] = Issue(
             number=number,
             state=str(obj.get("state") or ""),
@@ -158,9 +155,7 @@ def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
     # Last resort: REST API.
     res3 = run_gh(["api", "--method", "PATCH", f"repos/{repo}/issues/{number}", "-f", f"state={desired}"])
     if res3.returncode != 0:
-        logging.error(
-            f"Failed to edit state for #{number}: {res2.stderr or res2.stdout or res.stderr}"
-        )
+        logging.error(f"Failed to edit state for #{number}: {res2.stderr or res2.stdout or res.stderr}")
         return False
     return True
 
@@ -184,7 +179,7 @@ def gh_issue_edit_body(repo: str, number: int, body: str) -> bool:
     if res.returncode != 0:
         logging.error(f"Failed to edit body for #{number}: {res.stderr}")
         return False
-    
+
     logging.info(f"Updated issue #{number} body")
     return True
 
@@ -193,7 +188,7 @@ def gh_issue_add_labels(repo: str, number: int, labels: list[str]) -> None:
     """Add *labels* to issue *number* (idempotent)."""
     if not labels:
         return
-    
+
     args: list[str] = ["issue", "edit", str(number), "--repo", repo]
 
     for label in labels:
@@ -212,7 +207,7 @@ def gh_issue_comment(repo: str, number: int, body: str) -> bool:
     if res.returncode != 0:
         logging.error(f"Failed to comment on #{number}: {res.stderr}")
         return False
-    
+
     return True
 
 
@@ -232,9 +227,9 @@ def gh_issue_create(repo: str, title: str, body: str, labels: list[str]) -> int 
     match = re.search(r"/issues/(?P<num>\d+)(?:\s*)$", out)
     if match:
         return int(match.group("num"))
-    
+
     match = re.search(r"issues/(?P<num>\d+)", out)
     if match:
         return int(match.group("num"))
-    
+
     return None

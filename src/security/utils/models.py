@@ -22,10 +22,13 @@ from typing import Any
 from shared.github_projects import ProjectPrioritySync
 from shared.models import Issue
 
+from .constants import NOT_AVAILABLE
+
 
 @dataclass
 class AlertMetadata:
     """Parsed from the ``metadata`` section of a raw alert entry."""
+
     alert_number: int = 0
     state: str = ""
     created_at: str = ""
@@ -59,6 +62,7 @@ class AlertMetadata:
 @dataclass
 class AlertDetails:
     """Parsed from the ``alert_details`` section of a raw alert entry."""
+
     alert_hash: str = ""
     artifact: str = ""
     type: str = ""
@@ -70,17 +74,22 @@ class AlertDetails:
     first_seen: str = ""
     scm_file: str = ""
     installed_version: str = ""
-    start_line: str = ""    # may be "N/A"
-    end_line: str = ""      # may be "N/A"
+    start_line: str = ""  # may be "N/A"
+    end_line: str = ""  # may be "N/A"
     message: str = ""
 
     def __post_init__(self) -> None:
         self.alert_hash = self.alert_hash.strip()
+        # Normalize optional display fields; callers never need to supply NOT_AVAILABLE defaults.
+        for _f in ("repository", "scm_file", "message", "installed_version", "reachable"):
+            if not getattr(self, _f):
+                setattr(self, _f, NOT_AVAILABLE)
 
 
 @dataclass
 class RuleDetails:
     """Parsed from the ``rule_details`` section of a raw alert entry."""
+
     type: str = ""
     severity: str = ""
     cwe: str = ""
@@ -95,10 +104,21 @@ class RuleDetails:
     owasp: str = ""
     references: str = ""
 
+    def __post_init__(self) -> None:
+        # Normalize all empty display fields; callers never need to supply NOT_AVAILABLE defaults.
+        for _f in (
+            "fixed_version", "published_date", "package_name",
+            "impact", "confidence", "likelihood",
+            "remediation", "owasp", "references",
+        ):
+            if not getattr(self, _f):
+                setattr(self, _f, NOT_AVAILABLE)
+
 
 @dataclass
 class Alert:
     """A single code-scanning alert with its metadata, details, and rule info."""
+
     metadata: AlertMetadata = field(default_factory=AlertMetadata)
     alert_details: AlertDetails = field(default_factory=AlertDetails)
     rule_details: RuleDetails = field(default_factory=RuleDetails)
@@ -124,6 +144,7 @@ class Alert:
 @dataclass
 class LoadedAlerts:
     """Result of loading the alerts JSON produced by collect_alert.py."""
+
     repo_full: str
     open_by_number: dict[int, Alert]
 
@@ -131,6 +152,7 @@ class LoadedAlerts:
 @dataclass
 class IssueIndex:
     """In-memory indexes for fast issue lookup by fingerprint and rule_id."""
+
     by_fingerprint: dict[str, Issue]
     parent_by_rule_id: dict[str, Issue]
 
@@ -138,17 +160,19 @@ class IssueIndex:
 @dataclass
 class NotifiedIssue:
     """Tracks a new or reopened child issue for Teams notification."""
+
     repo: str
     issue_number: int
     severity: str
     category: str
-    state: str          # "new" or "reopen"
+    state: str  # "new" or "reopen"
     tool: str
 
 
 @dataclass
 class SeverityChange:
     """Records a parent issue whose severity changed between syncs."""
+
     repo: str
     issue_number: int
     rule_id: str
@@ -167,6 +191,7 @@ SEVERITY_ORDER: dict[str, int] = {
 
 
 def severity_direction(old: str, new: str) -> str:
+    """Return an emoji+label describing the direction of a severity change."""
     old_rank = SEVERITY_ORDER.get(old.lower(), -1)
     new_rank = SEVERITY_ORDER.get(new.lower(), -1)
     if new_rank > old_rank:
@@ -179,6 +204,7 @@ def severity_direction(old: str, new: str) -> str:
 @dataclass
 class SyncResult:
     """Aggregated output of a full sync run."""
+
     notifications: list[NotifiedIssue]
     severity_changes: list[SeverityChange]
 
@@ -186,6 +212,7 @@ class SyncResult:
 @dataclass
 class AlertContext:
     """Per-alert data extracted in ``ensure_issue`` and passed to child handlers."""
+
     alert: Alert
     alert_number: int
     fingerprint: str
@@ -207,6 +234,7 @@ class AlertContext:
 @dataclass
 class SyncContext:
     """Shared orchestration state for the sync run."""
+
     issues: dict[int, Issue]
     index: IssueIndex
     dry_run: bool

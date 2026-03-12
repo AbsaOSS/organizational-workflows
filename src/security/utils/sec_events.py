@@ -18,7 +18,6 @@
 structured lifecycle-event blocks from issue bodies.
 """
 
-
 import re
 
 from .secmeta import render_kv_lines

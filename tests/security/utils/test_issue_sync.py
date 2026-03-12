@@ -473,7 +473,7 @@ def test_comment_reopen_event(mocker: MockerFixture) -> None:
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context()
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True, new_occurrence=False)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True)
     mock_comment.assert_called_once()
     comment_body = mock_comment.call_args[0][2]
     assert "reopen" in comment_body
@@ -484,7 +484,7 @@ def test_comment_occurrence_event_no_comment(mocker: MockerFixture) -> None:
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context()
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False, new_occurrence=True)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False)
     mock_comment.assert_not_called()
 
 def test_comment_no_event() -> None:
@@ -492,14 +492,14 @@ def test_comment_no_event() -> None:
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context()
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False, new_occurrence=False)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False)
 
 def test_comment_reopen_dry_run() -> None:
     """Dry-run mode does not call gh_issue_comment for reopen."""
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context(dry_run=True)
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True, new_occurrence=False)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True)
 
 def test_comment_occurrence_dry_run() -> None:
     """No comment in any mode when issue is already open (occurrence-only path)."""
@@ -507,7 +507,7 @@ def test_comment_occurrence_dry_run() -> None:
     ctx = _make_alert_context()
     sync = _make_sync_context(dry_run=True)
     # Dry-run should also be silent for already-open issues.
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False, new_occurrence=True)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False)
 
 
 # =====================================================================

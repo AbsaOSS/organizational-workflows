@@ -574,7 +574,6 @@ def _comment_child_event(
     sync: SyncContext,
     issue: Issue,
     reopened: bool,
-    new_occurrence: bool = False,  # reserved for future sec-event types
 ) -> None:
     """Post a reopen sec-event comment on the child issue."""
     if reopened:

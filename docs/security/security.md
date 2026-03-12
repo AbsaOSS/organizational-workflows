@@ -197,7 +197,7 @@ jobs:
 
 #### Remove sec:adept-to-close on close
 
-Example caller (already available in `docs/security/example_workflows/remove-adept-to-close-on-issue-close.yml`):
+Example caller (already available in [remove-adept-to-close-on-issue-close.yml](/docs/security/example_workflows/remove-adept-to-close-on-issue-close.yml)):
 
 ```yaml
 name: Remove sec:adept-to-close on close

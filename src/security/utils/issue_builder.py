@@ -67,7 +67,7 @@ def build_parent_template_values(alert: Alert, *, rule_id: str, severity: str) -
         "avd_id": alert.alert_details.vulnerability or rule_id,
         "title": rule_id,
         "severity": severity,
-        "published_date": iso_date(alert.rule_details.published_date),
+        "published_date": iso_date(alert.rule_details.published_date or NOT_AVAILABLE),
         "package_name": alert.rule_details.package_name,
         "fixed_version": alert.rule_details.fixed_version,
         "extraData": extra,

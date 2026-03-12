@@ -119,6 +119,31 @@ def test_published_date_from_rule_details(sast_alert: Alert) -> None:
     # SAST fixture has rule_details.published_date = None; absent dates map to N/A
     assert vals["published_date"] == "N/A"
 
+
+def test_published_date_none_in_raw_dict() -> None:
+    """published_date=None in the raw dict (as returned by _parse_rule_details for a
+    missing field) must yield N/A, not today's date via iso_date(None).
+    """
+    raw: dict = {
+        "metadata": {"rule_id": "x", "severity": "low"},
+        "rule_details": {"published_date": None},
+    }
+    alert = Alert.from_dict(raw)
+    vals = build_parent_template_values(alert, rule_id="x", severity="low")
+    assert vals["published_date"] == "N/A"
+
+
+def test_published_date_absent_from_raw_dict() -> None:
+    """published_date key absent entirely from rule_details must also yield N/A."""
+    raw: dict = {
+        "metadata": {"rule_id": "x", "severity": "low"},
+        "rule_details": {},
+    }
+    alert = Alert.from_dict(raw)
+    vals = build_parent_template_values(alert, rule_id="x", severity="low")
+    assert vals["published_date"] == "N/A"
+
+
 def test_extra_data_synthesised(sast_alert: Alert) -> None:
     """Fields are synthesised from the nested alert structure."""
     vals = build_parent_template_values(

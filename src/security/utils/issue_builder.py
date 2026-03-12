@@ -160,11 +160,7 @@ def build_child_issue_body(alert: Alert) -> str:
         "installed_version": alert.alert_details.installed_version,
         "fixed_version": alert.rule_details.fixed_version,
         "reachable": alert.alert_details.reachable,
-        "scan_date": iso_date(
-            alert.alert_details.scan_date or alert.metadata.updated_at or NOT_AVAILABLE
-        ),
-        "first_seen": iso_date(
-            alert.alert_details.first_seen or alert.metadata.created_at or NOT_AVAILABLE
-        ),
+        "scan_date": iso_date(alert.alert_details.scan_date or alert.metadata.updated_at or NOT_AVAILABLE),
+        "first_seen": iso_date(alert.alert_details.first_seen or alert.metadata.created_at or NOT_AVAILABLE),
     }
     return render_markdown_template(CHILD_BODY_TEMPLATE, values).strip() + "\n"

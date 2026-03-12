@@ -19,9 +19,7 @@
 import pytest
 
 from utils.issue_builder import (
-    _msg_param,
     alert_extra_data,
-    alert_value,
     build_child_issue_body,
     build_issue_title,
     build_parent_issue_body,
@@ -29,6 +27,7 @@ from utils.issue_builder import (
     build_parent_template_values,
     classify_category,
 )
+from utils.models import Alert
 
 
 # =====================================================================
@@ -36,60 +35,46 @@ from utils.issue_builder import (
 # =====================================================================
 
 
-def test_returns_first_hit() -> None:
-    alert = {"a": "", "b": "hello", "c": "world"}
-    assert alert_value(alert, "a", "b", "c") == "hello"
-
-def test_missing_keys() -> None:
-    assert alert_value({}, "x", "y") == ""
-
-def test_strips_whitespace() -> None:
-    assert alert_value({"k": "  padded  "}, "k") == "padded"
-
-def test_skips_none() -> None:
-    assert alert_value({"k": None, "j": "val"}, "k", "j") == "val"
-
-
-def test_extracts_value(sast_alert: dict) -> None:
-    assert _msg_param(sast_alert, "repository") == "test-org/test-repo"
-
-def test_missing_key(sast_alert: dict) -> None:
-    result = _msg_param(sast_alert, "nonexistent")
-    assert result == "N/A"
-
-def test_no_params_dict() -> None:
-    result = _msg_param({}, "anything")
-    assert result == "N/A"
-
-
-def test_returns_dict() -> None:
-    assert alert_extra_data({"extraData": {"cwe": "CWE-79"}}) == {"cwe": "CWE-79"}
-
-def test_synthesises_extra_data_when_missing() -> None:
-    """When no extraData sub-dict exists, fields are synthesised."""
-    alert = {
-        "rule_id": "CVE-123",
-        "rule_name": "sast",
-        "confidence": "error",
-        "help_uri": "https://owasp.org/Top10/A07",
-        "alert_url": "https://example.com/alert",
-        "_message_params": {"message": "some remediation"},
-    }
+def test_extra_data_from_nested() -> None:
+    """Extra data is synthesised from nested metadata + rule_details."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "CVE-123",
+            "rule_name": "sast",
+        },
+        "rule_details": {
+            "confidence": "error",
+            "owasp": "https://owasp.org/Top10/A07",
+            "remediation": "some remediation",
+            "impact": "N/A",
+            "likelihood": "N/A",
+            "references": "- https://example.com/alert\n- https://owasp.org/Top10/A07",
+        },
+    })
     extra = alert_extra_data(alert)
     assert isinstance(extra, dict)
     assert extra["cve"] == "CVE-123"
     assert extra["confidence"] == "error"
     assert extra["category"] == "sast"
 
+def test_extra_data_non_cve() -> None:
+    """Non-CVE rule_id results in N/A for cve field."""
+    alert = Alert.from_dict({
+        "metadata": {"rule_id": "RULE-1", "rule_name": "sast"},
+        "rule_details": {},
+    })
+    extra = alert_extra_data(alert)
+    assert extra["cve"] == "N/A"
 
-def test_sast(sast_alert: dict) -> None:
+
+def test_sast(sast_alert: Alert) -> None:
     assert classify_category(sast_alert) == "sast"
 
-def test_vuln(vuln_alert: dict) -> None:
+def test_vuln(vuln_alert: Alert) -> None:
     assert classify_category(vuln_alert) == "vulnerabilities"
 
 def test_empty() -> None:
-    assert classify_category({}) == ""
+    assert classify_category(Alert()) == ""
 
 
 # =====================================================================
@@ -108,33 +93,59 @@ def test_without_severity() -> None:
     )
 
 
-def test_sast_category_from_rule_name(sast_alert: dict) -> None:
+def test_sast_category_from_rule_name(sast_alert: Alert) -> None:
     vals = build_parent_template_values(
         sast_alert, rule_id="req-with-very-false-aquasec-python", severity="high"
     )
     assert vals["category"] == "sast"
 
-def test_vuln_category_from_rule_name(vuln_alert: dict) -> None:
+def test_vuln_category_from_rule_name(vuln_alert: Alert) -> None:
     vals = build_parent_template_values(
         vuln_alert, rule_id="CVE-2026-25755", severity="high"
     )
     assert vals["category"] == "vulnerabilities"
 
-def test_avd_id_uses_rule_id(sast_alert: dict) -> None:
+def test_avd_id_uses_vulnerability(sast_alert: Alert) -> None:
     vals = build_parent_template_values(
         sast_alert, rule_id="req-with-very-false-aquasec-python", severity="high"
     )
     assert vals["avd_id"] == "req-with-very-false-aquasec-python"
 
-def test_published_date_from_first_seen_msg(sast_alert: dict) -> None:
-    """Published date should fall back to message 'First seen' \u2192 date portion."""
+def test_published_date_from_rule_details(sast_alert: Alert) -> None:
+    """Published date comes from rule_details.published_date."""
     vals = build_parent_template_values(
         sast_alert, rule_id="test", severity="high"
     )
-    assert vals["published_date"] == "2025-09-17"
+    # SAST fixture has rule_details.published_date = None; absent dates map to N/A
+    assert vals["published_date"] == "N/A"
 
-def test_extra_data_synthesised(sast_alert: dict) -> None:
-    """When no extraData sub-dict exists, fields are synthesised from the alert."""
+
+def test_published_date_none_in_raw_dict() -> None:
+    """published_date=None in the raw dict (as returned by _parse_rule_details for a
+    missing field) must yield N/A, not today's date via iso_date(None).
+    """
+    raw: dict = {
+        "metadata": {"rule_id": "x", "severity": "low"},
+        "rule_details": {"published_date": None},
+    }
+    alert = Alert.from_dict(raw)
+    vals = build_parent_template_values(alert, rule_id="x", severity="low")
+    assert vals["published_date"] == "N/A"
+
+
+def test_published_date_absent_from_raw_dict() -> None:
+    """published_date key absent entirely from rule_details must also yield N/A."""
+    raw: dict = {
+        "metadata": {"rule_id": "x", "severity": "low"},
+        "rule_details": {},
+    }
+    alert = Alert.from_dict(raw)
+    vals = build_parent_template_values(alert, rule_id="x", severity="low")
+    assert vals["published_date"] == "N/A"
+
+
+def test_extra_data_synthesised(sast_alert: Alert) -> None:
+    """Fields are synthesised from the nested alert structure."""
     vals = build_parent_template_values(
         sast_alert, rule_id="test", severity="high"
     )
@@ -142,30 +153,69 @@ def test_extra_data_synthesised(sast_alert: dict) -> None:
     assert isinstance(extra, dict)
     assert extra["confidence"] == "error"
     assert extra["category"] == "sast"
-    # OWASP reference derived from help_uri
+    # OWASP reference derived from rule_details.owasp
     assert "owasp" in extra["owasp"].lower()
 
-def test_extra_data_references_from_help_uri(vuln_alert: dict) -> None:
+def test_extra_data_references(vuln_alert: Alert) -> None:
     vals = build_parent_template_values(
         vuln_alert, rule_id="CVE-2026-25755", severity="high"
     )
     refs = vals["extraData"]["references"]
     assert "redhat.com" in refs
 
-def test_existing_extra_data_preserved() -> None:
-    """When extraData sub-dict is present on the alert, it is used as-is."""
-    alert = {
-        "rule_id": "X",
-        "rule_name": "sast",
-        "severity": "low",
-        "extraData": {"cve": "CVE-999", "custom": "value"},
-        "_message_params": {},
-    }
-    vals = build_parent_template_values(alert, rule_id="X", severity="low")
-    assert vals["extraData"]["cve"] == "CVE-999"
-    assert vals["extraData"]["custom"] == "value"
 
-def test_all_template_keys_present(sast_alert: dict) -> None:
+def test_references_fallback_to_metadata_urls() -> None:
+    """When rule_details.references is absent, fall back to metadata.help_uri / alert_url."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "RULE-1",
+            "help_uri": "https://example.com/rule",
+            "alert_url": "https://github.com/org/repo/security/code-scanning/1",
+        },
+        "rule_details": {},  # references will be normalised to N/A
+    })
+    extra = alert_extra_data(alert)
+    assert "https://example.com/rule" in extra["references"]
+    assert "https://github.com/org/repo/security/code-scanning/1" in extra["references"]
+
+
+def test_references_fallback_help_uri_only() -> None:
+    """Fallback uses only help_uri when alert_url is absent."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "RULE-2",
+            "help_uri": "https://docs.example.com/cve",
+        },
+        "rule_details": {},
+    })
+    extra = alert_extra_data(alert)
+    assert "https://docs.example.com/cve" in extra["references"]
+
+
+def test_references_no_fallback_urls_yields_na() -> None:
+    """Fallback returns N/A when metadata has no useful URLs either."""
+    alert = Alert.from_dict({
+        "metadata": {"rule_id": "RULE-3"},
+        "rule_details": {},
+    })
+    extra = alert_extra_data(alert)
+    assert extra["references"] == "N/A"
+
+
+def test_references_not_overridden_when_present() -> None:
+    """rule_details.references is used as-is when it contains a value."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "RULE-4",
+            "help_uri": "https://should-not-appear.example.com",
+        },
+        "rule_details": {"references": "- https://explicit-ref.example.com"},
+    })
+    extra = alert_extra_data(alert)
+    assert "https://explicit-ref.example.com" in extra["references"]
+    assert "should-not-appear" not in extra["references"]
+
+def test_all_template_keys_present(sast_alert: Alert) -> None:
     """Every placeholder in PARENT_BODY_TEMPLATE has a corresponding value."""
     vals = build_parent_template_values(
         sast_alert, rule_id="test", severity="high"
@@ -177,7 +227,7 @@ def test_all_template_keys_present(sast_alert: dict) -> None:
     }
     assert required.issubset(vals.keys())
 
-def test_extra_data_sub_keys(sast_alert: dict) -> None:
+def test_extra_data_sub_keys(sast_alert: Alert) -> None:
     """All extraData keys referenced in the template are present."""
     vals = build_parent_template_values(
         sast_alert, rule_id="test", severity="high"
@@ -195,28 +245,28 @@ def test_extra_data_sub_keys(sast_alert: dict) -> None:
 # =====================================================================
 
 
-def test_contains_secmeta_block(sast_alert: dict) -> None:
+def test_contains_secmeta_block(sast_alert: Alert) -> None:
     body = build_parent_issue_body(sast_alert)
     assert "<!--secmeta" in body
     assert "type=parent" in body
 
-def test_contains_severity(sast_alert: dict) -> None:
+def test_contains_severity(sast_alert: Alert) -> None:
     body = build_parent_issue_body(sast_alert)
     assert "high" in body.lower()
 
-def test_contains_rule_id(sast_alert: dict) -> None:
+def test_contains_rule_id(sast_alert: Alert) -> None:
     body = build_parent_issue_body(sast_alert)
     assert "req-with-very-false-aquasec-python" in body
 
-def test_contains_category_section(sast_alert: dict) -> None:
+def test_contains_category_section(sast_alert: Alert) -> None:
     body = build_parent_issue_body(sast_alert)
     assert "**Category:** sast" in body
 
-def test_contains_owasp_reference(sast_alert: dict) -> None:
+def test_contains_owasp_reference(sast_alert: Alert) -> None:
     body = build_parent_issue_body(sast_alert)
     assert "owasp.org" in body
 
-def test_contains_confidence(vuln_alert: dict) -> None:
+def test_contains_confidence(vuln_alert: Alert) -> None:
     body = build_parent_issue_body(vuln_alert)
     assert "error" in body
 
@@ -251,111 +301,151 @@ def test_empty_fingerprint() -> None:
 
 # SAST alert (303)
 
-def test_sast_avd_id(sast_alert: dict) -> None:
+def test_sast_avd_id(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "req-with-very-false-aquasec-python" in body
 
-def test_sast_alert_hash(sast_alert: dict) -> None:
+def test_sast_alert_hash(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "3e9c8c338f318e0d06647c2f79406fd4" in body
 
-def test_sast_title(sast_alert: dict) -> None:
+def test_sast_title(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "sast" in body
 
-def test_sast_message_present(sast_alert: dict) -> None:
+def test_sast_message_present(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "verify=False" in body
 
-def test_sast_repository(sast_alert: dict) -> None:
+def test_sast_repository(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "test-org/test-repo" in body
 
-def test_sast_scm_file_full_url(sast_alert: dict) -> None:
+def test_sast_scm_file_full_url(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "https://github.com/test-org/test-repo/blob/" in body
 
-def test_sast_target_line(sast_alert: dict) -> None:
+def test_sast_target_line(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "95" in body
 
-def test_sast_reachable_from_msg(sast_alert: dict) -> None:
+def test_sast_reachable_from_msg(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "False" in body
 
-def test_sast_scan_date(sast_alert: dict) -> None:
+def test_sast_scan_date(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "2026-02-24" in body
 
-def test_sast_first_seen(sast_alert: dict) -> None:
+def test_sast_first_seen(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "2025-09-17" in body
 
 # Vulnerability alert (312)
 
-def test_vuln_avd_id(vuln_alert: dict) -> None:
+def test_vuln_avd_id(vuln_alert: Alert) -> None:
     body = build_child_issue_body(vuln_alert)
     assert "CVE-2026-25755" in body
 
-def test_vuln_installed_version(vuln_alert: dict) -> None:
+def test_vuln_installed_version(vuln_alert: Alert) -> None:
     body = build_child_issue_body(vuln_alert)
     assert "3.0.3" in body
 
-def test_vuln_reachable(vuln_alert: dict) -> None:
+def test_vuln_reachable(vuln_alert: Alert) -> None:
     body = build_child_issue_body(vuln_alert)
     assert "True" in body
 
-def test_vuln_scm_file(vuln_alert: dict) -> None:
+def test_vuln_scm_file(vuln_alert: Alert) -> None:
     body = build_child_issue_body(vuln_alert)
     assert "aul-ui/package.json" in body
 
-def test_vuln_alert_hash(vuln_alert: dict) -> None:
+def test_vuln_alert_hash(vuln_alert: Alert) -> None:
     body = build_child_issue_body(vuln_alert)
     assert "068f963657211cd416dac1f9b30d606c" in body
 
-def test_vuln_first_seen(vuln_alert: dict) -> None:
+def test_vuln_first_seen(vuln_alert: Alert) -> None:
     body = build_child_issue_body(vuln_alert)
     assert "2026-02-20" in body
 
 # Pipeline alert (317)
 
-def test_pipeline_category(pipeline_alert: dict) -> None:
+def test_pipeline_category(pipeline_alert: Alert) -> None:
     body = build_child_issue_body(pipeline_alert)
     assert "pipelineMisconfigurations" in body
 
-def test_pipeline_no_installed_version(pipeline_alert: dict) -> None:
+def test_pipeline_no_installed_version(pipeline_alert: Alert) -> None:
     body = build_child_issue_body(pipeline_alert)
     assert "**Installed version:**" in body
 
-def test_pipeline_reachable(pipeline_alert: dict) -> None:
+def test_pipeline_reachable(pipeline_alert: Alert) -> None:
     body = build_child_issue_body(pipeline_alert)
     assert "False" in body
 
 # Edge cases
 
 def test_minimal_alert() -> None:
-    minimal: dict = {
-        "rule_id": "UNKNOWN",
-        "_repo": "",
-        "_message_params": {},
-    }
+    minimal = Alert.from_dict({
+        "metadata": {"rule_id": "UNKNOWN"},
+        "alert_details": {},
+        "rule_details": {},
+    })
     body = build_child_issue_body(minimal)
     assert "UNKNOWN" in body
 
-def test_repo_fallback_to_msg_param() -> None:
-    alert: dict = {
-        "rule_id": "X",
-        "_repo": "",
-        "_message_params": {"repository": "org/repo-from-msg"},
-        "message": "Repository: org/repo-from-msg",
-    }
+def test_repo_fallback_to_alert_details() -> None:
+    alert = Alert.from_dict({
+        "metadata": {"rule_id": "X"},
+        "alert_details": {"repository": "org/repo-from-details"},
+        "rule_details": {},
+    })
     body = build_child_issue_body(alert)
-    assert "org/repo-from-msg" in body
+    assert "org/repo-from-details" in body
 
-def test_all_template_sections_rendered(vuln_alert: dict) -> None:
+def test_all_template_sections_rendered(vuln_alert: Alert) -> None:
     body = build_child_issue_body(vuln_alert)
     assert "## General Information" in body
     assert "## Vulnerability Description" in body
     assert "## Location" in body
     assert "## Dependency Details" in body
     assert "## Detection Timeline" in body
+
+
+def test_scan_date_falls_back_to_metadata_updated_at() -> None:
+    """When alert_details.scan_date is absent, fall back to metadata.updated_at."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "X",
+            "updated_at": "2026-01-15T10:00:00Z",
+            "created_at": "2025-12-01T08:00:00Z",
+        },
+        "alert_details": {},  # scan_date absent → defaults to ""
+        "rule_details": {},
+    })
+    body = build_child_issue_body(alert)
+    assert "2026-01-15" in body
+
+
+def test_first_seen_falls_back_to_metadata_created_at() -> None:
+    """When alert_details.first_seen is absent, fall back to metadata.created_at."""
+    alert = Alert.from_dict({
+        "metadata": {
+            "rule_id": "X",
+            "updated_at": "2026-01-15T10:00:00Z",
+            "created_at": "2025-12-01T08:00:00Z",
+        },
+        "alert_details": {},  # first_seen absent → defaults to ""
+        "rule_details": {},
+    })
+    body = build_child_issue_body(alert)
+    assert "2025-12-01" in body
+
+
+def test_scan_date_and_first_seen_yield_na_when_no_fallback() -> None:
+    """When neither alert_details nor metadata provide dates, render N/A."""
+    alert = Alert.from_dict({
+        "metadata": {"rule_id": "X"},  # no updated_at / created_at
+        "alert_details": {},
+        "rule_details": {},
+    })
+    body = build_child_issue_body(alert)
+    assert body.count("N/A") >= 2

@@ -33,7 +33,30 @@ if _repo_root not in sys.path:
 from shared.common import parse_runner_debug, run_gh
 from shared.logging_config import setup_logging
 
+logger = logging.getLogger(__name__)
+
 VALID_STATES = {"open", "dismissed", "fixed", "all"}
+
+RULE_DETAIL_KEYS = [
+    "Type",
+    "Severity",
+    "CWE",
+    "Fixed version",
+    "Published date",
+    "Package name",
+    "Category",
+    "Impact",
+    "Confidence",
+    "Likelihood",
+    "Remediation",
+    "OWASP",
+    "References",
+]
+
+
+def _snake_case(name: str) -> str:
+    """Convert a display name to snake_case."""
+    return name.strip().lower().replace(" ", "_")
 
 
 def _help_value(rule_help: str, name: str) -> str | None:
@@ -42,20 +65,28 @@ def _help_value(rule_help: str, name: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _msg_value(message_text: str, name: str) -> str | None:
-    """Extract a value from ``Name: value`` lines in the alert message."""
+def _parse_rule_details(rule_help: str) -> dict[str, str | None]:
+    """Extract known rule detail fields from ``**Key:** value`` markup in rule help."""
+    return {_snake_case(key): _help_value(rule_help, key) for key in RULE_DETAIL_KEYS}
+
+
+def _parse_alert_details(message_text: str) -> dict[str, str]:
+    """Parse all ``Key: value`` lines from the alert message text."""
+    details: dict[str, str] = {}
     for line in message_text.split("\n"):
-        if re.match(rf"^{re.escape(name)}\s*:", line, re.IGNORECASE):
-            value = re.sub(rf"^{re.escape(name)}\s*:\s*", "", line, flags=re.IGNORECASE)
-            return value.rstrip("\r")
-    return None
+        m = re.match(r"^([A-Za-z][\w\s]*?)\s*:\s*(.*)", line)
+        if m:
+            key = _snake_case(m.group(1))
+            value = m.group(2).rstrip("\r")
+            details[key] = value
+    return details
 
 
 def _gh_api_json(endpoint: str) -> dict | list:
     """Call ``gh api`` and return parsed JSON."""
     res = run_gh(["api", "-H", "Accept: application/vnd.github+json", endpoint])
     if res.returncode != 0:
-        logging.error("gh api %s failed:\n%s", endpoint, res.stderr)
+        logger.error("gh api %s failed:\n%s", endpoint, res.stderr)
         raise SystemExit(1)
     return json.loads(res.stdout)
 
@@ -64,7 +95,7 @@ def _gh_api_paginate(endpoint: str) -> list[dict]:
     """Call ``gh api --paginate`` and return the concatenated list of results."""
     res = run_gh(["api", "-H", "Accept: application/vnd.github+json", "--paginate", endpoint])
     if res.returncode != 0:
-        logging.error("gh api %s failed:\n%s", endpoint, res.stderr)
+        logger.error("gh api %s failed:\n%s", endpoint, res.stderr)
         raise SystemExit(1)
     # --paginate may emit multiple JSON arrays back-to-back; decode all of them.
     decoder = json.JSONDecoder()
@@ -81,7 +112,7 @@ def _gh_api_paginate(endpoint: str) -> list[dict]:
 
 
 def _normalise_alert(alert: dict) -> dict:
-    """Transform a raw GitHub code-scanning alert into the canonical schema."""
+    """Transform a raw GitHub code-scanning alert into metadata, alert_details and rule_details."""
     rule = alert.get("rule") or {}
     tool = alert.get("tool") or {}
     instance = alert.get("most_recent_instance") or {}
@@ -90,35 +121,36 @@ def _normalise_alert(alert: dict) -> dict:
     rule_help = rule.get("help") or ""
 
     return {
-        "alert_number": alert.get("number"),
-        "state": alert.get("state"),
-        "created_at": alert.get("created_at"),
-        "updated_at": alert.get("updated_at"),
-        "url": alert.get("url"),
-        "alert_url": alert.get("html_url"),
-        "rule_id": rule.get("id"),
-        "rule_name": rule.get("name"),
-        "severity": rule.get("security_severity_level"),
-        "confidence": rule.get("severity"),
-        "impact": _help_value(rule_help, "Impact"),
-        "likelihood": _help_value(rule_help, "Likelihood"),
-        "reachable": _msg_value(message_text, "Reachable"),
-        "tags": rule.get("tags") or [],
-        "help_uri": rule.get("help_uri"),
-        "tool": tool.get("name"),
-        "tool_version": tool.get("version"),
-        "ref": instance.get("ref"),
-        "commit_sha": instance.get("commit_sha"),
-        "message": message_text,
-        "instance_url": instance.get("html_url"),
-        "classifications": instance.get("classifications") or [],
-        "file": location.get("path"),
-        "start_line": location.get("start_line"),
-        "end_line": location.get("end_line"),
+        "metadata": {
+            "alert_number": alert.get("number"),
+            "state": alert.get("state"),
+            "created_at": alert.get("created_at"),
+            "updated_at": alert.get("updated_at"),
+            "url": alert.get("url"),
+            "alert_url": alert.get("html_url"),
+            "rule_id": rule.get("id"),
+            "rule_name": rule.get("name"),
+            "severity": rule.get("security_severity_level"),
+            "confidence": rule.get("severity"),
+            "tags": rule.get("tags") or [],
+            "help_uri": rule.get("help_uri"),
+            "tool": tool.get("name"),
+            "tool_version": tool.get("version"),
+            "ref": instance.get("ref"),
+            "commit_sha": instance.get("commit_sha"),
+            "instance_url": instance.get("html_url"),
+            "classifications": instance.get("classifications") or [],
+            "file": location.get("path"),
+            "start_line": location.get("start_line"),
+            "end_line": location.get("end_line"),
+        },
+        "alert_details": _parse_alert_details(message_text),
+        "rule_details": _parse_rule_details(rule_help),
     }
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse and return CLI arguments."""
     parser = argparse.ArgumentParser(
         description="Collect GitHub code-scanning alerts and write a normalised JSON file.",
     )
@@ -144,6 +176,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Entry point: collect code-scanning alerts and write normalised JSON."""
     args = parse_args(argv)
 
     verbose = bool(args.verbose) or parse_runner_debug()
@@ -155,31 +188,32 @@ def main(argv: list[str] | None = None) -> None:
 
     # Validate repo format
     if "/" not in repo:
-        logging.error("--repo must be in owner/repo format")
+        logger.error("--repo must be in owner/repo format")
         raise SystemExit(1)
 
     # Ensure gh CLI is available
     if not shutil.which("gh"):
-        logging.error("gh CLI is required")
+        logger.error("gh CLI is required")
         raise SystemExit(1)
 
     # Ensure gh is authenticated
     auth = run_gh(["auth", "status"])
     if auth.returncode != 0:
-        logging.error("gh is not authenticated")
+        logger.error("gh is not authenticated")
         raise SystemExit(1)
 
     # Refuse to overwrite
     if os.path.exists(out_file):
-        print(f"Output file {out_file} exists. Exiting")
+        logger.error("Output file %s exists. Exiting", out_file)
         raise SystemExit(1)
 
     # Fetch repository metadata
-    print(f"Fetching repository metadata for {repo}...")
+    logger.info("Fetching repository metadata for %s...", repo)
     repo_data = _gh_api_json(f"/repos/{repo}")
+    assert isinstance(repo_data, dict)
 
     # Fetch alerts
-    print(f"Fetching code scanning alerts (state={state})...")
+    logger.info("Fetching code scanning alerts (state=%s)...", state)
     endpoint = f"/repos/{repo}/code-scanning/alerts?per_page=100"
     if state != "all":
         endpoint += f"&state={state}"
@@ -211,11 +245,11 @@ def main(argv: list[str] | None = None) -> None:
         f.write("\n")
 
     count = len(output["alerts"])
-    print("Done.")
-    print(f"Repository : {repo}")
-    print(f"State      : {state}")
-    print(f"Alerts     : {count}")
-    print(f"Output     : {out_file}")
+    logger.info("Done.")
+    logger.info("Repository : %s", repo)
+    logger.info("State      : %s", state)
+    logger.info("Alerts     : %d", count)
+    logger.info("Output     : %s", out_file)
 
 
 if __name__ == "__main__":

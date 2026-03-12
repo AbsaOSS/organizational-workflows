@@ -21,7 +21,7 @@ from types import SimpleNamespace
 import pytest
 from pytest_mock import MockerFixture
 
-from utils.models import NotifiedIssue, SeverityChange, SyncResult
+from utils.models import LoadedAlerts, NotifiedIssue, SeverityChange, SyncResult
 
 # Default empty sync result reused across tests.
 _SYNC_RESULT_EMPTY = SyncResult(notifications=[], severity_changes=[])
@@ -100,7 +100,7 @@ def main_mocks(mocker: MockerFixture) -> SimpleNamespace:
         which=mocker.patch("promote_alerts.shutil.which", return_value="/usr/bin/gh"),
         load=mocker.patch(
             "promote_alerts.load_open_alerts_from_file",
-            return_value=("org/repo", {}),
+            return_value=LoadedAlerts(repo_full="org/repo", open_by_number={}),
         ),
         list_issues=mocker.patch(
             "promote_alerts.gh_issue_list_by_label",

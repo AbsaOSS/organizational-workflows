@@ -8,14 +8,12 @@ scripts in `src/security/`.
 | Tool | Version | Purpose |
 | --- | --- | --- |
 | Python | 3.14+ | Runtime for all Python scripts |
-| `gh` | latest | GitHub CLI (used by shell scripts) |
-| `jq` | latest | JSON processing in shell scripts |
+| `gh` | latest | GitHub CLI (used by Python scripts) |
 
-Install runtime **and** development dependencies:
+Install all dependencies:
 
 ```bash
-pip install -r requirements.txt        # runtime deps (requests)
-pip install -r requirements-dev.txt    # dev deps     (pytest, pytest-cov)
+pip install -r requirements.txt
 ```
 
 ## Project layout
@@ -23,13 +21,17 @@ pip install -r requirements-dev.txt    # dev deps     (pytest, pytest-cov)
 ```text
 src/security/
 ├── utils/                   # Core library modules
-├── promote_alerts.py        # Main sync entrypoint (Python)
+├── sync_security_alerts.py  # Main orchestrator (check labels → collect → promote)
+├── collect_alert.py         # Fetch & normalise code-scanning alerts
+├── promote_alerts.py        # Create / update GitHub Issues from alerts JSON
 ├── send_to_teams.py         # Teams notification helper
 tests/
 ├── security/
 │   ├── conftest.py          # Shared fixtures (synthetic alert payloads)
+│   ├── test_collect_alert.py
 │   ├── test_promote_alerts.py
 │   ├── test_send_to_teams.py
+│   ├── test_sync_security_alerts.py
 │   └── utils/               # Mirrors utils/ module structure
 │       ├── test_alert_parser.py
 │       ├── test_constants.py
@@ -74,8 +76,8 @@ open htmlcov/index.html
 ### Running a single test file or test
 
 ```bash
-python3 -m pytest tests/utils/test_alert_parser.py -v
-python3 -m pytest tests/utils/test_models.py::test_severity_direction_escalate -v
+python3 -m pytest tests/security/utils/test_alert_parser.py -v
+python3 -m pytest tests/security/utils/test_models.py::test_severity_change_creation -v
 ```
 
 ## Test conventions
@@ -96,8 +98,12 @@ Coverage is configured in `pyproject.toml`:
 
 ```toml
 [tool.coverage.run]
-source = ["."]
-omit = ["tests/*", "__pycache__/*"]
+source = ["src/shared", "src/security"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/htmlcov/*",
+]
 
 [tool.coverage.report]
 show_missing = true
@@ -130,6 +136,44 @@ end-to-end tests.
 2. Import shared fixtures from `conftest.py` where applicable.
 3. Write plain `test_` functions — do not wrap them in classes.
 4. Run `python3 -m pytest tests/ -v --cov` to verify coverage.
+
+## Linting and static analysis
+
+All commands assume your working directory is the repository root.
+
+### Black (formatting)
+
+Check only (CI mode):
+```bash
+python3 -m black --check src/ tests/
+```
+
+Auto-fix formatting:
+```bash
+python3 -m black src/ tests/
+```
+
+### Pylint (static analysis)
+
+The project requires a score ≥ **9.5/10** (enforced by `fail-under` in `.pylintrc`).
+
+```bash
+python3 -m pylint src/
+```
+
+### Mypy (type checking)
+
+```bash
+python3 -m mypy src/
+```
+
+### Run all checks at once
+
+```bash
+python3 -m black --check src/ tests/ && \
+python3 -m mypy src/ && \
+python3 -m pylint src/
+```
 
 ## Style guide
 

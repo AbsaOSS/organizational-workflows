@@ -16,17 +16,16 @@
 
 """Alert data parsing – extracting structured fields from raw alert dicts
 (message parameters, CVE, occurrence fingerprint) and loading the alerts
-JSON file produced by ``collect_alert.sh``.
+JSON file produced by ``collect_alert.py``.
 """
-
 
 import json
 import logging
 import os
 from enum import StrEnum
-from typing import Any
 
 from shared.common import sha256_hex
+from .models import Alert, AlertDetails, AlertMetadata, LoadedAlerts, RuleDetails
 
 
 class AlertMessageKey(StrEnum):
@@ -35,6 +34,7 @@ class AlertMessageKey(StrEnum):
     Each value corresponds to the normalised (lowercased, whitespace-collapsed)
     key emitted by the AquaSec scan-results action.
     """
+
     ARTIFACT = "artifact"
     TYPE = "type"
     VULNERABILITY = "vulnerability"
@@ -78,11 +78,12 @@ def parse_alert_message_params(message: str | None) -> dict[str, str]:
 
 
 def compute_occurrence_fp(commit_sha: str, path: str, start_line: int | None, end_line: int | None) -> str:
+    """Compute a SHA-256 fingerprint for a specific alert occurrence location."""
     return sha256_hex(f"{commit_sha}|{path}|{start_line or ''}|{end_line or ''}")
 
 
-def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]]]:
-    """Read alerts JSON and return (repo_full, open_alerts_by_number)."""
+def load_open_alerts_from_file(path: str) -> LoadedAlerts:
+    """Read alerts JSON and return a LoadedAlerts with typed Alert objects."""
 
     if not os.path.exists(path):
         raise SystemExit(f"ERROR: alerts file not found: {path}")
@@ -96,17 +97,19 @@ def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]
     if not repo_full:
         raise SystemExit(f"ERROR: repo.full_name not found in {path}")
 
+    repo_full = str(repo_full)
     alerts = data.get("alerts", [])
     logging.info(f"Loaded {len(alerts)} alerts from {path} (repo={repo_full})")
 
-    open_alerts = [a for a in alerts if str((a.get("state") or "")).lower() == "open"]
+    open_alerts = [a for a in alerts if str((a.get("metadata") or {}).get("state") or "").lower() == "open"]
     logging.info(f"Found {len(open_alerts)} open alerts")
 
-    open_by_number: dict[int, dict[str, Any]] = {}
-    for alert in open_alerts:
-        alert_number = alert.get("alert_number")
+    open_by_number: dict[int, Alert] = {}
+    for raw in open_alerts:
+        metadata = raw.get("metadata") or {}
+        alert_number = metadata.get("alert_number")
         if alert_number is None:
-            logging.warning(f"Skipping alert with missing alert_number: {alert}")
+            logging.warning(f"Skipping alert with missing alert_number: {raw}")
             continue
 
         try:
@@ -115,14 +118,32 @@ def load_open_alerts_from_file(path: str) -> tuple[str, dict[int, dict[str, Any]
             logging.warning(f"Skipping alert with invalid alert_number: {alert_number}")
             continue
 
-        alert["_repo"] = repo_full
-        alert["_message_params"] = parse_alert_message_params(alert.get("message"))
-        open_by_number[alert_number_int] = alert
+        md = metadata
+        ad = raw.get("alert_details") or {}
+        rd = raw.get("rule_details") or {}
+
+        for section_name, section_dict, dataclass_cls in (
+            ("metadata", md, AlertMetadata),
+            ("alert_details", ad, AlertDetails),
+            ("rule_details", rd, RuleDetails),
+        ):
+            unexpected = set(section_dict) - set(dataclass_cls.__dataclass_fields__)
+            if unexpected:
+                logging.warning(
+                    f"alert_number={alert_number_int}: unexpected keys in {section_name}: {sorted(unexpected)}"
+                )
+
+        alert_obj = Alert(
+            metadata=AlertMetadata(**{k: v for k, v in md.items() if k in AlertMetadata.__dataclass_fields__}),
+            alert_details=AlertDetails(**{k: v for k, v in ad.items() if k in AlertDetails.__dataclass_fields__}),
+            rule_details=RuleDetails(**{k: v for k, v in rd.items() if k in RuleDetails.__dataclass_fields__}),
+            repo=repo_full,
+        )
+        open_by_number[alert_number_int] = alert_obj
 
         if os.getenv("DEBUG_ALERTS") == "1":
             logging.debug(
-                f"Full alert payload for alert_number={alert_number_int}:\n"
-                + json.dumps(alert, indent=2, sort_keys=True)
+                f"Full alert payload for alert_number={alert_number_int}:\n" + json.dumps(raw, indent=2, sort_keys=True)
             )
 
-    return str(repo_full), open_by_number
+    return LoadedAlerts(repo_full=repo_full, open_by_number=open_by_number)

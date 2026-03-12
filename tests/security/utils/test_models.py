@@ -20,6 +20,7 @@ import pytest
 
 from utils.models import (
     AlertContext,
+    AlertMetadata,
     IssueIndex,
     NotifiedIssue,
     SEVERITY_ORDER,
@@ -127,3 +128,36 @@ def test_sync_context_creation() -> None:
         notifications=[], severity_priority_map={}, priority_sync=None,
     )
     assert sc.dry_run is True
+
+
+# =====================================================================
+# AlertMetadata – None-safe __post_init__
+# =====================================================================
+
+
+def test_alert_metadata_none_fields_do_not_crash() -> None:
+    """AlertMetadata must not raise when nullable collector fields are None."""
+    md = AlertMetadata(
+        severity=None,   # type: ignore[arg-type]  – mirrors _normalise_alert output
+        rule_id=None,    # type: ignore[arg-type]
+        rule_name=None,  # type: ignore[arg-type]
+        state=None,      # type: ignore[arg-type]
+        tool=None,       # type: ignore[arg-type]
+    )
+    assert md.severity == "unknown"
+    assert md.rule_id == ""
+    assert md.rule_name == ""
+    assert md.state == ""
+    assert md.tool == ""
+
+
+def test_alert_metadata_strips_whitespace() -> None:
+    md = AlertMetadata(severity="  high  ", rule_id=" CVE-123 ", tool=" AquaSec ")
+    assert md.severity == "high"
+    assert md.rule_id == "CVE-123"
+    assert md.tool == "AquaSec"
+
+
+def test_alert_metadata_state_lowercased() -> None:
+    md = AlertMetadata(state="  OPEN  ")
+    assert md.state == "open"

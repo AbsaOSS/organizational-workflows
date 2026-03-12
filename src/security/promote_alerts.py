@@ -18,7 +18,7 @@
 """Promote collected Code Scanning alerts JSON into GitHub Issues.
 
 Input:
-- JSON produced by `collect_alert.sh` (default: alerts.json)
+- JSON produced by `collect_alert.py` (default: alerts.json)
 
 Design intent:
 - One Issue per *finding* (stable identity), not per GitHub alert.
@@ -63,14 +63,14 @@ from shared.logging_config import setup_logging
 from utils.teams import notify_teams, notify_teams_severity_changes
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse and return CLI arguments."""
     p = argparse.ArgumentParser(description="Promote alerts JSON to GitHub issues using gh CLI")
     p.add_argument(
         "--file",
         "-f",
         default="alerts.json",
-        help="alerts JSON file produced by collect_alert.sh (default: alerts.json)",
+        help="alerts JSON file produced by collect_alert.py (default: alerts.json)",
     )
     p.add_argument(
         "--dry-run",
@@ -91,51 +91,54 @@ def parse_args() -> argparse.Namespace:
         "--severity-priority-map",
         default=os.environ.get("SEVERITY_PRIORITY_MAP", ""),
         help="Comma-separated severity=priority pairs that define which priority string "
-             "to assign for each alert severity. Severities: Critical, High, Medium, Low, Unknown. "
-             "Example: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor,Unknown=Normal'. "
-             "Only listed severities get a priority; unlisted ones are left empty. "
-             "When not set at all, priority is skipped for every severity. "
-             "Priority values must match the option names of the Priority single-select field "
-             "in the target GitHub Project. "
-             "Default: $SEVERITY_PRIORITY_MAP env var.",
+        "to assign for each alert severity. Severities: Critical, High, Medium, Low, Unknown. "
+        "Example: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor,Unknown=Normal'. "
+        "Only listed severities get a priority; unlisted ones are left empty. "
+        "When not set at all, priority is skipped for every severity. "
+        "Priority values must match the option names of the Priority single-select field "
+        "in the target GitHub Project. "
+        "Default: $SEVERITY_PRIORITY_MAP env var.",
     )
     p.add_argument(
         "--project-number",
         type=int,
         default=int(os.environ.get("PROJECT_NUMBER", "0")) or None,
         help="GitHub Projects V2 number (org-level) where a Priority single-select field "
-             "will be set for each promoted issue.  Required together with --severity-priority-map. "
-             "When omitted, project-level priority is skipped. "
-             "Default: $PROJECT_NUMBER env var.",
+        "will be set for each promoted issue.  Required together with --severity-priority-map. "
+        "When omitted, project-level priority is skipped. "
+        "Default: $PROJECT_NUMBER env var.",
     )
     p.add_argument(
         "--project-org",
         default=os.environ.get("PROJECT_ORG", ""),
         help="GitHub organisation that owns the Projects V2 board.  "
-             "Use this when the project lives in a different org than the scanned repo. "
-             "When omitted, the org is derived from the repo name. "
-             "Default: $PROJECT_ORG env var.",
+        "Use this when the project lives in a different org than the scanned repo. "
+        "When omitted, the org is derived from the repo name. "
+        "Default: $PROJECT_ORG env var.",
     )
     p.add_argument(
         "--teams-webhook-url",
         default=os.environ.get("TEAMS_WEBHOOK_URL"),
         help="Teams Incoming Webhook URL for new/reopened issue alerts (default: $TEAMS_WEBHOOK_URL). "
-             "If not set, Teams notification is skipped.",
+        "If not set, Teams notification is skipped.",
     )
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     """CLI entry-point: load alerts, sync to issues, notify Teams."""
     if shutil.which("gh") is None:
         raise SystemExit("ERROR: gh CLI is required. Install and authenticate (gh auth login).")
-    args = parse_args()
+    args = parse_args(argv)
 
     dry_run = bool(args.dry_run)
     verbose = bool(args.verbose) or parse_runner_debug()
     setup_logging(verbose)
 
-    repo_full, open_alerts = load_open_alerts_from_file(args.file)
+    loaded_alerts = load_open_alerts_from_file(args.file)
+    repo_full = loaded_alerts.repo_full
+    open_alerts = loaded_alerts.open_by_number
+
     issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
 
     # Build severity → priority map from user input; empty by default (priority skipped).

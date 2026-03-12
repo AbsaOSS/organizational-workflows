@@ -23,8 +23,8 @@ import logging
 import os
 import re
 import subprocess
-import sys
 from datetime import datetime, timezone
+
 
 def parse_runner_debug() -> bool:
     """Return ``True`` when the GitHub Actions ``RUNNER_DEBUG`` env var is ``'1'``."""
@@ -34,7 +34,6 @@ def parse_runner_debug() -> bool:
     if raw not in {"0", "1"}:
         raise SystemExit("ERROR: RUNNER_DEBUG must be '0' or '1' when set")
     return raw == "1"
-
 
 
 def utc_today() -> str:
@@ -78,6 +77,6 @@ def run_gh(args: list[str], *, capture_output: bool = True) -> subprocess.Comple
     cmd = ["gh"] + args
     try:
         return run_cmd(cmd, capture_output=capture_output)
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         logging.error("gh CLI not found. Install and authenticate gh.")
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

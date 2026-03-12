@@ -19,7 +19,6 @@ add/update items, field value read/write, the legacy single-issue wrapper,
 and the bulk :class:`ProjectPrioritySync` class (prefetch -> enqueue -> flush).
 """
 
-
 import json
 import logging
 from dataclasses import dataclass
@@ -28,17 +27,18 @@ from typing import Any
 from .common import run_gh
 from .priority import resolve_priority
 
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ProjectPriorityField:
     """Caches the IDs required to set a single-select "Priority" field."""
+
     project_id: str
     field_id: str
-    options: dict[str, str]   # option name (lowercase) -> option node-id
+    options: dict[str, str]  # option name (lowercase) -> option node-id
 
 
 _project_priority_cache: dict[str, ProjectPriorityField | None] = {}
@@ -47,6 +47,7 @@ _project_priority_cache: dict[str, ProjectPriorityField | None] = {}
 # ---------------------------------------------------------------------------
 # GraphQL helpers
 # ---------------------------------------------------------------------------
+
 
 def _run_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Execute a GraphQL query via ``gh api graphql`` and return parsed JSON."""
@@ -111,10 +112,7 @@ def gh_project_get_priority_field(
         if not isinstance(node, dict):
             continue
         if node.get("name") == field_name and "options" in node:
-            options = {
-                opt["name"].lower(): opt["id"]
-                for opt in node["options"]
-            }
+            options = {opt["name"].lower(): opt["id"] for opt in node["options"]}
             result = ProjectPriorityField(
                 project_id=project_id,
                 field_id=node["id"],
@@ -122,8 +120,7 @@ def gh_project_get_priority_field(
             )
             _project_priority_cache[cache_key] = result
             logging.debug(
-                f"Project #{project_number}: field '{field_name}' id={node['id']} "
-                f"options={list(options.keys())}"
+                f"Project #{project_number}: field '{field_name}' id={node['id']} " f"options={list(options.keys())}"
             )
             return result
 
@@ -136,19 +133,20 @@ def gh_project_get_priority_field(
 # Bulk priority sync
 # ---------------------------------------------------------------------------
 
-_BULK_PAGE_SIZE = 50   # items per page when prefetching project items
+_BULK_PAGE_SIZE = 50  # items per page when prefetching project items
 _BULK_MUTATION_SIZE = 20  # mutations per batched GraphQL call
 
 
 @dataclass
 class _PriorityUpdate:
     """A single pending priority field mutation."""
+
     repo: str
     issue_number: int
-    node_id: str | None       # issue GraphQL node-id (None = needs lookup)
-    item_id: str | None       # project-item id (None = not yet on project)
+    node_id: str | None  # issue GraphQL node-id (None = needs lookup)
+    item_id: str | None  # project-item id (None = not yet on project)
     desired_option_id: str
-    priority_label: str        # human-readable priority value for logging
+    priority_label: str  # human-readable priority value for logging
 
 
 class ProjectPrioritySync:
@@ -260,7 +258,7 @@ class ProjectPrioritySync:
         severity_priority_map: dict[str, str],
     ) -> None:
         """Resolve severity -> priority and queue an update if needed."""
-        priority_value = resolve_priority(severity, severity_priority_map)        
+        priority_value = resolve_priority(severity, severity_priority_map)
         if not priority_value:
             logging.debug(f"No priority mapping for severity={severity!r} \u2013 skipping project field")
             return
@@ -289,14 +287,16 @@ class ProjectPrioritySync:
                 existing.priority_label = priority_value
                 return
 
-        self._pending.append(_PriorityUpdate(
-            repo=repo,
-            issue_number=issue_number,
-            node_id=None,
-            item_id=None,
-            desired_option_id=option_id,
-            priority_label=priority_value,
-        ))
+        self._pending.append(
+            _PriorityUpdate(
+                repo=repo,
+                issue_number=issue_number,
+                node_id=None,
+                item_id=None,
+                desired_option_id=option_id,
+                priority_label=priority_value,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Flush – resolve node-ids, add to project, diff, batch-update
@@ -321,7 +321,7 @@ class ProjectPrioritySync:
         # Batch in groups to avoid extremely long GraphQL queries.
         need_resolve = [p for p in self._pending if p.node_id is None]
         for i in range(0, len(need_resolve), _BULK_MUTATION_SIZE):
-            batch = need_resolve[i:i + _BULK_MUTATION_SIZE]
+            batch = need_resolve[i : i + _BULK_MUTATION_SIZE]
             aliases: list[str] = []
             parts: list[str] = []
             for idx, p in enumerate(batch):
@@ -330,7 +330,7 @@ class ProjectPrioritySync:
                 aliases.append(alias)
                 parts.append(
                     f'{alias}: repository(owner: "{owner}", name: "{name}") '
-                    f'{{ issue(number: {p.issue_number}) {{ id }} }}'
+                    f"{{ issue(number: {p.issue_number}) {{ id }} }}"
                 )
             query = "query {\n" + "\n".join(parts) + "\n}"
             data = _run_graphql(query)
@@ -346,12 +346,9 @@ class ProjectPrioritySync:
 
     def _ensure_on_project(self) -> None:
         """Add issues not yet on the project in batched mutations."""
-        to_add = [
-            p for p in self._pending
-            if p.node_id and p.node_id not in self._content_to_item
-        ]
+        to_add = [p for p in self._pending if p.node_id and p.node_id not in self._content_to_item]
         for i in range(0, len(to_add), _BULK_MUTATION_SIZE):
-            batch = to_add[i:i + _BULK_MUTATION_SIZE]
+            batch = to_add[i : i + _BULK_MUTATION_SIZE]
             parts: list[str] = []
             var_defs: list[str] = []
             variables: dict[str, str] = {}
@@ -405,7 +402,7 @@ class ProjectPrioritySync:
         logging.debug(f"Updating priority on {len(to_update)} issue(s) in project #{self.project_number}")
 
         for i in range(0, len(to_update), _BULK_MUTATION_SIZE):
-            batch = to_update[i:i + _BULK_MUTATION_SIZE]
+            batch = to_update[i : i + _BULK_MUTATION_SIZE]
             parts: list[str] = []
             var_defs: list[str] = []
             variables: dict[str, str] = {}
@@ -416,7 +413,7 @@ class ProjectPrioritySync:
                 variables[f"i{idx}"] = p.item_id  # type: ignore[assignment]
                 variables[f"o{idx}"] = p.desired_option_id
                 parts.append(
-                    f'u{idx}: updateProjectV2ItemFieldValue(input: {{'
+                    f"u{idx}: updateProjectV2ItemFieldValue(input: {{"
                     f'projectId: "{self.pf.project_id}", '
                     f"itemId: {ivar}, "
                     f'fieldId: "{self.pf.field_id}", '
@@ -426,10 +423,7 @@ class ProjectPrioritySync:
             query = f"mutation({', '.join(var_defs)}) {{\n" + "\n".join(parts) + "\n}"
             data = _run_graphql(query, variables)
             if data is None:
-                logging.warning(
-                    f"Batch priority update failed for issues "
-                    f"{[p.issue_number for p in batch]}"
-                )
+                logging.warning(f"Batch priority update failed for issues " f"{[p.issue_number for p in batch]}")
                 continue
             for idx, p in enumerate(batch):
                 result = (data.get("data") or {}).get(f"u{idx}")
@@ -439,6 +433,4 @@ class ProjectPrioritySync:
                         f"in project #{self.project_number}"
                     )
                 else:
-                    logging.warning(
-                        f"Failed to set Priority={p.priority_label!r} on issue #{p.issue_number}"
-                    )
+                    logging.warning(f"Failed to set Priority={p.priority_label!r} on issue #{p.issue_number}")

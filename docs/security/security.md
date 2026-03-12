@@ -9,7 +9,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [What this is (and what it isn't)](#what-this-is-and-what-it-isnt)
 - [Contents](#contents)
 - [Quick start (local)](#quick-start-local)
-  - [Recommended: `sync_security_alerts.sh`](#recommended-sync_security_alertssh)
+  - [Recommended: `sync_security_alerts.py`](#recommended-sync_security_alertspy)
   - [Advanced: individual steps](#advanced-individual-steps)
 - [Run in GitHub Actions (minimal example)](#run-in-github-actions-minimal-example)
 - [Shared workflows](#shared-workflows)
@@ -22,6 +22,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 - [Issue structure](#issue-structure)
 - [How you "say duplicate / grouped / dismissed / reopened"](#how-you-say-duplicate--grouped--dismissed--reopened)
 - [Known data manipulations](#known-data-manipulations)
+- [Collector output contract (alerts.json schema)](#collector-output-contract-alertsjson-schema)
 - [Design: fingerprints and matching](#design-fingerprints-and-matching)
 - [Current implementation status](#current-implementation-status)
 - [Troubleshooting](#troubleshooting)
@@ -37,9 +38,9 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
 
 | Script | Purpose | Requires |
 | --- | --- | --- |
-| `sync_security_alerts.sh` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `jq`, `python3` |
-| `check_labels.sh` | Verify that all labels required by the automation exist in the repository | `gh` |
-| `collect_alert.sh` | Fetch and normalize code scanning alerts into `alerts.json` | `gh`, `jq` |
+| `sync_security_alerts.py` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `python3` |
+| `check_labels.py` | Verify that all labels required by the automation exist in the repository | `gh`, `python3` |
+| `collect_alert.py` | Fetch and normalise code-scanning alerts into `alerts.json` | `gh`, `python3` |
 | `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
 | `send_to_teams.py` | Send a Markdown message to a Microsoft Teams channel via Incoming Webhook | `requests` |
 | `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
@@ -52,7 +53,6 @@ All scripts live under `src/security/` in the repository root.
 ### Prerequisites
 
 - Install and authenticate GitHub CLI: `gh auth login`
-- Install `jq`
 - Python 3.14+ recommended
 - Install Python dependencies:
 
@@ -60,20 +60,20 @@ All scripts live under `src/security/` in the repository root.
 pip install -e '.[security]'
 ```
 
-### Recommended: `sync_security_alerts.sh`
+### Recommended: `sync_security_alerts.py`
 
-This is the normal entrypoint for day-to-day use. It runs `check_labels.sh`, `collect_alert.sh`, and then `promote_alerts.py`.
+This is the normal entrypoint for day-to-day use. It runs `check_labels.py`, `collect_alert.py`, and then `promote_alerts.py`.
 
 Collect + promote in one command:
 
 ```bash
-./src/security/sync_security_alerts.sh --repo <owner/repo>
+python3 src/security/sync_security_alerts.py --repo <owner/repo>
 ```
 
 Safe preview (no issue writes):
 
 ```bash
-./src/security/sync_security_alerts.sh --repo <owner/repo> --dry-run
+python3 src/security/sync_security_alerts.py --repo <owner/repo> --dry-run
 ```
 
 To see full body previews in dry-run, use `--verbose` (or set `RUNNER_DEBUG=1`).
@@ -85,7 +85,7 @@ You can run the individual steps when you need finer control or want to debug th
 1. Collect open alerts:
 
 ```bash
-./src/security/collect_alert.sh --repo <owner/repo> --state open --out alerts.json
+python3 src/security/collect_alert.py --repo <owner/repo> --state open --out alerts.json
 ```
 
 2. Promote alerts to Issues:
@@ -98,7 +98,7 @@ python3 src/security/promote_alerts.py --file alerts.json
 
 This is the simplest "after SARIF upload, sync issues" job.
 
-The expected entrypoint is `sync_security_alerts.sh` (the individual scripts are still available when you need finer control).
+The expected entrypoint is `sync_security_alerts.py` (the individual scripts are still available when you need finer control).
 
 ```yaml
 name: Promote code scanning alerts to issues
@@ -117,7 +117,11 @@ jobs:
   promote:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
@@ -126,7 +130,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./src/security/sync_security_alerts.sh --state open --out alerts.json
+          python3 src/security/sync_security_alerts.py --state open --out alerts.json
 ```
 
 ## Shared workflows
@@ -140,7 +144,7 @@ The `docs/security/example_workflows/` directory contains ready-to-copy **exampl
 
 | Workflow | Trigger (caller) | Purpose |
 | --- | --- | --- |
-| `aquasec-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `sync_security_alerts.sh` |
+| `aquasec-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `sync_security_alerts.py` |
 | `remove-adept-to-close-on-issue-close.yml` | `issues: [closed]` | Removes the `sec:adept-to-close` label from security issues when they are closed |
 
 ### How to adopt a shared workflow
@@ -160,7 +164,7 @@ The caller needs the following **repository secrets** configured:
 | `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
 
-Example caller (already available in `docs/security/example_workflows/aquasec-night-scan.yml`):
+Example caller (already available in [aquasec-night-scan.yml](/docs/security/example_workflows/aquasec-night-scan.yml)):
 
 ```yaml
 name: Aquasec Night Scan
@@ -193,7 +197,7 @@ jobs:
 
 #### Remove sec:adept-to-close on close
 
-Example caller (already available in `docs/security/example_workflows/remove-adept-to-close-on-issue-close.yml`):
+Example caller (already available in [remove-adept-to-close-on-issue-close.yml](/docs/security/example_workflows/remove-adept-to-close-on-issue-close.yml)):
 
 ```yaml
 name: Remove sec:adept-to-close on close
@@ -214,13 +218,12 @@ jobs:
 
 ## Labels (contract)
 
-The automation requires exactly these five labels to exist in the target repository (enforced by `check_labels.sh`):
+The automation requires exactly these four labels to exist in the target repository (enforced by `check_labels.py`):
 
 | Label | Purpose |
 | --- | --- |
 | `scope:security` | Applied to every security Issue; used by `promote_alerts.py --issue-label` to discover existing Issues |
 | `type:tech-debt` | Marks security findings as tech-debt items |
-| `sec:src/aquasec-sarif` | Source tag — identifies the scanner that produced the finding |
 | `sec:adept-to-close` | Signals that a finding is ready to be closed by automation |
 | `epic` | Applied to parent (rule-level) Issues so they act as epics grouping child findings |
 
@@ -356,6 +359,58 @@ path string from the alert is never written back to the issue body.
 
 Implementation: `shared/common.py → normalize_path()`.
 
+## Collector output contract (alerts.json schema)
+
+`collect_alert.py` produces a JSON file with the following top-level structure:
+
+```json
+{
+  "generated_at": "<ISO-8601 UTC timestamp>",
+  "repo": { "id": ..., "name": ..., "full_name": ..., "private": ...,
+             "html_url": ..., "default_branch": ..., "owner": { ... } },
+  "query": { "state": "<open|dismissed|fixed|all>" },
+  "alerts": [ ... ]
+}
+```
+
+Each element of `alerts` is a normalised alert object with three sub-objects:
+
+### `metadata`
+
+Fixed keys extracted directly from the GitHub code-scanning alert API response.
+All keys are always present; values are `null` when the API does not provide them
+(e.g. `instance_url`, `help_uri`).
+
+Key fields: `alert_number`, `state`, `created_at`, `updated_at`, `url`, `alert_url`,
+`rule_id`, `rule_name`, `severity`, `confidence`, `tags`, `help_uri`, `tool`,
+`tool_version`, `ref`, `commit_sha`, `instance_url`, `classifications`, `file`,
+`start_line`, `end_line`.
+
+### `alert_details`
+
+Key/value pairs parsed from the free-text `message.text` field of the most-recent
+alert instance. **Only keys that actually appear in the message are included**; no
+default or placeholder values are injected for absent keys.
+
+For AquaSec scans the message embeds lines in the form `Key: Value`. The raw message
+keys (defined in `AlertMessageKey` in `utils/alert_parser.py`) are space-separated
+(e.g. `scan date`, `alert hash`); `collect_alert.py`'s `_parse_alert_details` converts
+them to snake_case via `_snake_case`. Known output keys include `artifact`, `type`,
+`vulnerability`, `severity`, `message`, `repository`, `reachable`, `scan_date`,
+`first_seen`, `scm_file`, `installed_version`, `start_line`, `end_line`, `alert_hash`.
+
+Note: `installed_version` is present only in vulnerability-type alerts (e.g.
+`CVE-*`). It is absent from SAST and pipeline misconfiguration alerts because the
+scanner does not include that field in those message types.
+
+### `rule_details`
+
+Fields extracted from `**Key:** value` markup in the rule help text, using the fixed
+set of keys listed in `RULE_DETAIL_KEYS` in `collect_alert.py`. **All keys are always
+present**; missing fields are set to `null` (not `"N/A"` or an empty string). Keys
+include: `type`, `severity`, `cwe`, `fixed_version`, `published_date`, `package_name`,
+`category`, `impact`, `confidence`, `likelihood`, `remediation`, `owasp`, `references`.
+
 ## Design: fingerprints and matching
 
 ### Current fingerprint source
@@ -407,7 +462,7 @@ As of 2026-02, `promote_alerts.py` implements the fingerprint-based sync loop de
 - `gh: command not found`: install GitHub CLI and ensure it's on `PATH`.
 - `gh auth status` fails: run `gh auth login` locally, or set `GH_TOKEN` in Actions.
 - Permission errors in Actions: ensure the workflow has `security-events: read` and `issues: write` permissions.
-- `Output file alerts.json exists`: `collect_alert.sh` refuses to overwrite output; delete the file or pass a different `--out` path.
+- `Output file alerts.json exists`: `collect_alert.py` refuses to overwrite output; delete the file, pass a different `--out` path, or run via `sync_security_alerts.py --force` (which deletes the file before invoking the collector).
 - `missing 'alert hash' in alert message`: the scanner/collector needs to include an `Alert hash: ...` line in the alert instance message text.
 
 ## References

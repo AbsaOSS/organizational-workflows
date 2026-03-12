@@ -2,3 +2,7 @@ PyGithub>=2.0
 requests==2.32.4
 pytest>=8.0
 pytest-cov>=6.0
+pytest-mock>=3.0
+pylint>=3.0
+black>=24.0
+mypy>=1.0

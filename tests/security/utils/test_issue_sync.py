@@ -45,6 +45,7 @@ from utils.issue_sync import (
     sync_alerts_and_issues,
 )
 from utils.models import (
+    Alert,
     AlertContext,
     IssueIndex,
     NotifiedIssue,
@@ -66,7 +67,7 @@ def _issue_with_secmeta(number: int, secmeta: dict[str, str], *, state: str = "o
 def _make_alert_context(**overrides: Any) -> AlertContext:
     """Build an ``AlertContext`` with sensible defaults, overridable via kwargs."""
     defaults = dict(
-        alert={},
+        alert=Alert(),
         alert_number=1,
         fingerprint="fp_test_123",
         occurrence_fp="occ_fp_test",
@@ -428,7 +429,7 @@ def test_reopen_child_cascades_to_parent(mocker: MockerFixture) -> None:
 # =====================================================================
 
 
-def test_rebuild_body_changed(mocker: MockerFixture, sast_alert: dict) -> None:
+def test_rebuild_body_changed(mocker: MockerFixture, sast_alert: Alert) -> None:
     """When body changes, gh_issue_edit_body is called."""
     mock_edit = mocker.patch("utils.issue_sync.gh_issue_edit_body")
     issue = Issue(number=1, state="open", title="T", body="old body")
@@ -438,7 +439,7 @@ def test_rebuild_body_changed(mocker: MockerFixture, sast_alert: dict) -> None:
     _rebuild_and_apply_child_body(ctx=ctx, sync=sync, issue=issue, secmeta=secmeta)
     mock_edit.assert_called_once()
 
-def test_rebuild_body_unchanged(sast_alert: dict) -> None:
+def test_rebuild_body_unchanged(sast_alert: Alert) -> None:
     """When body is identical, no API call is made."""
     from utils.issue_builder import build_child_issue_body
     from utils.sec_events import strip_sec_events_from_body
@@ -452,7 +453,7 @@ def test_rebuild_body_unchanged(sast_alert: dict) -> None:
     sync = _make_sync_context()
     _rebuild_and_apply_child_body(ctx=ctx, sync=sync, issue=issue, secmeta=secmeta)
 
-def test_rebuild_body_dry_run(sast_alert: dict) -> None:
+def test_rebuild_body_dry_run(sast_alert: Alert) -> None:
     """In dry-run mode, body is not written via API."""
     issue = Issue(number=1, state="open", title="T", body="old body")
     ctx = _make_alert_context(alert=sast_alert)
@@ -472,7 +473,7 @@ def test_comment_reopen_event(mocker: MockerFixture) -> None:
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context()
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True, new_occurrence=False)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True)
     mock_comment.assert_called_once()
     comment_body = mock_comment.call_args[0][2]
     assert "reopen" in comment_body
@@ -483,7 +484,7 @@ def test_comment_occurrence_event_no_comment(mocker: MockerFixture) -> None:
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context()
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False, new_occurrence=True)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False)
     mock_comment.assert_not_called()
 
 def test_comment_no_event() -> None:
@@ -491,14 +492,14 @@ def test_comment_no_event() -> None:
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context()
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False, new_occurrence=False)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False)
 
 def test_comment_reopen_dry_run() -> None:
     """Dry-run mode does not call gh_issue_comment for reopen."""
     issue = Issue(number=1, state="open", title="T", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context(dry_run=True)
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True, new_occurrence=False)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True)
 
 def test_comment_occurrence_dry_run() -> None:
     """No comment in any mode when issue is already open (occurrence-only path)."""
@@ -506,7 +507,7 @@ def test_comment_occurrence_dry_run() -> None:
     ctx = _make_alert_context()
     sync = _make_sync_context(dry_run=True)
     # Dry-run should also be silent for already-open issues.
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False, new_occurrence=True)
+    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False)
 
 
 # =====================================================================
@@ -549,7 +550,7 @@ def test_sync_title_dry_run() -> None:
 # =====================================================================
 
 
-def test_handle_new_child_creates_issue(mocker: MockerFixture, sast_alert: dict) -> None:
+def test_handle_new_child_creates_issue(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Creates a new issue and registers it in the index."""
     mock_create = mocker.patch("utils.issue_sync.gh_issue_create", return_value=42)
     mocker.patch("utils.issue_sync.gh_issue_comment")
@@ -564,7 +565,7 @@ def test_handle_new_child_creates_issue(mocker: MockerFixture, sast_alert: dict)
     assert len(sync.notifications) == 1
     assert sync.notifications[0].state == "new"
 
-def test_handle_new_child_dry_run(sast_alert: dict) -> None:
+def test_handle_new_child_dry_run(sast_alert: Alert) -> None:
     """Dry-run does not call gh_issue_create but records notification."""
     ctx = _make_alert_context(alert=sast_alert)
     notifications: list[NotifiedIssue] = []
@@ -573,7 +574,7 @@ def test_handle_new_child_dry_run(sast_alert: dict) -> None:
     assert len(notifications) == 1
     assert notifications[0].issue_number == 0
 
-def test_handle_new_child_links_to_parent(mocker: MockerFixture, sast_alert: dict) -> None:
+def test_handle_new_child_links_to_parent(mocker: MockerFixture, sast_alert: Alert) -> None:
     """When a parent issue exists, the child is linked as a sub-issue."""
     mocker.patch("utils.issue_sync.gh_issue_create", return_value=42)
     mock_sub = mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number")
@@ -584,7 +585,7 @@ def test_handle_new_child_links_to_parent(mocker: MockerFixture, sast_alert: dic
     _handle_new_child_issue(ctx=ctx, sync=sync, parent_issue=parent)
     mock_sub.assert_called_once_with("test-org/test-repo", 1, 42)
 
-def test_handle_new_child_create_fails(mocker: MockerFixture, sast_alert: dict) -> None:
+def test_handle_new_child_create_fails(mocker: MockerFixture, sast_alert: Alert) -> None:
     """If gh_issue_create returns None, no crash and no index update."""
     mocker.patch("utils.issue_sync.gh_issue_create", return_value=None)
     ctx = _make_alert_context(alert=sast_alert)
@@ -598,7 +599,7 @@ def test_handle_new_child_create_fails(mocker: MockerFixture, sast_alert: dict) 
 # =====================================================================
 
 
-def test_handle_existing_child_updates_body(mocker: MockerFixture, sast_alert: dict) -> None:
+def test_handle_existing_child_updates_body(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Existing child issue body is updated with fresh template."""
     mock_body = mocker.patch("utils.issue_sync.gh_issue_edit_body")
     mocker.patch("utils.issue_sync.gh_issue_add_labels")
@@ -618,7 +619,7 @@ def test_handle_existing_child_updates_body(mocker: MockerFixture, sast_alert: d
 # =====================================================================
 
 
-def test_ensure_parent_creates_new(mocker: MockerFixture, sast_alert: dict) -> None:
+def test_ensure_parent_creates_new(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Creates a parent issue when none exists for the rule_id."""
     mock_create = mocker.patch("utils.issue_sync.gh_issue_create", return_value=99)
     mocker.patch("utils.issue_sync.gh_issue_comment")
@@ -628,20 +629,20 @@ def test_ensure_parent_creates_new(mocker: MockerFixture, sast_alert: dict) -> N
     assert result is not None
     assert result.number == 99
     mock_create.assert_called_once()
-    assert sast_alert["rule_id"] in index.parent_by_rule_id
+    assert sast_alert.metadata.rule_id in index.parent_by_rule_id
 
-def test_ensure_parent_dry_run(sast_alert: dict) -> None:
+def test_ensure_parent_dry_run(sast_alert: Alert) -> None:
     """Dry-run does not create an issue, returns None."""
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
     result = ensure_parent_issue(sast_alert, issues, index, dry_run=True)
     assert result is None
 
-def test_ensure_parent_existing_returns_existing(sast_alert: dict) -> None:
+def test_ensure_parent_existing_returns_existing(sast_alert: Alert) -> None:
     """Returns the existing parent issue if one already exists."""
     parent = _issue_with_secmeta(10, {
         "type": "parent",
-        "rule_id": sast_alert["rule_id"],
+        "rule_id": sast_alert.metadata.rule_id,
         "severity": "high",
         "first_seen": "2026-01-01",
         "last_seen": "2026-01-01",
@@ -652,11 +653,11 @@ def test_ensure_parent_existing_returns_existing(sast_alert: dict) -> None:
     assert result is not None
     assert result.number == 10
 
-def test_ensure_parent_severity_change_detected(sast_alert: dict) -> None:
+def test_ensure_parent_severity_change_detected(sast_alert: Alert) -> None:
     """Severity change is detected and recorded."""
     parent = _issue_with_secmeta(10, {
         "type": "parent",
-        "rule_id": sast_alert["rule_id"],
+        "rule_id": sast_alert.metadata.rule_id,
         "severity": "low",
         "first_seen": "2026-01-01",
         "last_seen": "2026-01-01",
@@ -671,12 +672,12 @@ def test_ensure_parent_severity_change_detected(sast_alert: dict) -> None:
 
 def test_ensure_parent_no_rule_id() -> None:
     """Returns None when alert has no rule_id."""
-    alert: dict[str, Any] = {"_repo": "org/repo", "rule_id": ""}
+    alert = Alert.from_dict({"metadata": {"rule_id": ""}, "alert_details": {}, "rule_details": {}})
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
     assert ensure_parent_issue(alert, issues, index, dry_run=False) is None
 
-def test_ensure_parent_create_fails(mocker: MockerFixture, sast_alert: dict) -> None:
+def test_ensure_parent_create_fails(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Returns None if gh_issue_create fails."""
     mocker.patch("utils.issue_sync.gh_issue_create", return_value=None)
     issues: dict[int, Issue] = {}
@@ -684,11 +685,11 @@ def test_ensure_parent_create_fails(mocker: MockerFixture, sast_alert: dict) -> 
     result = ensure_parent_issue(sast_alert, issues, index, dry_run=False)
     assert result is None
 
-def test_ensure_parent_body_deferred(sast_alert: dict) -> None:
+def test_ensure_parent_body_deferred(sast_alert: Alert) -> None:
     """Parent body update is deferred (snapshot captured in parent_original_bodies)."""
     parent = _issue_with_secmeta(10, {
         "type": "parent",
-        "rule_id": sast_alert["rule_id"],
+        "rule_id": sast_alert.metadata.rule_id,
         "severity": "high",
         "first_seen": "2026-01-01",
         "last_seen": "2026-01-01",
@@ -701,12 +702,12 @@ def test_ensure_parent_body_deferred(sast_alert: dict) -> None:
     assert 10 in bods
     assert bods[10][1] == original_body
 
-def test_ensure_parent_title_drift_corrected(mocker: MockerFixture, sast_alert: dict) -> None:
+def test_ensure_parent_title_drift_corrected(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Title is updated when it drifts from the expected format."""
     mock_title = mocker.patch("utils.issue_sync.gh_issue_edit_title", return_value=True)
     parent = _issue_with_secmeta(10, {
         "type": "parent",
-        "rule_id": sast_alert["rule_id"],
+        "rule_id": sast_alert.metadata.rule_id,
         "severity": "high",
         "first_seen": "2026-01-01",
         "last_seen": "2026-01-01",
@@ -758,8 +759,8 @@ def test_label_orphan_no_orphans() -> None:
     """No labelling when all children have matching alerts."""
     child = _issue_with_secmeta(1, {"type": "child", "fingerprint": "fp1"})
     index = build_issue_index({1: child})
-    alerts: dict[int, dict] = {
-        100: {"_message_params": {"alert hash": "fp1"}, "state": "open"},
+    alerts: dict[int, Alert] = {
+        100: Alert.from_dict({"metadata": {"state": "open"}, "alert_details": {"alert_hash": "fp1"}, "rule_details": {}}),
     }
     _label_orphan_issues(alerts, index, dry_run=False)
 
@@ -770,7 +771,7 @@ def test_label_orphan_found(mocker: MockerFixture) -> None:
         "type": "child", "fingerprint": "fp_orphan", "repo": "org/repo",
     })
     index = build_issue_index({1: child})
-    alerts: dict[int, dict] = {}
+    alerts: dict[int, Alert] = {}
     _label_orphan_issues(alerts, index, dry_run=False)
     mock_labels.assert_called_once()
     label_args = mock_labels.call_args[0][2]
@@ -816,7 +817,7 @@ def test_label_orphan_no_repo_in_secmeta() -> None:
 
 
 def test_ensure_issue_new_alert_creates_parent_and_child(
-    mocker: MockerFixture, sast_alert: dict,
+    mocker: MockerFixture, sast_alert: Alert,
 ) -> None:
     """Full path: new alert creates parent + child."""
     mock_create = mocker.patch("utils.issue_sync.gh_issue_create", return_value=50)
@@ -833,7 +834,7 @@ def test_ensure_issue_new_alert_creates_parent_and_child(
     assert mock_create.call_count == 2  # parent + child
     assert len(notifications) == 1
 
-def test_ensure_issue_dry_run(sast_alert: dict) -> None:
+def test_ensure_issue_dry_run(sast_alert: Alert) -> None:
     """Dry-run: no gh calls, notification with issue_number=0."""
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
@@ -847,56 +848,51 @@ def test_ensure_issue_dry_run(sast_alert: dict) -> None:
 
 def test_ensure_issue_skips_non_open() -> None:
     """Alerts with state != 'open' are skipped."""
-    alert: dict[str, Any] = {
-        "alert_number": 1,
-        "state": "dismissed",
-        "_repo": "org/repo",
-        "_message_params": {},
-    }
+    alert = Alert.from_dict({
+        "metadata": {"alert_number": 1, "state": "dismissed"},
+        "alert_details": {},
+        "rule_details": {},
+    })
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
     ensure_issue(alert, issues, index, dry_run=True)
 
 def test_ensure_issue_missing_alert_hash_raises() -> None:
     """Raises SystemExit when alert hash is missing."""
-    alert: dict[str, Any] = {
-        "alert_number": 1,
-        "state": "open",
-        "_repo": "org/repo",
-        "_message_params": {},
-        "rule_id": "R1",
-        "severity": "high",
-    }
+    alert = Alert.from_dict({
+        "metadata": {"alert_number": 1, "state": "open", "rule_id": "R1", "severity": "high"},
+        "alert_details": {},
+        "rule_details": {},
+    }, repo="org/repo")
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    with pytest.raises(SystemExit, match="alert hash"):
+    with pytest.raises(SystemExit, match="alert_hash"):
         ensure_issue(alert, issues, index, dry_run=True)
 
-def test_ensure_issue_missing_message_params_raises() -> None:
-    """Raises SystemExit when _message_params is not a dict."""
-    alert: dict[str, Any] = {
-        "alert_number": 1,
-        "state": "open",
-        "_repo": "org/repo",
-        "_message_params": None,
-    }
+def test_ensure_issue_missing_alert_details_raises() -> None:
+    """Raises SystemExit when alert_details has no alert_hash."""
+    alert = Alert.from_dict({
+        "metadata": {"alert_number": 1, "state": "open"},
+        "alert_details": {},
+        "rule_details": {},
+    }, repo="org/repo")
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    with pytest.raises(SystemExit, match="missing parsed message"):
+    with pytest.raises(SystemExit, match="alert_hash"):
         ensure_issue(alert, issues, index, dry_run=True)
 
-def test_ensure_issue_existing_child_updates(mocker: MockerFixture, sast_alert: dict) -> None:
+def test_ensure_issue_existing_child_updates(mocker: MockerFixture, sast_alert: Alert) -> None:
     """When a child issue already exists, it is updated (not duplicated)."""
     mocker.patch("utils.issue_sync.gh_issue_edit_body")
     mocker.patch("utils.issue_sync.gh_issue_add_labels")
-    fp = sast_alert["_message_params"]["alert hash"]
+    fp = sast_alert.alert_details.alert_hash
     child = _issue_with_secmeta(5, {
         "type": "child", "fingerprint": fp,
         "occurrence_count": "1", "first_seen": "2026-01-01",
         "last_seen": "2026-01-01", "last_occurrence_fp": "old_occ",
     })
     parent = _issue_with_secmeta(10, {
-        "type": "parent", "rule_id": sast_alert["rule_id"],
+        "type": "parent", "rule_id": sast_alert.metadata.rule_id,
         "severity": "high", "first_seen": "2026-01-01", "last_seen": "2026-01-01",
     })
     issues = {5: child, 10: parent}
@@ -919,14 +915,14 @@ def test_sync_empty() -> None:
     assert result.notifications == []
     assert result.severity_changes == []
 
-def test_sync_dry_run_single_alert(sast_alert: dict) -> None:
+def test_sync_dry_run_single_alert(sast_alert: Alert) -> None:
     """Single alert dry-run produces a notification."""
     alerts = {303: sast_alert}
     result = sync_alerts_and_issues(alerts, {}, dry_run=True)
     assert len(result.notifications) == 1
 
 def test_sync_creates_issues(
-    mocker: MockerFixture, sast_alert: dict, vuln_alert: dict,
+    mocker: MockerFixture, sast_alert: Alert, vuln_alert: Alert,
 ) -> None:
     """Multiple alerts each get parent + child issues."""
     mock_create = mocker.patch("utils.issue_sync.gh_issue_create", return_value=100)
@@ -938,10 +934,10 @@ def test_sync_creates_issues(
     assert len(result.notifications) == 2
     assert mock_create.call_count == 4  # 2 parents + 2 children
 
-def test_sync_severity_change_detected(sast_alert: dict) -> None:
+def test_sync_severity_change_detected(sast_alert: Alert) -> None:
     """Severity change on existing parent is captured in result."""
     parent = _issue_with_secmeta(10, {
-        "type": "parent", "rule_id": sast_alert["rule_id"],
+        "type": "parent", "rule_id": sast_alert.metadata.rule_id,
         "severity": "low", "first_seen": "2026-01-01", "last_seen": "2026-01-01",
     })
     issues = {10: parent}
@@ -972,7 +968,7 @@ def test_init_priority_sync_no_project_number() -> None:
 
 def test_init_priority_sync_derives_org_from_alert(mocker: MockerFixture) -> None:
     """Derives org from the first alert's _repo when project_org is empty."""
-    alerts = {1: {"_repo": "derived-org/repo-a"}}
+    alerts = {1: Alert.from_dict({"_repo": "derived-org/repo-a"})}
     mocker.patch("utils.issue_sync.gh_project_get_priority_field", return_value=mocker.MagicMock())
     result = _init_priority_sync(
         alerts, severity_priority_map={"high": "Urgent"}, project_number=7,
@@ -983,7 +979,7 @@ def test_init_priority_sync_derives_org_from_alert(mocker: MockerFixture) -> Non
 
 def test_init_priority_sync_no_org_returns_none() -> None:
     """Returns None with warning when org cannot be determined."""
-    alerts = {1: {"_repo": ""}}
+    alerts = {1: Alert.from_dict({"_repo": ""})}
     result = _init_priority_sync(
         alerts, severity_priority_map={"high": "Urgent"}, project_number=7,
         project_org="", dry_run=False,

@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+# pylint: skip-file
 """
 Extract security statistics per GitHub team.
 
@@ -37,6 +38,7 @@ import re
 from datetime import datetime
 from github import Github
 
+
 # --------------------
 # Configuration
 # --------------------
@@ -48,21 +50,22 @@ def require_env(key: str) -> str:
         raise SystemExit(f"Missing required environment variable: {key}") from exc
 
 
-GITHUB_TOKEN = require_env('GITHUB_TOKEN')
-ORG = require_env('GITHUB_ORG')
-TEAM_SLUG = require_env('GITHUB_TEAM_SLUG')
+GITHUB_TOKEN = require_env("GITHUB_TOKEN")
+ORG = require_env("GITHUB_ORG")
+TEAM_SLUG = require_env("GITHUB_TEAM_SLUG")
 
-OUT_DATA = 'data'
-OUT_REPORTS = 'reports'
+OUT_DATA = "data"
+OUT_REPORTS = "reports"
 
-SEC_LABEL_PREFIX = 'sec:'
+SEC_LABEL_PREFIX = "sec:"
 
-SEC_EVENT_RE = re.compile(r'\[sec-event\](.*?)\[/sec-event\]', re.S)
-SECMETA_RE = re.compile(r'```secmeta(.*?)```', re.S)
+SEC_EVENT_RE = re.compile(r"\[sec-event\](.*?)\[/sec-event\]", re.S)
+SECMETA_RE = re.compile(r"```secmeta(.*?)```", re.S)
 
 # --------------------
 # Helpers
 # --------------------
+
 
 def ensure_dirs():
     """Create output directories if they don't exist."""
@@ -75,16 +78,16 @@ def parse_kv_block(block: str) -> dict:
     data = {}
     for line in block.splitlines():
         line = line.strip()
-        if not line or '=' not in line:
+        if not line or "=" not in line:
             continue
-        k, v = line.split('=', 1)
+        k, v = line.split("=", 1)
         data[k.strip()] = v.strip()
     return data
 
 
 def parse_secmeta(body: str) -> dict:
     """Extract the secmeta key-value block from an issue body."""
-    match = SECMETA_RE.search(body or '')
+    match = SECMETA_RE.search(body or "")
     if not match:
         return {}
     return parse_kv_block(match.group(1))
@@ -94,9 +97,9 @@ def parse_events(comments):
     """Extract ``[sec-event]`` blocks from issue comments."""
     events = []
     for c in comments:
-        for raw in SEC_EVENT_RE.findall(c.body or ''):
+        for raw in SEC_EVENT_RE.findall(c.body or ""):
             evt = parse_kv_block(raw)
-            evt['timestamp'] = c.created_at.isoformat()
+            evt["timestamp"] = c.created_at.isoformat()
             events.append(evt)
     return events
 
@@ -110,10 +113,13 @@ def issue_has_sec_label(issue):
 # Main extraction
 # --------------------
 
+
 def main():
     """Extract security statistics from GitHub Issues for the configured team."""
     # TODO decide about changes related to this script
-    logging.warning("This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics.")
+    logging.warning(
+        "This script is deprecated and may be removed in the future. Please refer to the updated documentation for deriving security metrics."
+    )
     return
 
     ensure_dirs()
@@ -128,53 +134,54 @@ def main():
     flat_events = []
 
     for repo in repos:
-        issues = repo.get_issues(state='all')
+        issues = repo.get_issues(state="all")
         for issue in issues:
             # Skip PRs that may be returned by the issues API
-            if getattr(issue, 'pull_request', None):
+            if getattr(issue, "pull_request", None):
                 continue
 
             if not issue_has_sec_label(issue):
                 continue
 
-            secmeta = parse_secmeta(issue.body or '')
+            secmeta = parse_secmeta(issue.body or "")
             events = parse_events(issue.get_comments())
 
-            snapshot.append({
-                'repo': repo.full_name,
-                'issue_number': issue.number,
-                'title': issue.title,
-                'state': issue.state,
-                'labels': [l.name for l in issue.labels],
-                'secmeta': secmeta,
-                'created_at': issue.created_at.isoformat(),
-                'updated_at': issue.updated_at.isoformat(),
-                'event_count': len(events),
-            })
+            snapshot.append(
+                {
+                    "repo": repo.full_name,
+                    "issue_number": issue.number,
+                    "title": issue.title,
+                    "state": issue.state,
+                    "labels": [l.name for l in issue.labels],
+                    "secmeta": secmeta,
+                    "created_at": issue.created_at.isoformat(),
+                    "updated_at": issue.updated_at.isoformat(),
+                    "event_count": len(events),
+                }
+            )
 
             for e in events:
-                fp = secmeta.get('fingerprint') if secmeta else None
+                fp = secmeta.get("fingerprint") if secmeta else None
                 if not fp:
                     continue  # ignore events without a fingerprint
-                flat_events.append({
-                    'repo': repo.full_name,
-                    'issue_number': issue.number,
-                    'fingerprint': fp,
-                    'action': e.get('action'),
-                    'reason': e.get('reason'),
-                    'timestamp': e.get('timestamp'),
-                })
+                flat_events.append(
+                    {
+                        "repo": repo.full_name,
+                        "issue_number": issue.number,
+                        "fingerprint": fp,
+                        "action": e.get("action"),
+                        "reason": e.get("reason"),
+                        "timestamp": e.get("timestamp"),
+                    }
+                )
 
     # Write snapshot
-    with open(os.path.join(OUT_DATA, 'issues_snapshot.json'), 'w') as f:
+    with open(os.path.join(OUT_DATA, "issues_snapshot.json"), "w") as f:
         json.dump(snapshot, f, indent=2)
 
     # Write flat events
-    with open(os.path.join(OUT_DATA, 'events_flat.csv'), 'w', newline='') as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=['repo', 'issue_number', 'fingerprint', 'action', 'reason', 'timestamp']
-        )
+    with open(os.path.join(OUT_DATA, "events_flat.csv"), "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["repo", "issue_number", "fingerprint", "action", "reason", "timestamp"])
         writer.writeheader()
         writer.writerows(flat_events)
 
@@ -183,10 +190,10 @@ def main():
     by_sev = {}
 
     for item in snapshot:
-        sev = next((l for l in item['labels'] if l.startswith('sec:sev/')), 'sec:sev/unknown')
+        sev = next((l for l in item["labels"] if l.startswith("sec:sev/")), "sec:sev/unknown")
         by_sev[sev] = by_sev.get(sev, 0) + 1
 
-    with open(os.path.join(OUT_REPORTS, 'summary.md'), 'w') as f:
+    with open(os.path.join(OUT_REPORTS, "summary.md"), "w") as f:
         f.write(f"# Security summary for team `{TEAM_SLUG}`\n\n")
         f.write(f"Generated at: {datetime.utcnow().isoformat()} UTC\n\n")
         f.write(f"## Total security issues: {total}\n\n")
@@ -195,5 +202,5 @@ def main():
             f.write(f"- {sev}: {cnt}\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

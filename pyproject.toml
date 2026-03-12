@@ -45,3 +45,11 @@ force-exclude = '''test'''
 [tool.mypy]
 check_untyped_defs = true
 exclude = "tests"
+
+[[tool.mypy.overrides]]
+module = "requests.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "derive_team_security_metrics"
+ignore_errors = true

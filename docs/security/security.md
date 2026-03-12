@@ -117,7 +117,11 @@ jobs:
   promote:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
@@ -160,7 +164,7 @@ The caller needs the following **repository secrets** configured:
 | `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
 
-Example caller (already available in `docs/security/example_workflows/aquasec-night-scan.yml`):
+Example caller (already available in [aquasec-night-scan.yml](/docs/security/example_workflows/aquasec-night-scan.yml)):
 
 ```yaml
 name: Aquasec Night Scan

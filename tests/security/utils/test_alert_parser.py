@@ -28,7 +28,6 @@ from utils.alert_parser import (
     load_open_alerts_from_file,
     parse_alert_message_params,
 )
-from utils.models import LoadedAlerts
 
 
 # ── Raw message strings for parse_alert_message_params tests ──────────

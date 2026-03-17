@@ -26,6 +26,7 @@ from pytest_mock import MockerFixture
 from shared.models import Issue
 from utils.issue_sync import (
     _append_notification,
+    _close_resolved_parent_issues,
     _comment_child_event,
     _flush_parent_body_updates,
     _handle_existing_child_issue,
@@ -812,6 +813,50 @@ def test_label_orphan_no_repo_in_secmeta() -> None:
 
 
 # =====================================================================
+# _close_resolved_parent_issues
+# =====================================================================
+
+
+def test_close_resolved_parent_issue(mocker: MockerFixture) -> None:
+    """Closes an open parent when all known children are closed."""
+    mock_edit = mocker.patch("utils.issue_sync.gh_issue_edit_state", return_value=True)
+    parent = _issue_with_secmeta(10, {
+        "type": "parent", "rule_id": "R1", "repo": "org/repo",
+    })
+    child_one = _issue_with_secmeta(11, {
+        "type": "child", "rule_id": "R1", "fingerprint": "fp1", "repo": "org/repo",
+    }, state="closed")
+    child_two = _issue_with_secmeta(12, {
+        "type": "child", "rule_id": "R1", "fingerprint": "fp2", "repo": "org/repo",
+    }, state="closed")
+    issues = {10: parent, 11: child_one, 12: child_two}
+    index = build_issue_index(issues)
+
+    _close_resolved_parent_issues(issues, index, dry_run=False)
+
+    mock_edit.assert_called_once_with("org/repo", 10, "closed")
+    assert parent.state == "closed"
+
+
+def test_close_resolved_parent_skips_open_child(mocker: MockerFixture) -> None:
+    """Leaves the parent open when any child is still open."""
+    mock_edit = mocker.patch("utils.issue_sync.gh_issue_edit_state", return_value=True)
+    parent = _issue_with_secmeta(10, {
+        "type": "parent", "rule_id": "R1", "repo": "org/repo",
+    })
+    child = _issue_with_secmeta(11, {
+        "type": "child", "rule_id": "R1", "fingerprint": "fp1", "repo": "org/repo",
+    }, state="open")
+    issues = {10: parent, 11: child}
+    index = build_issue_index(issues)
+
+    _close_resolved_parent_issues(issues, index, dry_run=False)
+
+    mock_edit.assert_not_called()
+    assert parent.state == "open"
+
+
+# =====================================================================
 # ensure_issue (end-to-end orchestration per alert)
 # =====================================================================
 
@@ -945,6 +990,24 @@ def test_sync_severity_change_detected(sast_alert: Alert) -> None:
     assert len(result.severity_changes) == 1
     assert result.severity_changes[0].old_severity == "low"
     assert result.severity_changes[0].new_severity == "high"
+
+
+def test_sync_closes_parent_when_all_children_closed(mocker: MockerFixture) -> None:
+    """Closes a parent during sync when its children are already closed."""
+    mock_edit = mocker.patch("utils.issue_sync.gh_issue_edit_state", return_value=True)
+    parent = _issue_with_secmeta(10, {
+        "type": "parent", "rule_id": "R1", "repo": "org/repo",
+    })
+    child = _issue_with_secmeta(11, {
+        "type": "child", "rule_id": "R1", "fingerprint": "fp1", "repo": "org/repo",
+    }, state="closed")
+    issues = {10: parent, 11: child}
+
+    result = sync_alerts_and_issues({}, issues, dry_run=False)
+
+    assert result.notifications == []
+    mock_edit.assert_called_once_with("org/repo", 10, "closed")
+    assert parent.state == "closed"
 
 
 # =====================================================================

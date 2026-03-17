@@ -146,6 +146,61 @@ def maybe_reopen_parent_issue(
         )
 
 
+def _close_resolved_parent_issues(
+    issues: dict[int, Issue],
+    index: IssueIndex,
+    *,
+    dry_run: bool,
+) -> None:
+    """Close open parent issues whose known child issues are all closed."""
+    child_issues_by_rule_id: dict[str, list[Issue]] = {}
+
+    for issue in issues.values():
+        secmeta = load_secmeta(issue.body)
+        if (secmeta.get("type") or "").strip().lower() != SECMETA_TYPE_CHILD:
+            continue
+
+        rule_id = (secmeta.get("rule_id") or "").strip()
+        if not rule_id:
+            continue
+
+        child_issues_by_rule_id.setdefault(rule_id, []).append(issue)
+
+    for rule_id, parent_issue in index.parent_by_rule_id.items():
+        if parent_issue.state.lower() == "closed":
+            continue
+
+        child_issues = child_issues_by_rule_id.get(rule_id, [])
+        if not child_issues:
+            continue
+
+        if any(child_issue.state.lower() != "closed" for child_issue in child_issues):
+            continue
+
+        parent_secmeta = load_secmeta(parent_issue.body)
+        repo = (parent_secmeta.get("repo") or "").strip()
+        if not repo and child_issues:
+            repo = (load_secmeta(child_issues[0].body).get("repo") or "").strip()
+        if not repo:
+            logging.debug(f"Skip closing parent issue #{parent_issue.number}: no repo in secmeta")
+            continue
+
+        if dry_run:
+            logging.info(
+                f"DRY-RUN: would close parent issue #{parent_issue.number} (rule_id={rule_id}) "
+                f"because all {len(child_issues)} child issue(s) are closed"
+            )
+            parent_issue.state = "closed"
+            continue
+
+        if gh_issue_edit_state(repo, parent_issue.number, "closed"):
+            logging.info(
+                f"Closed parent issue #{parent_issue.number} (rule_id={rule_id}) "
+                f"because all {len(child_issues)} child issue(s) are closed"
+            )
+            parent_issue.state = "closed"
+
+
 def ensure_parent_issue(
     alert: Alert,
     issues: dict[int, Issue],
@@ -880,5 +935,6 @@ def sync_alerts_and_issues(
         priority_sync.flush()
 
     _label_orphan_issues(alerts, index, dry_run=dry_run)
+    _close_resolved_parent_issues(issues, index, dry_run=dry_run)
 
     return SyncResult(notifications=notifications, severity_changes=severity_changes)

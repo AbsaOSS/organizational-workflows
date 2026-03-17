@@ -449,10 +449,11 @@ Even with your own Issue fingerprint, you want GitHub alerts to remain stable:
 
 ## Current implementation status
 
-As of 2026-02, `promote_alerts.py` implements the fingerprint-based sync loop described above:
+As of 2026-03, `promote_alerts.py` implements the fingerprint-based sync loop described above:
 
 - Matches issues strictly by `secmeta.fingerprint` (from the alert message `Alert hash: ...`)
 - Ensures a parent issue per `rule_id` (`secmeta.type=parent`) and links child issues under the parent using GitHub sub-issues
+- Closes an open parent issue when all known child issues for the same `rule_id` are already closed
 - Writes/updates `secmeta` on child issues, including `gh_alert_numbers`, `first_seen`, `last_seen`, `last_seen_commit`, and occurrence tracking
 - Reopens a closed matching Issue when an alert is open again
 - Adds `[sec-event]` comments only for meaningful events (reopen, new occurrence)

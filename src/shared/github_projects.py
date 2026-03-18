@@ -233,7 +233,7 @@ class ProjectPrioritySync:
                 if item_id and content_id:
                     self._content_to_item[content_id] = item_id
                 fv = node.get("fieldValueByName") or {}
-                current_opt = fv.get("optionId") or ""
+                current_opt = fv.get("optionId", "")
                 if item_id:
                     self._item_current_option[item_id] = current_opt
             total += len(nodes)

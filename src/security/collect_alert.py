@@ -59,13 +59,15 @@ def _snake_case(name: str) -> str:
     return name.strip().lower().replace(" ", "_")
 
 
-def _help_value(rule_help: str, name: str) -> str | None:
+def _help_value(rule_help: str | None, name: str) -> str | None:
     """Extract a value from ``**Name:** value`` markup in the rule help text."""
+    if not rule_help:
+        return None
     m = re.search(rf"\*\*{re.escape(name)}:\*\*\s*([^\n\r]+)", rule_help, re.IGNORECASE)
     return m.group(1) if m else None
 
 
-def _parse_rule_details(rule_help: str) -> dict[str, str | None]:
+def _parse_rule_details(rule_help: str | None) -> dict[str, str | None]:
     """Extract known rule detail fields from ``**Key:** value`` markup in rule help."""
     return {_snake_case(key): _help_value(rule_help, key) for key in RULE_DETAIL_KEYS}
 
@@ -118,7 +120,7 @@ def _normalise_alert(alert: dict) -> dict:
     instance = alert.get("most_recent_instance") or {}
     location = instance.get("location") or {}
     message_text = (instance.get("message") or {}).get("text", "")
-    rule_help = rule.get("help") or ""
+    rule_help = rule.get("help", "")
 
     return {
         "metadata": {

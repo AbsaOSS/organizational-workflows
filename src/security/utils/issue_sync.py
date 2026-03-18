@@ -157,7 +157,7 @@ def _close_resolved_parent_issues(
 
     for issue in issues.values():
         secmeta = load_secmeta(issue.body)
-        if (secmeta.get("type", "").strip().lower() != SECMETA_TYPE_CHILD):
+        if secmeta.get("type", "").strip().lower() != SECMETA_TYPE_CHILD:
             continue
 
         rule_id = secmeta.get("rule_id", "").strip()

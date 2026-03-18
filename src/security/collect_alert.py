@@ -118,7 +118,7 @@ def _normalise_alert(alert: dict) -> dict:
     instance = alert.get("most_recent_instance") or {}
     location = instance.get("location") or {}
     message_text = (instance.get("message") or {}).get("text", "")
-    rule_help = rule.get("help") or ""
+    rule_help = rule.get("help", "")
 
     return {
         "metadata": {

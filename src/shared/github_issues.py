@@ -118,9 +118,9 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
         label_names = [str(lbl.get("name") or lbl) if isinstance(lbl, dict) else str(lbl) for lbl in raw_labels]
         issues[number] = Issue(
             number=number,
-            state=str(obj.get("state") or ""),
-            title=str(obj.get("title") or ""),
-            body=str(obj.get("body") or ""),
+            state=str(obj.get("state", "")),
+            title=str(obj.get("title", "")),
+            body=str(obj.get("body", "")),
             labels=label_names,
         )
 

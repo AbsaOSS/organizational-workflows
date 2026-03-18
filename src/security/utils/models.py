@@ -143,7 +143,7 @@ class Alert:
             metadata=AlertMetadata(**{k: v for k, v in md.items() if k in AlertMetadata.__dataclass_fields__}),
             alert_details=AlertDetails(**{k: v for k, v in ad.items() if k in AlertDetails.__dataclass_fields__}),
             rule_details=RuleDetails(**{k: v for k, v in rd.items() if k in RuleDetails.__dataclass_fields__}),
-            repo=repo or str(d.get("_repo") or ""),
+            repo=repo or str(d.get("_repo", "")),
         )
 
 

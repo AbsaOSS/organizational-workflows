@@ -71,13 +71,13 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
 
     for issue in issues.values():
         secmeta = load_secmeta(issue.body)
-        secmeta_type = (secmeta.get("type") or "").strip().lower()
+        secmeta_type = secmeta.get("type", "").strip().lower()
         if secmeta_type == SECMETA_TYPE_PARENT:
-            rule_id = (secmeta.get("rule_id") or "").strip()
+            rule_id = secmeta.get("rule_id", "").strip()
             if rule_id:
                 parent_by_rule_id.setdefault(rule_id, issue)
 
-        fp = (secmeta.get("fingerprint") or "").strip() or (secmeta.get("alert_hash") or "").strip()
+        fp = secmeta.get("fingerprint", "").strip() or secmeta.get("alert_hash", "").strip()
         if fp and secmeta_type != SECMETA_TYPE_PARENT:
             by_fingerprint.setdefault(fp, issue)
 
@@ -157,10 +157,10 @@ def _close_resolved_parent_issues(
 
     for issue in issues.values():
         secmeta = load_secmeta(issue.body)
-        if (secmeta.get("type") or "").strip().lower() != SECMETA_TYPE_CHILD:
+        if (secmeta.get("type", "").strip().lower() != SECMETA_TYPE_CHILD):
             continue
 
-        rule_id = (secmeta.get("rule_id") or "").strip()
+        rule_id = secmeta.get("rule_id", "").strip()
         if not rule_id:
             continue
 
@@ -178,9 +178,9 @@ def _close_resolved_parent_issues(
             continue
 
         parent_secmeta = load_secmeta(parent_issue.body)
-        repo = (parent_secmeta.get("repo") or "").strip()
+        repo = parent_secmeta.get("repo", "").strip()
         if not repo and child_issues:
-            repo = (load_secmeta(child_issues[0].body).get("repo") or "").strip()
+            repo = load_secmeta(child_issues[0].body).get("repo", "").strip()
         if not repo:
             logging.debug(f"Skip closing parent issue #{parent_issue.number}: no repo in secmeta")
             continue
@@ -563,7 +563,7 @@ def _merge_child_secmeta(
     if str(ctx.alert_number) not in existing_alerts:
         existing_alerts.append(str(ctx.alert_number))
 
-    last_occ_fp = secmeta.get("last_occurrence_fp") or ""
+    last_occ_fp = secmeta.get("last_occurrence_fp", "")
     occurrence_count = int(secmeta.get("occurrence_count") or "0" or 0)
     new_occurrence = bool(ctx.occurrence_fp and ctx.occurrence_fp != last_occ_fp)
     if occurrence_count <= 0:

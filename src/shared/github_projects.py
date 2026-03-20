@@ -96,14 +96,21 @@ def gh_project_get_priority_field(
       }
     }
     """
+    logging.debug(f"Querying ProjectV2 #{project_number} in org '{org}'")
     data = _run_graphql(query, {"org": org, "num": project_number})
     if data is None:
+        logging.warning(
+            f"GraphQL query for project #{project_number} in org '{org}' failed."
+        )
         _project_priority_cache[cache_key] = None
         return None
 
     project = (data.get("data") or {}).get("organization", {}).get("projectV2")
     if project is None:
-        logging.warning(f"Project #{project_number} not found in org {org}")
+        logging.warning(
+            f"Project #{project_number} not found in org '{org}'. "
+            "Verify the project exists, is a V2 project (not classic)."
+        )
         _project_priority_cache[cache_key] = None
         return None
 

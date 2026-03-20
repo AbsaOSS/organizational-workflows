@@ -35,6 +35,7 @@ permissions:
   actions: read
   issues: write
   security-events: write
+  repository-projects: read
 
 jobs:
   scan:

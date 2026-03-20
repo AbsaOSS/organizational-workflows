@@ -35,7 +35,7 @@ permissions:
   actions: read
   issues: write
   security-events: write
-  repository-projects: read
+  repository-projects: write
 
 jobs:
   scan:
@@ -50,3 +50,6 @@ jobs:
       AQUA_GROUP_ID: ${{ secrets.AQUA_GROUP_ID }}
       AQUA_REPOSITORY_ID: ${{ secrets.AQUA_REPOSITORY_ID }}
       TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+      # Required only when project-org differs from this repository's org.
+      # See docs/security/security.md – "Cross-org project token" for how to create it.
+      GH_PROJECT_ONLY_TOKEN: ${{ secrets.GH_PROJECT_ONLY_TOKEN }}

@@ -16,6 +16,7 @@ In one sentence: SARIF uploads create alerts; these scripts sync alerts into Iss
   - [Available reusable workflows](#available-reusable-workflows)
   - [How to adopt a shared workflow](#how-to-adopt-a-shared-workflow)
     - [Aquasec Night Scan](#aquasec-night-scan)
+      - [Cross-org project token](#cross-org-project-token)
     - [Remove sec:adept-to-close on close](#remove-secadept-to-close-on-close)
 - [Labels (contract)](#labels-contract)
 - [Issue metadata (secmeta)](#issue-metadata-secmeta)
@@ -163,6 +164,7 @@ The caller needs the following **repository secrets** configured:
 | `AQUA_GROUP_ID` | yes | AquaSec group identifier |
 | `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
+| `GH_PROJECT_ONLY_TOKEN` | no (required for cross-org projects) | Classic PAT with `project` scope on an account that is a member of the org owning the ProjectV2 board – see [Cross-org project token](#cross-org-project-token) |
 
 Example caller (already available in [aquasec-night-scan.yml](/docs/security/example_workflows/aquasec-night-scan.yml)):
 
@@ -194,6 +196,53 @@ jobs:
       AQUA_REPOSITORY_ID: ${{ secrets.AQUA_REPOSITORY_ID }}
       TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
 ```
+
+##### Cross-org project token
+
+When `project-org` is a **different organisation** than the one that owns the calling repository, the automatic `github.token` cannot resolve the ProjectV2 board and you will see:
+
+```
+WARNING - GraphQL call failed: gh: Could not resolve to a ProjectV2 with the number <N>.
+WARNING - Could not load project #<N> metadata – priority sync disabled
+```
+
+The fix is a **Personal Access Token (classic)** with the `project` scope, created by an account that is a member of the org owning the project board.
+
+> **Why classic and not fine-grained?** Fine-grained PATs require the org admin to explicitly allow them under org settings. If that is not enabled, a classic PAT with the `project` scope is the practical alternative. Classic PATs are less granular (they apply to all orgs the account belongs to) but the `project` scope is the minimum checkbox needed and grants no code or issue access.
+
+**Step-by-step: create the token**
+
+1. Log in to the GitHub account that is a **member of the org that owns the project board** (e.g. `your-org`). Using a dedicated service/bot account is recommended over a personal account so the token does not expire when someone leaves.
+2. Go to **that account's Settings → Developer settings → Personal access tokens → Tokens (classic)**.
+3. Click **Generate new token (classic)**.
+4. Fill in the form:
+   - **Note**: something descriptive, e.g. `aquasec-alert-to-issues-priority-sync`
+   - **Expiration**: choose a date; calendar a renewal reminder
+   - **Scopes**: check **`project`** (labelled *"Full control of user projects"*) — this is the only scope needed. Do **not** check `repo`, `admin:org`, or anything else.
+5. Click **Generate token** and copy the value immediately (it is shown only once).
+
+**Step-by-step: store the token in the calling repository**
+
+1. In **your application repository** (the adopting repo, in your own org), go to **Settings → Secrets and variables → Actions**.
+2. Click **New repository secret**.
+3. Name: `GH_PROJECT_ONLY_TOKEN`, Value: paste the token from the step above.
+4. Save.
+
+The example caller workflow already passes this secret:
+
+```yaml
+secrets:
+  GH_PROJECT_ONLY_TOKEN: ${{ secrets.GH_PROJECT_ONLY_TOKEN }}
+```
+
+The reusable workflow forwards it to the Python script as the `GH_PROJECT_ONLY_TOKEN` environment variable. The script uses it **only** for ProjectV2 GraphQL calls; all other operations (issue list/create/update) continue to use the scoped `github.token`.
+
+**Minimum required scope summary**
+
+| Scope | Reason |
+| --- | --- |
+| `project` | Read/write access to org-level ProjectV2 — query metadata + set Priority field values |
+| *(everything else)* | Not needed — do not check |
 
 #### Remove sec:adept-to-close on close
 
@@ -465,6 +514,9 @@ As of 2026-03, `promote_alerts.py` implements the fingerprint-based sync loop de
 - Permission errors in Actions: ensure the workflow has `security-events: read` and `issues: write` permissions.
 - `Output file alerts.json exists`: `collect_alert.py` refuses to overwrite output; delete the file, pass a different `--out` path, or run via `sync_security_alerts.py --force` (which deletes the file before invoking the collector).
 - `missing 'alert hash' in alert message`: the scanner/collector needs to include an `Alert hash: ...` line in the alert instance message text.
+- `GraphQL call failed: gh: Could not resolve to a ProjectV2 with the number N` / `Could not load project #N metadata – priority sync disabled`: the token used for the GraphQL call cannot see the project. Two causes:
+  - **Same org, wrong permission**: ensure the caller workflow has `repository-projects: write` (not `read`).
+  - **Cross-org**: the calling repository is in a different org than the project board. Create a classic PAT with the `project` scope on an account that is a member of the project-owning org, and store it as `GH_PROJECT_ONLY_TOKEN` in the calling repository's secrets. See [Cross-org project token](#cross-org-project-token).
 
 ## References
 

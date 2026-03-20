@@ -97,7 +97,7 @@ jobs:
       - name: Upload Scan Results to GitHub Security
         uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2
         with:
-          sarif_file: ${{ steps.aquasec.outputs.aquasec-sarif-file }}
+          sarif_file: ${{ steps.aquasec.outputs.nightscan-sarif-file }}
           category: aquasec
 
   sync-alerts-to-issues:

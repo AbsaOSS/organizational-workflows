@@ -66,13 +66,20 @@ on:
         required: true
       TEAMS_WEBHOOK_URL:
         required: false
+      GH_PROJECT_ONLY_TOKEN:
+        description: >
+          Classic PAT with 'project' scope on an account that is a member of the
+          org that owns the ProjectV2 board. Required only when the project lives
+          in a different organisation than the calling repository. When omitted,
+          github.token is used (works only for same-org projects).
+        required: false
 
 permissions:
   contents: read
   actions: read
   issues: write
   security-events: write
-  repository-projects: read
+  repository-projects: write
 
 jobs:
   aquasec-scan:
@@ -127,6 +134,7 @@ jobs:
       - name: Run alert-to-issue sync
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_PROJECT_ONLY_TOKEN: ${{ secrets.GH_PROJECT_ONLY_TOKEN }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
           SEVERITY_PRIORITY_MAP: ${{ inputs.severity-priority-map }}
           PROJECT_NUMBER: ${{ inputs.project-number }}

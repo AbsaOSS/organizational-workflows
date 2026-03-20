@@ -23,6 +23,7 @@ import logging
 import os
 import re
 import subprocess
+from collections.abc import Mapping
 from datetime import datetime, timezone
 
 
@@ -71,7 +72,7 @@ def run_cmd(
     cmd: list[str],
     *,
     capture_output: bool = True,
-    env: dict | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     """Run *cmd* as a subprocess and return the completed process."""
     return subprocess.run(cmd, check=False, capture_output=capture_output, text=True, env=env)
@@ -81,7 +82,7 @@ def run_gh(
     args: list[str],
     *,
     capture_output: bool = True,
-    env: dict | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a ``gh`` CLI command and return the completed process."""
     cmd = ["gh"] + args

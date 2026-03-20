@@ -22,6 +22,7 @@ and the bulk :class:`ProjectPrioritySync` class (prefetch -> enqueue -> flush).
 import json
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,7 +62,7 @@ def _run_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[st
     args = ["api", "graphql", "-f", f"query={query}"]
     for k, v in (variables or {}).items():
         args += ["-F", f"{k}={v}"]
-    env: dict | None = None
+    env: Mapping[str, str] | None = None
     project_token = os.environ.get("GH_PROJECT_ONLY_TOKEN", "")
     if project_token:
         env = {**os.environ, "GH_TOKEN": project_token}

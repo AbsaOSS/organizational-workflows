@@ -99,9 +99,7 @@ def gh_project_get_priority_field(
     logging.debug(f"Querying ProjectV2 #{project_number} in org '{org}'")
     data = _run_graphql(query, {"org": org, "num": project_number})
     if data is None:
-        logging.warning(
-            f"GraphQL query for project #{project_number} in org '{org}' failed."
-        )
+        logging.warning(f"GraphQL query for project #{project_number} in org '{org}' failed.")
         _project_priority_cache[cache_key] = None
         return None
 

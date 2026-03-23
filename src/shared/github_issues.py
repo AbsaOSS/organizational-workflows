@@ -142,7 +142,7 @@ def gh_issue_get_sub_issue_numbers(repo: str, parent_number: int) -> set[int]:
     try:
         numbers = json.loads((res.stdout or "").strip() or "[]")
         return {int(n) for n in numbers}
-    except json.JSONDecodeError, ValueError:
+    except (json.JSONDecodeError, ValueError):
         logging.error("Failed to parse sub-issues for parent #%d: %r", parent_number, res.stdout)
         return set()
 
@@ -187,7 +187,7 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
     for obj in items or []:
         try:
             number = int(obj.get("number"))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
         raw_labels = obj.get("labels") or []
         label_names = [str(lbl.get("name") or lbl) if isinstance(lbl, dict) else str(lbl) for lbl in raw_labels]

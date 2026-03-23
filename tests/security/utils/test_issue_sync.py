@@ -28,6 +28,7 @@ from utils.issue_sync import (
     _append_notification,
     _close_resolved_parent_issues,
     _comment_child_event,
+    _ensure_child_linked_to_parent,
     _flush_parent_body_updates,
     _handle_existing_child_issue,
     _handle_new_child_issue,
@@ -616,6 +617,74 @@ def test_handle_existing_child_updates_body(mocker: MockerFixture, sast_alert: A
 
 
 # =====================================================================
+# _ensure_child_linked_to_parent
+# =====================================================================
+
+
+def test_ensure_child_linked_already_linked(mocker: MockerFixture) -> None:
+    """No-op when the child is already in the parent's sub-issues."""
+    mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value={5})
+    mock_add = mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number")
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child = Issue(number=5, state="open", title="C", body="cb")
+    ctx = _make_alert_context()
+    sync = _make_sync_context()
+    _ensure_child_linked_to_parent(ctx=ctx, sync=sync, issue=child, parent_issue=parent)
+    mock_add.assert_not_called()
+
+
+def test_ensure_child_linked_missing_adds_link(mocker: MockerFixture) -> None:
+    """Adds the sub-issue link when the child is missing from the parent."""
+    mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value=set())
+    mock_add = mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number", return_value=True)
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child = Issue(number=5, state="open", title="C", body="cb")
+    ctx = _make_alert_context()
+    sync = _make_sync_context()
+    _ensure_child_linked_to_parent(ctx=ctx, sync=sync, issue=child, parent_issue=parent)
+    mock_add.assert_called_once_with("test-org/test-repo", 1, 5)
+
+
+def test_ensure_child_linked_missing_dry_run(mocker: MockerFixture) -> None:
+    """In dry-run mode logs intent without calling the add-sub-issue API."""
+    mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value=set())
+    mock_add = mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number")
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child = Issue(number=5, state="open", title="C", body="cb")
+    ctx = _make_alert_context()
+    sync = _make_sync_context(dry_run=True)
+    _ensure_child_linked_to_parent(ctx=ctx, sync=sync, issue=child, parent_issue=parent)
+    mock_add.assert_not_called()
+
+
+def test_ensure_child_linked_cache_populated(mocker: MockerFixture) -> None:
+    """gh_issue_get_sub_issue_numbers is called only once per parent (cached)."""
+    mock_list = mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value={5, 6})
+    mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number")
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child_a = Issue(number=5, state="open", title="A", body="ab")
+    child_b = Issue(number=6, state="open", title="B", body="bb")
+    ctx_a = _make_alert_context(fingerprint="fp_a")
+    ctx_b = _make_alert_context(fingerprint="fp_b")
+    sync = _make_sync_context()
+    _ensure_child_linked_to_parent(ctx=ctx_a, sync=sync, issue=child_a, parent_issue=parent)
+    _ensure_child_linked_to_parent(ctx=ctx_b, sync=sync, issue=child_b, parent_issue=parent)
+    mock_list.assert_called_once_with("test-org/test-repo", 1)
+
+
+def test_ensure_child_linked_api_failure_no_cache_update(mocker: MockerFixture) -> None:
+    """When the API call to add the link fails, the cache is not updated."""
+    mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value=set())
+    mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number", return_value=False)
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child = Issue(number=5, state="open", title="C", body="cb")
+    ctx = _make_alert_context()
+    sync = _make_sync_context()
+    _ensure_child_linked_to_parent(ctx=ctx, sync=sync, issue=child, parent_issue=parent)
+    assert 5 not in sync.parent_sub_issues_cache.get(1, set())
+
+
+# =====================================================================
 # ensure_parent_issue
 # =====================================================================
 
@@ -872,10 +941,8 @@ def test_ensure_issue_new_alert_creates_parent_and_child(
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
     notifications: list[NotifiedIssue] = []
-    ensure_issue(
-        sast_alert, issues, index,
-        dry_run=False, notifications=notifications,
-    )
+    sync = _make_sync_context(issues=issues, index=index, dry_run=False, notifications=notifications)
+    ensure_issue(sast_alert, sync)
     assert mock_create.call_count == 2  # parent + child
     assert len(notifications) == 1
 
@@ -884,10 +951,8 @@ def test_ensure_issue_dry_run(sast_alert: Alert) -> None:
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
     notifications: list[NotifiedIssue] = []
-    ensure_issue(
-        sast_alert, issues, index,
-        dry_run=True, notifications=notifications,
-    )
+    sync = _make_sync_context(issues=issues, index=index, dry_run=True, notifications=notifications)
+    ensure_issue(sast_alert, sync)
     assert len(notifications) == 1
     assert notifications[0].issue_number == 0
 
@@ -900,7 +965,7 @@ def test_ensure_issue_skips_non_open() -> None:
     })
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    ensure_issue(alert, issues, index, dry_run=True)
+    ensure_issue(alert, _make_sync_context(issues=issues, index=index, dry_run=True))
 
 def test_ensure_issue_missing_alert_hash_raises() -> None:
     """Raises SystemExit when alert hash is missing."""
@@ -912,7 +977,7 @@ def test_ensure_issue_missing_alert_hash_raises() -> None:
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
     with pytest.raises(SystemExit, match="alert_hash"):
-        ensure_issue(alert, issues, index, dry_run=True)
+        ensure_issue(alert, _make_sync_context(issues=issues, index=index, dry_run=True))
 
 def test_ensure_issue_missing_alert_details_raises() -> None:
     """Raises SystemExit when alert_details has no alert_hash."""
@@ -924,7 +989,7 @@ def test_ensure_issue_missing_alert_details_raises() -> None:
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
     with pytest.raises(SystemExit, match="alert_hash"):
-        ensure_issue(alert, issues, index, dry_run=True)
+        ensure_issue(alert, _make_sync_context(issues=issues, index=index, dry_run=True))
 
 def test_ensure_issue_existing_child_updates(mocker: MockerFixture, sast_alert: Alert) -> None:
     """When a child issue already exists, it is updated (not duplicated)."""
@@ -943,10 +1008,8 @@ def test_ensure_issue_existing_child_updates(mocker: MockerFixture, sast_alert: 
     issues = {5: child, 10: parent}
     index = build_issue_index(issues)
     notifications: list[NotifiedIssue] = []
-    ensure_issue(
-        sast_alert, issues, index,
-        dry_run=True, notifications=notifications,
-    )
+    sync = _make_sync_context(issues=issues, index=index, dry_run=True, notifications=notifications)
+    ensure_issue(sast_alert, sync)
 
 
 # =====================================================================

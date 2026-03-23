@@ -18,6 +18,8 @@
 via ``run_gh``; ``time.sleep`` is always patched to keep tests instant.
 """
 
+import json
+import logging
 import subprocess
 from typing import Any
 
@@ -176,7 +178,6 @@ def test_get_rest_id_not_found_hint_in_log(mocker: MockerFixture, caplog) -> Non
     """Log message includes the not-found hint for 404 errors."""
     mocker.patch("shared.github_issues.run_gh", return_value=_not_found())
     mocker.patch("shared.github_issues.time.sleep")
-    import logging
     with caplog.at_level(logging.WARNING, logger="root"):
         gh_issue_get_rest_id("org/repo", 99)
     assert any("deleted or transferred" in r.message for r in caplog.records)
@@ -188,7 +189,6 @@ def test_add_sub_issue_success(mocker: MockerFixture) -> None:
 
 def test_add_sub_issue_failure_logs_hint(mocker: MockerFixture, caplog) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_not_found())
-    import logging
     with caplog.at_level(logging.ERROR, logger="root"):
         result = gh_issue_add_sub_issue("org/repo", 10, 9999)
     assert result is False
@@ -196,7 +196,6 @@ def test_add_sub_issue_failure_logs_hint(mocker: MockerFixture, caplog) -> None:
 
 def test_add_sub_issue_failure_plain_error(mocker: MockerFixture, caplog) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_err("rate limited"))
-    import logging
     with caplog.at_level(logging.ERROR, logger="root"):
         result = gh_issue_add_sub_issue("org/repo", 10, 9999)
     assert result is False
@@ -216,22 +215,25 @@ def test_add_sub_issue_by_number_rest_id_fails(mocker: MockerFixture) -> None:
 
 def test_get_sub_issue_numbers_success(mocker: MockerFixture) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_ok(stdout="[1, 2, 3]\n"))
+    mocker.patch("shared.github_issues.time.sleep")
     assert gh_issue_get_sub_issue_numbers("org/repo", 10) == {1, 2, 3}
 
 def test_get_sub_issue_numbers_empty(mocker: MockerFixture) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_ok(stdout="[]\n"))
+    mocker.patch("shared.github_issues.time.sleep")
     assert gh_issue_get_sub_issue_numbers("org/repo", 10) == set()
 
-def test_get_sub_issue_numbers_not_found_warning(mocker: MockerFixture, caplog) -> None:
+def test_get_sub_issue_numbers_not_found_error(mocker: MockerFixture, caplog) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_not_found())
-    import logging
-    with caplog.at_level(logging.WARNING, logger="root"):
+    mocker.patch("shared.github_issues.time.sleep")
+    with caplog.at_level(logging.ERROR, logger="root"):
         result = gh_issue_get_sub_issue_numbers("org/repo", 10)
     assert result == set()
     assert any("deleted or transferred" in r.message for r in caplog.records)
 
 def test_get_sub_issue_numbers_parse_error(mocker: MockerFixture) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_ok(stdout="not-json"))
+    mocker.patch("shared.github_issues.time.sleep")
     assert gh_issue_get_sub_issue_numbers("org/repo", 10) == set()
 
 
@@ -252,7 +254,6 @@ def test_issue_comment_retries_on_404(mocker: MockerFixture) -> None:
 def test_issue_comment_fails_after_all_retries(mocker: MockerFixture, caplog) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_not_found())
     mocker.patch("shared.github_issues.time.sleep")
-    import logging
     with caplog.at_level(logging.ERROR, logger="root"):
         result = gh_issue_comment("org/repo", 1, "hello")
     assert result is False
@@ -266,7 +267,6 @@ def test_issue_comment_graphql_not_found_hint(mocker: MockerFixture, caplog) -> 
     )
     mocker.patch("shared.github_issues.run_gh", return_value=graphql_err)
     mocker.patch("shared.github_issues.time.sleep")
-    import logging
     with caplog.at_level(logging.ERROR, logger="root"):
         gh_issue_comment("org/repo", 42, "body")
     assert any("deleted or transferred" in r.message for r in caplog.records)
@@ -278,7 +278,6 @@ def test_edit_state_success(mocker: MockerFixture) -> None:
 
 def test_edit_state_not_found_hint(mocker: MockerFixture, caplog) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_not_found())
-    import logging
     with caplog.at_level(logging.ERROR, logger="root"):
         result = gh_issue_edit_state("org/repo", 1, "open")
     assert result is False
@@ -295,7 +294,6 @@ def test_edit_title_success(mocker: MockerFixture) -> None:
 
 def test_edit_title_not_found_hint(mocker: MockerFixture, caplog) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_not_found())
-    import logging
     with caplog.at_level(logging.ERROR, logger="root"):
         result = gh_issue_edit_title("org/repo", 1, "New title")
     assert result is False
@@ -308,7 +306,6 @@ def test_edit_body_success(mocker: MockerFixture) -> None:
 
 def test_edit_body_not_found_hint(mocker: MockerFixture, caplog) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_not_found())
-    import logging
     with caplog.at_level(logging.ERROR, logger="root"):
         result = gh_issue_edit_body("org/repo", 1, "new body")
     assert result is False
@@ -327,8 +324,7 @@ def test_add_labels_no_labels_skips_call(mocker: MockerFixture) -> None:
 
 def test_add_labels_not_found_hint(mocker: MockerFixture, caplog) -> None:
     mocker.patch("shared.github_issues.run_gh", return_value=_not_found())
-    import logging
-    with caplog.at_level(logging.ERROR, logger="root"):
+    with caplog.at_level(logging.WARNING, logger="root"):
         gh_issue_add_labels("org/repo", 1, ["bug"])
     assert any("deleted or transferred" in r.message for r in caplog.records)
 
@@ -355,7 +351,6 @@ def test_list_by_label_success(mocker: MockerFixture) -> None:
         {"number": 1, "state": "open", "title": "T1", "body": "b1", "labels": [{"name": "bug"}]},
         {"number": 2, "state": "closed", "title": "T2", "body": "b2", "labels": []},
     ]
-    import json
     mocker.patch("shared.github_issues.run_gh", return_value=_ok(stdout=json.dumps(payload)))
     issues = gh_issue_list_by_label("org/repo", "bug")
     assert len(issues) == 2

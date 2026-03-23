@@ -22,6 +22,7 @@ sub-issue linking, list-by-label, and node-id lookup.
 import json
 import logging
 import re
+import subprocess
 import time
 
 from .common import run_gh
@@ -34,18 +35,18 @@ _NOT_FOUND_MARKERS = (
 )
 
 
-def _is_not_found_error(res) -> bool:  # res: subprocess.CompletedProcess[str]
+def _is_not_found_error(res: subprocess.CompletedProcess[str]) -> bool:
     """Return ``True`` when *res* contains a GitHub 404 / not-found indicator."""
     combined = (res.stderr or "") + (res.stdout or "")
     return any(marker in combined for marker in _NOT_FOUND_MARKERS)
 
 
-def _not_found_hint(res) -> str:  # res: subprocess.CompletedProcess[str]
+def _not_found_hint(res: subprocess.CompletedProcess[str]) -> str:
     """Return a log context hint when the error looks like a missing/stale issue."""
     return " (issue may no longer exist – deleted or transferred)" if _is_not_found_error(res) else ""
 
 
-def _gh_with_retry(args: list[str], *, retries: int = 3, backoff_base: float = 2.0):
+def _gh_with_retry(args: list[str], *, retries: int = 3, backoff_base: float = 2.0) -> subprocess.CompletedProcess[str]:
     """Run a ``gh`` command, retrying up to *retries* times on 404 responses.
 
     Waits ``backoff_base ** attempt`` seconds between attempts (2 s, 4 s, 8 s by
@@ -55,10 +56,10 @@ def _gh_with_retry(args: list[str], *, retries: int = 3, backoff_base: float = 2
     for attempt in range(1, retries + 1):
         if res.returncode == 0 or not _is_not_found_error(res):
             break
-        wait = backoff_base ** attempt
+        wait = backoff_base**attempt
         logging.debug(
-            f"gh 404 on attempt {attempt}/{retries}, retrying in {wait:.0f}s "
-            f"(cmd={' '.join(str(a) for a in args[:3])})"
+            "gh 404 on attempt %d/%d, retrying in %.0fs (cmd=%s)",
+            attempt, retries, wait, " ".join(str(a) for a in args[:3]),
         )
         time.sleep(wait)
         res = run_gh(args)
@@ -72,12 +73,12 @@ def gh_issue_get_rest_id(repo: str, number: int) -> int | None:
     """
     res = _gh_with_retry(["api", f"repos/{repo}/issues/{number}", "--jq", ".id"])
     if res.returncode != 0:
-        logging.warning(f"Failed to fetch REST issue id for #{number}{_not_found_hint(res)}: {res.stderr}")
+        logging.warning("Failed to fetch REST issue id for #%d%s: %s", number, _not_found_hint(res), res.stderr)
         return None
     try:
         return int((res.stdout or "").strip())
-    except Exception:
-        logging.warning(f"Failed to parse REST issue id for #{number}: {res.stdout!r}")
+    except ValueError:
+        logging.warning("Failed to parse REST issue id for #%d: %r", number, res.stdout)
         return None
 
 
@@ -96,8 +97,8 @@ def gh_issue_add_sub_issue(repo: str, parent_number: int, sub_issue_id: int) -> 
 
     if res.returncode != 0:
         logging.error(
-            f"Failed to add sub-issue link parent=#{parent_number} sub_issue_id={sub_issue_id}"
-            f"{_not_found_hint(res)}: {res.stderr}"
+            "Failed to add sub-issue link parent=#%d sub_issue_id=%d%s: %s",
+            parent_number, sub_issue_id, _not_found_hint(res), res.stderr,
         )
         return False
 
@@ -115,23 +116,28 @@ def gh_issue_add_sub_issue_by_number(repo: str, parent_number: int, child_number
 
 
 def gh_issue_get_sub_issue_numbers(repo: str, parent_number: int) -> set[int]:
-    """Return the set of child issue numbers currently linked to *parent_number*."""
-    res = run_gh(
+    """Return the set of child issue numbers currently linked to *parent_number*.
+
+    Retries on 404 to tolerate GitHub API replication lag after issue creation.
+    Uses ``--paginate`` to handle parents with more than 30 sub-issues.
+    """
+    res = _gh_with_retry(
         [
             "api",
+            "--paginate",
             f"repos/{repo}/issues/{parent_number}/sub_issues",
             "--jq",
             "[.[].number]",
         ]
     )
     if res.returncode != 0:
-        logging.error(f"Failed to list sub-issues for parent #{parent_number}{_not_found_hint(res)}: {res.stderr}")
+        logging.error("Failed to list sub-issues for parent #%d%s: %s", parent_number, _not_found_hint(res), res.stderr)
         return set()
     try:
         numbers = json.loads((res.stdout or "").strip() or "[]")
         return {int(n) for n in numbers}
-    except Exception:
-        logging.error(f"Failed to parse sub-issues for parent #{parent_number}: {res.stdout!r}")
+    except (json.JSONDecodeError, ValueError):
+        logging.error("Failed to parse sub-issues for parent #%d: %r", parent_number, res.stdout)
         return set()
 
 
@@ -163,19 +169,19 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
     )
 
     if res.returncode != 0:
-        logging.error(f"gh issue list by label failed: {res.stderr}")
+        logging.error("gh issue list by label failed: %s", res.stderr)
         return {}
 
     try:
         items = json.loads(res.stdout or "[]")
-    except Exception:
+    except json.JSONDecodeError:
         return {}
 
     issues: dict[int, Issue] = {}
     for obj in items or []:
         try:
             number = int(obj.get("number"))
-        except Exception:
+        except (TypeError, ValueError):
             continue
         raw_labels = obj.get("labels") or []
         label_names = [str(lbl.get("name") or lbl) if isinstance(lbl, dict) else str(lbl) for lbl in raw_labels]
@@ -187,7 +193,7 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
             labels=label_names,
         )
 
-    logging.info(f"Loaded {len(issues)} issues with label {label!r} from repository {repo}")
+    logging.info("Loaded %d issues with label %r from repository %s", len(issues), label, repo)
     return issues
 
 
@@ -204,7 +210,7 @@ def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
 
     stderr = (res.stderr or "") + (res.stdout or "")
     if "unknown flag: --state" not in stderr:
-        logging.error(f"Failed to edit state for #{number}{_not_found_hint(res)}: {res.stderr}")
+        logging.error("Failed to edit state for #%d%s: %s", number, _not_found_hint(res), res.stderr)
         return False
 
     # Fallback for older gh versions that don't support `issue edit --state`.
@@ -219,8 +225,8 @@ def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
     res3 = run_gh(["api", "--method", "PATCH", f"repos/{repo}/issues/{number}", "-f", f"state={desired}"])
     if res3.returncode != 0:
         logging.error(
-            f"Failed to edit state for #{number}{_not_found_hint(res3)}: "
-            f"{res2.stderr or res2.stdout or res.stderr}"
+            "Failed to edit state for #%d%s: %s",
+            number, _not_found_hint(res3), res2.stderr or res2.stdout or res.stderr,
         )
         return False
     return True
@@ -231,10 +237,10 @@ def gh_issue_edit_title(repo: str, number: int, title: str) -> bool:
     res = run_gh(["issue", "edit", str(number), "--repo", repo, "--title", title])
 
     if res.returncode != 0:
-        logging.error(f"Failed to edit title for #{number}{_not_found_hint(res)}: {res.stderr}")
+        logging.error("Failed to edit title for #%d%s: %s", number, _not_found_hint(res), res.stderr)
         return False
 
-    logging.info(f"Updated issue #{number} title")
+    logging.info("Updated issue #%d title", number)
     return True
 
 
@@ -243,10 +249,10 @@ def gh_issue_edit_body(repo: str, number: int, body: str) -> bool:
     res = run_gh(["issue", "edit", str(number), "--repo", repo, "--body", body])
 
     if res.returncode != 0:
-        logging.error(f"Failed to edit body for #{number}{_not_found_hint(res)}: {res.stderr}")
+        logging.error("Failed to edit body for #%d%s: %s", number, _not_found_hint(res), res.stderr)
         return False
 
-    logging.info(f"Updated issue #{number} body")
+    logging.info("Updated issue #%d body", number)
     return True
 
 
@@ -263,7 +269,7 @@ def gh_issue_add_labels(repo: str, number: int, labels: list[str]) -> None:
     res = run_gh(args)
     if res.returncode != 0:
         # Labels may not exist; don't fail the whole run.
-        logging.error(f"Failed to add labels to #{number}{_not_found_hint(res)}: {res.stderr}")
+        logging.warning("Failed to add labels to #%d%s: %s", number, _not_found_hint(res), res.stderr)
 
 
 def gh_issue_comment(repo: str, number: int, body: str) -> bool:
@@ -274,7 +280,7 @@ def gh_issue_comment(repo: str, number: int, body: str) -> bool:
     res = _gh_with_retry(["issue", "comment", str(number), "--repo", repo, "--body", body])
 
     if res.returncode != 0:
-        logging.error(f"Failed to comment on #{number}{_not_found_hint(res)}: {res.stderr}")
+        logging.error("Failed to comment on #%d%s: %s", number, _not_found_hint(res), res.stderr)
         return False
 
     return True
@@ -289,7 +295,7 @@ def gh_issue_create(repo: str, title: str, body: str, labels: list[str]) -> int 
 
     res = run_gh(args)
     if res.returncode != 0:
-        logging.error(f"Failed to create issue: {res.stderr}")
+        logging.error("Failed to create issue: %s", res.stderr)
         return None
 
     out = (res.stdout or "").strip()

@@ -59,7 +59,10 @@ def _gh_with_retry(args: list[str], *, retries: int = 3, backoff_base: float = 2
         wait = backoff_base**attempt
         logging.debug(
             "gh 404 on attempt %d/%d, retrying in %.0fs (cmd=%s)",
-            attempt, retries, wait, " ".join(str(a) for a in args[:3]),
+            attempt,
+            retries,
+            wait,
+            " ".join(str(a) for a in args[:3]),
         )
         time.sleep(wait)
         res = run_gh(args)
@@ -98,7 +101,10 @@ def gh_issue_add_sub_issue(repo: str, parent_number: int, sub_issue_id: int) -> 
     if res.returncode != 0:
         logging.error(
             "Failed to add sub-issue link parent=#%d sub_issue_id=%d%s: %s",
-            parent_number, sub_issue_id, _not_found_hint(res), res.stderr,
+            parent_number,
+            sub_issue_id,
+            _not_found_hint(res),
+            res.stderr,
         )
         return False
 
@@ -136,7 +142,7 @@ def gh_issue_get_sub_issue_numbers(repo: str, parent_number: int) -> set[int]:
     try:
         numbers = json.loads((res.stdout or "").strip() or "[]")
         return {int(n) for n in numbers}
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         logging.error("Failed to parse sub-issues for parent #%d: %r", parent_number, res.stdout)
         return set()
 
@@ -181,7 +187,7 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
     for obj in items or []:
         try:
             number = int(obj.get("number"))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         raw_labels = obj.get("labels") or []
         label_names = [str(lbl.get("name") or lbl) if isinstance(lbl, dict) else str(lbl) for lbl in raw_labels]
@@ -226,7 +232,9 @@ def gh_issue_edit_state(repo: str, number: int, state: str) -> bool:
     if res3.returncode != 0:
         logging.error(
             "Failed to edit state for #%d%s: %s",
-            number, _not_found_hint(res3), res2.stderr or res2.stdout or res.stderr,
+            number,
+            _not_found_hint(res3),
+            res2.stderr or res2.stdout or res.stderr,
         )
         return False
     return True

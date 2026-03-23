@@ -11,3 +11,4 @@ target
 src/security/alerts*.json
 src/security/.coverage
 .coverage
+output.txt

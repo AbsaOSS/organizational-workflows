@@ -33,6 +33,7 @@ from shared.github_issues import (
     gh_issue_edit_body,
     gh_issue_edit_state,
     gh_issue_edit_title,
+    gh_issue_get_sub_issue_numbers,
 )
 from shared.github_projects import ProjectPrioritySync, gh_project_get_priority_field
 from shared.models import Issue
@@ -678,6 +679,37 @@ def _sync_child_title_and_labels(
         sync.priority_sync.enqueue(ctx.repo, issue.number, ctx.severity, sync.severity_priority_map)
 
 
+def _ensure_child_linked_to_parent(
+    *,
+    ctx: AlertContext,
+    sync: SyncContext,
+    issue: Issue,
+    parent_issue: Issue,
+) -> None:
+    """Detect and repair a missing parent-to-child sub-issue link."""
+    cache = sync.parent_sub_issues_cache
+    if parent_issue.number not in cache:
+        cache[parent_issue.number] = gh_issue_get_sub_issue_numbers(ctx.repo, parent_issue.number)
+
+    if issue.number in cache[parent_issue.number]:
+        return
+
+    if sync.dry_run:
+        logging.info(
+            f"DRY-RUN: would add missing sub-issue link "
+            f"parent=#{parent_issue.number} child=#{issue.number} (rule_id={ctx.rule_id})"
+        )
+        cache[parent_issue.number].add(issue.number)
+        return
+
+    logging.info(
+        f"Adding missing sub-issue link parent=#{parent_issue.number} child=#{issue.number} "
+        f"(rule_id={ctx.rule_id})"
+    )
+    if gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, issue.number):
+        cache[parent_issue.number].add(issue.number)
+
+
 def _handle_existing_child_issue(
     *,
     ctx: AlertContext,
@@ -694,6 +726,9 @@ def _handle_existing_child_issue(
     _rebuild_and_apply_child_body(ctx=ctx, sync=sync, issue=issue, secmeta=secmeta)
     _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=reopened)
     _sync_child_title_and_labels(ctx=ctx, sync=sync, issue=issue)
+
+    if parent_issue is not None:
+        _ensure_child_linked_to_parent(ctx=ctx, sync=sync, issue=issue, parent_issue=parent_issue)
 
 
 def ensure_issue(

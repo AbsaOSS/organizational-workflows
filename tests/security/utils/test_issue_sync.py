@@ -28,6 +28,7 @@ from utils.issue_sync import (
     _append_notification,
     _close_resolved_parent_issues,
     _comment_child_event,
+    _ensure_child_linked_to_parent,
     _flush_parent_body_updates,
     _handle_existing_child_issue,
     _handle_new_child_issue,
@@ -604,6 +605,7 @@ def test_handle_existing_child_updates_body(mocker: MockerFixture, sast_alert: A
     """Existing child issue body is updated with fresh template."""
     mock_body = mocker.patch("utils.issue_sync.gh_issue_edit_body")
     mocker.patch("utils.issue_sync.gh_issue_add_labels")
+    mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value=set())
     child = _issue_with_secmeta(5, {
         "type": "child", "fingerprint": "fp_test_123",
         "occurrence_count": "1", "first_seen": "2026-01-01",
@@ -613,6 +615,74 @@ def test_handle_existing_child_updates_body(mocker: MockerFixture, sast_alert: A
     sync = _make_sync_context(issues={5: child}, notifications=[])
     _handle_existing_child_issue(ctx=ctx, sync=sync, issue=child, parent_issue=None)
     mock_body.assert_called_once()
+
+
+# =====================================================================
+# _ensure_child_linked_to_parent
+# =====================================================================
+
+
+def test_ensure_child_linked_already_linked(mocker: MockerFixture) -> None:
+    """No-op when the child is already in the parent's sub-issues."""
+    mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value={5})
+    mock_add = mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number")
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child = Issue(number=5, state="open", title="C", body="cb")
+    ctx = _make_alert_context()
+    sync = _make_sync_context()
+    _ensure_child_linked_to_parent(ctx=ctx, sync=sync, issue=child, parent_issue=parent)
+    mock_add.assert_not_called()
+
+
+def test_ensure_child_linked_missing_adds_link(mocker: MockerFixture) -> None:
+    """Adds the sub-issue link when the child is missing from the parent."""
+    mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value=set())
+    mock_add = mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number", return_value=True)
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child = Issue(number=5, state="open", title="C", body="cb")
+    ctx = _make_alert_context()
+    sync = _make_sync_context()
+    _ensure_child_linked_to_parent(ctx=ctx, sync=sync, issue=child, parent_issue=parent)
+    mock_add.assert_called_once_with("test-org/test-repo", 1, 5)
+
+
+def test_ensure_child_linked_missing_dry_run(mocker: MockerFixture) -> None:
+    """In dry-run mode logs intent without calling the add-sub-issue API."""
+    mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value=set())
+    mock_add = mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number")
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child = Issue(number=5, state="open", title="C", body="cb")
+    ctx = _make_alert_context()
+    sync = _make_sync_context(dry_run=True)
+    _ensure_child_linked_to_parent(ctx=ctx, sync=sync, issue=child, parent_issue=parent)
+    mock_add.assert_not_called()
+
+
+def test_ensure_child_linked_cache_populated(mocker: MockerFixture) -> None:
+    """gh_issue_get_sub_issue_numbers is called only once per parent (cached)."""
+    mock_list = mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value={5, 6})
+    mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number")
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child_a = Issue(number=5, state="open", title="A", body="ab")
+    child_b = Issue(number=6, state="open", title="B", body="bb")
+    ctx_a = _make_alert_context(fingerprint="fp_a")
+    ctx_b = _make_alert_context(fingerprint="fp_b")
+    sync = _make_sync_context()
+    _ensure_child_linked_to_parent(ctx=ctx_a, sync=sync, issue=child_a, parent_issue=parent)
+    _ensure_child_linked_to_parent(ctx=ctx_b, sync=sync, issue=child_b, parent_issue=parent)
+    mock_list.assert_called_once_with("test-org/test-repo", 1)
+
+
+def test_ensure_child_linked_api_failure_no_cache_update(mocker: MockerFixture) -> None:
+    """When the API call to add the link fails, the cache is not updated."""
+    mocker.patch("utils.issue_sync.gh_issue_get_sub_issue_numbers", return_value=set())
+    mocker.patch("utils.issue_sync.gh_issue_add_sub_issue_by_number", return_value=False)
+    parent = Issue(number=1, state="open", title="P", body="pb")
+    child = Issue(number=5, state="open", title="C", body="cb")
+    ctx = _make_alert_context()
+    sync = _make_sync_context()
+    _ensure_child_linked_to_parent(ctx=ctx, sync=sync, issue=child, parent_issue=parent)
+    assert 5 not in sync.parent_sub_issues_cache.get(1, set())
 
 
 # =====================================================================

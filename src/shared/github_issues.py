@@ -72,6 +72,27 @@ def gh_issue_add_sub_issue_by_number(repo: str, parent_number: int, child_number
     return gh_issue_add_sub_issue(repo, parent_number, child_id)
 
 
+def gh_issue_get_sub_issue_numbers(repo: str, parent_number: int) -> set[int]:
+    """Return the set of child issue numbers currently linked to *parent_number*."""
+    res = run_gh(
+        [
+            "api",
+            f"repos/{repo}/issues/{parent_number}/sub_issues",
+            "--jq",
+            "[.[].number]",
+        ]
+    )
+    if res.returncode != 0:
+        logging.error(f"Failed to list sub-issues for parent #{parent_number}: {res.stderr}")
+        return set()
+    try:
+        numbers = json.loads((res.stdout or "").strip() or "[]")
+        return {int(n) for n in numbers}
+    except Exception:
+        logging.error(f"Failed to parse sub-issues for parent #{parent_number}: {res.stdout!r}")
+        return set()
+
+
 def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
     """Load issues with a given label.
 

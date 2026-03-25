@@ -247,3 +247,4 @@ class SyncContext:
     notifications: list[NotifiedIssue] | None
     severity_priority_map: dict[str, str]
     priority_sync: ProjectPrioritySync | None
+    parent_sub_issues_cache: dict[int, set[int]] = field(default_factory=dict)

@@ -68,7 +68,7 @@ ignored-modules=
 
 # Python code to execute, usually for sys.path manipulation such as
 # pygtk.require().
-init-hook='import sys; sys.path.extend(["src", "src/security"])'
+#init-hook=
 
 # Use multiple processes to speed up Pylint. Specifying 0 will auto-detect the
 # number of processors available to use, and will cap the count on Windows to
@@ -294,16 +294,16 @@ ignored-parents=
 max-args=10
 
 # Maximum number of attributes for a class (see R0902).
-max-attributes=25
+max-attributes=7
 
 # Maximum number of boolean expressions in an if statement (see R0916).
 max-bool-expr=5
 
 # Maximum number of branch for function / method body.
-max-branches=20
+max-branches=12
 
 # Maximum number of locals for function / method body.
-max-locals=30
+max-locals=15
 
 # Maximum number of parents for a class (see R0901).
 max-parents=7
@@ -312,10 +312,10 @@ max-parents=7
 max-public-methods=20
 
 # Maximum number of return / yield for function / method body.
-max-returns=7
+max-returns=6
 
 # Maximum number of statements in function / method body.
-max-statements=60
+max-statements=50
 
 # Minimum number of public methods for a class (see R0903).
 min-public-methods=1
@@ -436,10 +436,7 @@ disable=raw-checker-failed,
         deprecated-pragma,
         use-symbolic-message-instead,
         use-implicit-booleaness-not-comparison-to-string,
-        use-implicit-booleaness-not-comparison-to-zero,
-        wrong-import-position,
-        wrong-import-order,
-        ungrouped-imports
+        use-implicit-booleaness-not-comparison-to-zero
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option
@@ -469,7 +466,7 @@ notes-rgx=
 [REFACTORING]
 
 # Maximum number of nested blocks for function / method body
-max-nested-blocks=6
+max-nested-blocks=5
 
 # Complete name of functions that never returns. When checking for
 # inconsistent-return-statements if a never returning function is called then
@@ -524,7 +521,7 @@ ignore-imports=yes
 ignore-signatures=yes
 
 # Minimum lines number of a similarity.
-min-similarity-lines=20
+min-similarity-lines=4
 
 
 [SPELLING]
@@ -572,7 +569,7 @@ contextmanager-decorators=contextlib.contextmanager
 # List of members which are set dynamically and missed by pylint inference
 # system, and so shouldn't trigger E1101 when accessed. Python regular
 # expressions are accepted.
-generated-members=__dataclass_fields__
+generated-members=
 
 # Tells whether to warn about missing members when the owner of the attribute
 # is inferred to be None.

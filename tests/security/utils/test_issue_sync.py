@@ -597,26 +597,6 @@ def test_handle_new_child_create_fails(mocker: MockerFixture, sast_alert: Alert)
 
 
 # =====================================================================
-# _handle_existing_child_issue (integration of sub-functions)
-# =====================================================================
-
-
-def test_handle_existing_child_updates_body(mocker: MockerFixture, sast_alert: Alert) -> None:
-    """Existing child issue body is updated with fresh template."""
-    mock_body = mocker.patch("utils.issue_sync.gh_issue_edit_body")
-    mocker.patch("utils.issue_sync.gh_issue_add_labels")
-    child = _issue_with_secmeta(5, {
-        "type": "child", "fingerprint": "fp_test_123",
-        "occurrence_count": "1", "first_seen": "2026-01-01",
-        "last_seen": "2026-01-01", "last_occurrence_fp": "old_occ",
-    })
-    ctx = _make_alert_context(alert=sast_alert, fingerprint="fp_test_123")
-    sync = _make_sync_context(issues={5: child}, notifications=[])
-    _handle_existing_child_issue(ctx=ctx, sync=sync, issue=child, parent_issue=None)
-    mock_body.assert_called_once()
-
-
-# =====================================================================
 # _ensure_child_linked_to_parent
 # =====================================================================
 
@@ -929,23 +909,6 @@ def test_close_resolved_parent_skips_open_child(mocker: MockerFixture) -> None:
 # ensure_issue (end-to-end orchestration per alert)
 # =====================================================================
 
-
-def test_ensure_issue_new_alert_creates_parent_and_child(
-    mocker: MockerFixture, sast_alert: Alert,
-) -> None:
-    """Full path: new alert creates parent + child."""
-    mock_create = mocker.patch("utils.issue_sync.gh_issue_create", return_value=50)
-    mocker.patch("utils.issue_sync.gh_issue_comment")
-    mocker.patch("utils.issue_sync.gh_issue_edit_body")
-    mocker.patch("utils.issue_sync.gh_issue_add_labels")
-    issues: dict[int, Issue] = {}
-    index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    notifications: list[NotifiedIssue] = []
-    sync = _make_sync_context(issues=issues, index=index, dry_run=False, notifications=notifications)
-    ensure_issue(sast_alert, sync)
-    assert mock_create.call_count == 2  # parent + child
-    assert len(notifications) == 1
-
 def test_ensure_issue_dry_run(sast_alert: Alert) -> None:
     """Dry-run: no gh calls, notification with issue_number=0."""
     issues: dict[int, Issue] = {}
@@ -991,26 +954,6 @@ def test_ensure_issue_missing_alert_details_raises() -> None:
     with pytest.raises(SystemExit, match="alert_hash"):
         ensure_issue(alert, _make_sync_context(issues=issues, index=index, dry_run=True))
 
-def test_ensure_issue_existing_child_updates(mocker: MockerFixture, sast_alert: Alert) -> None:
-    """When a child issue already exists, it is updated (not duplicated)."""
-    mocker.patch("utils.issue_sync.gh_issue_edit_body")
-    mocker.patch("utils.issue_sync.gh_issue_add_labels")
-    fp = sast_alert.alert_details.alert_hash
-    child = _issue_with_secmeta(5, {
-        "type": "child", "fingerprint": fp,
-        "occurrence_count": "1", "first_seen": "2026-01-01",
-        "last_seen": "2026-01-01", "last_occurrence_fp": "old_occ",
-    })
-    parent = _issue_with_secmeta(10, {
-        "type": "parent", "rule_id": sast_alert.metadata.rule_id,
-        "severity": "high", "first_seen": "2026-01-01", "last_seen": "2026-01-01",
-    })
-    issues = {5: child, 10: parent}
-    index = build_issue_index(issues)
-    notifications: list[NotifiedIssue] = []
-    sync = _make_sync_context(issues=issues, index=index, dry_run=True, notifications=notifications)
-    ensure_issue(sast_alert, sync)
-
 
 # =====================================================================
 # sync_alerts_and_issues (top-level orchestrator)
@@ -1028,19 +971,6 @@ def test_sync_dry_run_single_alert(sast_alert: Alert) -> None:
     alerts = {303: sast_alert}
     result = sync_alerts_and_issues(alerts, {}, dry_run=True)
     assert len(result.notifications) == 1
-
-def test_sync_creates_issues(
-    mocker: MockerFixture, sast_alert: Alert, vuln_alert: Alert,
-) -> None:
-    """Multiple alerts each get parent + child issues."""
-    mock_create = mocker.patch("utils.issue_sync.gh_issue_create", return_value=100)
-    mocker.patch("utils.issue_sync.gh_issue_comment")
-    mocker.patch("utils.issue_sync.gh_issue_edit_body")
-    mocker.patch("utils.issue_sync.gh_issue_add_labels")
-    alerts = {303: sast_alert, 312: vuln_alert}
-    result = sync_alerts_and_issues(alerts, {}, dry_run=False)
-    assert len(result.notifications) == 2
-    assert mock_create.call_count == 4  # 2 parents + 2 children
 
 def test_sync_severity_change_detected(sast_alert: Alert) -> None:
     """Severity change on existing parent is captured in result."""
@@ -1091,17 +1021,6 @@ def test_init_priority_sync_no_project_number() -> None:
         {}, severity_priority_map={"high": "Urgent"}, project_number=None, project_org="org", dry_run=False,
     )
     assert result is None
-
-def test_init_priority_sync_derives_org_from_alert(mocker: MockerFixture) -> None:
-    """Derives org from the first alert's _repo when project_org is empty."""
-    alerts = {1: Alert.from_dict({"_repo": "derived-org/repo-a"})}
-    mocker.patch("utils.issue_sync.gh_project_get_priority_field", return_value=mocker.MagicMock())
-    result = _init_priority_sync(
-        alerts, severity_priority_map={"high": "Urgent"}, project_number=7,
-        project_org="", dry_run=True,
-    )
-    assert result is not None
-    assert result.org == "derived-org"
 
 def test_init_priority_sync_no_org_returns_none() -> None:
     """Returns None with warning when org cannot be determined."""

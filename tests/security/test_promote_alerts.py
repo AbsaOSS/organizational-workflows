@@ -21,7 +21,8 @@ from types import SimpleNamespace
 import pytest
 from pytest_mock import MockerFixture
 
-from utils.models import LoadedAlerts, NotifiedIssue, SeverityChange, SyncResult
+from security.alerts.models import LoadedAlerts
+from security.issues.models import NotifiedIssue, SeverityChange, SyncResult
 
 # Default empty sync result reused across tests.
 _SYNC_RESULT_EMPTY = SyncResult(notifications=[], severity_changes=[])
@@ -34,12 +35,12 @@ _SYNC_RESULT_EMPTY = SyncResult(notifications=[], severity_changes=[])
 
 def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """Defaults are applied when no CLI args are given."""
-    monkeypatch.setattr("sys.argv", ["promote_alerts.py"])
+    monkeypatch.setattr("sys.argv", ["security.promote_alerts.py"])
     monkeypatch.delenv("SEVERITY_PRIORITY_MAP", raising=False)
     monkeypatch.delenv("PROJECT_NUMBER", raising=False)
     monkeypatch.delenv("PROJECT_ORG", raising=False)
     monkeypatch.delenv("TEAMS_WEBHOOK_URL", raising=False)
-    from promote_alerts import parse_args
+    from security.promote_alerts import parse_args
 
     args = parse_args()
     assert args.file == "alerts.json"
@@ -50,7 +51,7 @@ def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_parse_args_all_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     """All CLI flags and options are parsed correctly."""
     monkeypatch.setattr("sys.argv", [
-        "promote_alerts.py",
+        "security.promote_alerts.py",
         "--file", "custom.json",
         "--dry-run",
         "--verbose",
@@ -60,7 +61,7 @@ def test_parse_args_all_flags(monkeypatch: pytest.MonkeyPatch) -> None:
         "--project-org", "my-org",
         "--teams-webhook-url", "https://hook.example.com",
     ])
-    from promote_alerts import parse_args
+    from security.promote_alerts import parse_args
 
     args = parse_args()
     assert args.file == "custom.json"
@@ -80,9 +81,9 @@ def test_parse_args_all_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_missing_gh_cli_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """main() raises SystemExit when gh CLI is not found."""
-    monkeypatch.setattr("sys.argv", ["promote_alerts.py"])
+    monkeypatch.setattr("sys.argv", ["security.promote_alerts.py"])
     monkeypatch.setattr("shutil.which", lambda _cmd: None)
-    from promote_alerts import main
+    from security.promote_alerts import main
 
     with pytest.raises(SystemExit, match="gh CLI"):
         main()
@@ -97,21 +98,21 @@ def test_missing_gh_cli_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 def main_mocks(mocker: MockerFixture) -> SimpleNamespace:
     """Provide mocked dependencies for ``main()`` with sensible defaults."""
     return SimpleNamespace(
-        which=mocker.patch("promote_alerts.shutil.which", return_value="/usr/bin/gh"),
+        which=mocker.patch("security.promote_alerts.shutil.which", return_value="/usr/bin/gh"),
         load=mocker.patch(
-            "promote_alerts.load_open_alerts_from_file",
+            "security.promote_alerts.load_open_alerts_from_file",
             return_value=LoadedAlerts(repo_full="org/repo", open_by_number={}),
         ),
         list_issues=mocker.patch(
-            "promote_alerts.gh_issue_list_by_label",
+            "security.promote_alerts.gh_issue_list_by_label",
             return_value={},
         ),
         sync=mocker.patch(
-            "promote_alerts.sync_alerts_and_issues",
+            "security.promote_alerts.sync_alerts_and_issues",
             return_value=_SYNC_RESULT_EMPTY,
         ),
-        notify=mocker.patch("promote_alerts.notify_teams"),
-        notify_sev=mocker.patch("promote_alerts.notify_teams_severity_changes"),
+        notify=mocker.patch("security.promote_alerts.notify_teams"),
+        notify_sev=mocker.patch("security.promote_alerts.notify_teams_severity_changes"),
     )
 
 
@@ -125,12 +126,12 @@ def test_main_dry_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Dry-run mode passes dry_run=True to sync_alerts_and_issues."""
-    monkeypatch.setattr("sys.argv", ["promote_alerts.py", "--dry-run"])
+    monkeypatch.setattr("sys.argv", ["security.promote_alerts.py", "--dry-run"])
     monkeypatch.delenv("TEAMS_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("SEVERITY_PRIORITY_MAP", raising=False)
     monkeypatch.delenv("PROJECT_NUMBER", raising=False)
     monkeypatch.delenv("PROJECT_ORG", raising=False)
-    from promote_alerts import main
+    from security.promote_alerts import main
 
     main()
     _, kwargs = main_mocks.sync.call_args
@@ -142,12 +143,12 @@ def test_main_passes_file_arg(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """--file value is forwarded to load_open_alerts_from_file."""
-    monkeypatch.setattr("sys.argv", ["promote_alerts.py", "--file", "custom.json"])
+    monkeypatch.setattr("sys.argv", ["security.promote_alerts.py", "--file", "custom.json"])
     monkeypatch.delenv("TEAMS_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("SEVERITY_PRIORITY_MAP", raising=False)
     monkeypatch.delenv("PROJECT_NUMBER", raising=False)
     monkeypatch.delenv("PROJECT_ORG", raising=False)
-    from promote_alerts import main
+    from security.promote_alerts import main
 
     main()
     main_mocks.load.assert_called_once_with("custom.json")
@@ -158,7 +159,7 @@ def test_main_no_webhook_skips_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Without TEAMS_WEBHOOK_URL, notify_teams is still called (with empty url)."""
-    monkeypatch.setattr("sys.argv", ["promote_alerts.py"])
+    monkeypatch.setattr("sys.argv", ["security.promote_alerts.py"])
     monkeypatch.delenv("TEAMS_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("SEVERITY_PRIORITY_MAP", raising=False)
     monkeypatch.delenv("PROJECT_NUMBER", raising=False)
@@ -174,7 +175,7 @@ def test_main_no_webhook_skips_notification(
         ],
         severity_changes=[],
     )
-    from promote_alerts import main
+    from security.promote_alerts import main
 
     main()
     # Without webhook URL, logging.debug is hit and notify_teams is not called
@@ -187,7 +188,7 @@ def test_main_with_webhook_sends_notifications(
 ) -> None:
     """When TEAMS_WEBHOOK_URL is set and there are notifications, notify_teams is called."""
     monkeypatch.setattr("sys.argv", [
-        "promote_alerts.py", "--teams-webhook-url", "https://hook.example.com",
+        "security.promote_alerts.py", "--teams-webhook-url", "https://hook.example.com",
     ])
     monkeypatch.delenv("TEAMS_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("SEVERITY_PRIORITY_MAP", raising=False)
@@ -203,7 +204,7 @@ def test_main_with_webhook_sends_notifications(
         ],
         severity_changes=[],
     )
-    from promote_alerts import main
+    from security.promote_alerts import main
 
     main()
     main_mocks.notify.assert_called_once()
@@ -217,13 +218,13 @@ def test_main_severity_priority_map_forwarded(
 ) -> None:
     """--severity-priority-map value is parsed and forwarded to sync."""
     monkeypatch.setattr("sys.argv", [
-        "promote_alerts.py", "--severity-priority-map", "High=Urgent,Low=Minor",
+        "security.promote_alerts.py", "--severity-priority-map", "High=Urgent,Low=Minor",
     ])
     monkeypatch.delenv("TEAMS_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("SEVERITY_PRIORITY_MAP", raising=False)
     monkeypatch.delenv("PROJECT_NUMBER", raising=False)
     monkeypatch.delenv("PROJECT_ORG", raising=False)
-    from promote_alerts import main
+    from security.promote_alerts import main
 
     main()
     _, kwargs = main_mocks.sync.call_args
@@ -236,13 +237,13 @@ def test_main_project_number_forwarded(
 ) -> None:
     """--project-number and --project-org are forwarded to sync."""
     monkeypatch.setattr("sys.argv", [
-        "promote_alerts.py", "--project-number", "42", "--project-org", "my-org",
+        "security.promote_alerts.py", "--project-number", "42", "--project-org", "my-org",
     ])
     monkeypatch.delenv("TEAMS_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("SEVERITY_PRIORITY_MAP", raising=False)
     monkeypatch.delenv("PROJECT_NUMBER", raising=False)
     monkeypatch.delenv("PROJECT_ORG", raising=False)
-    from promote_alerts import main
+    from security.promote_alerts import main
 
     main()
     _, kwargs = main_mocks.sync.call_args

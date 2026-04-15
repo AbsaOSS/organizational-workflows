@@ -20,16 +20,10 @@
 import argparse
 import json
 import logging
-import os
-import sys
 
-_repo_root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-if _repo_root not in sys.path:
-    sys.path.insert(0, _repo_root)
-
-from shared.common import run_gh
-from shared.logging_config import setup_logging
-from utils.constants import (
+from core.config import setup_logging
+from core.github.client import run_gh
+from security.constants import (
     LABEL_EPIC,
     LABEL_SCOPE_SECURITY,
     LABEL_SEC_ADEPT_TO_CLOSE,

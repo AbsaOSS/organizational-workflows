@@ -1,10 +1,37 @@
 Copilot instructions for Organizational Workflows
 
 Purpose
-TBD
+A collection of reusable GitHub Actions workflows with Python automation backends.
+Each workflow domain is a self-contained package under `src/`. The workflows are
+designed to be called via `workflow_call` from other repositories.
 
 Structure
-TBD
+```
+src/
+├── core/                        # Shared foundation (GitHub API, config, helpers)
+│   ├── github/                  # GitHub CLI wrappers (issues, projects)
+│   │   ├── client.py            # run_gh / run_cmd subprocess helpers
+│   │   ├── issues.py            # Issue CRUD (create, edit, comment, labels)
+│   │   └── projects.py          # Projects V2 GraphQL (priority sync)
+│   ├── config.py                # Logging setup, RUNNER_DEBUG parsing
+│   ├── helpers.py               # Pure utilities (sha256, iso_date, normalize_path)
+│   ├── models.py                # Shared data models (Issue)
+│   ├── priority.py              # Severity-to-priority mapping
+│   └── templates.py             # Generic Markdown template renderer
+│
+├── security/                    # Security workflow domain
+│   ├── main.py                  # Pipeline orchestrator (check → collect → promote)
+│   ├── check_labels.py          # Verify required labels exist
+│   ├── collect_alert.py         # Fetch code-scanning alerts → JSON
+│   ├── promote_alerts.py        # Create/update Issues from alerts
+│   ├── send_to_teams.py         # Send Adaptive Card to Teams webhook
+│   ├── constants.py             # Labels, event types, metadata types
+│   ├── alerts/                  # Alert domain (parsing, models)
+│   ├── issues/                  # Issue management (sync, builder, secmeta)
+│   └── notifications/           # Teams webhook notifications
+│
+tests/                           # Mirrors src/ structure
+```
 
 Python style
 - Python 3.14
@@ -19,8 +46,8 @@ Python style
 Patterns
 - Classes with `__init__` cannot throw exceptions
 - Use private methods (`_method_name`) for internal class helpers
-- All info logs must start with "Security workflow -" prefix
-- Never disable pylint behaviour in the code
+- All logs must start with "<Domain> -" prefix (e.g., "Security -")
+- Never disable pylint behavior in the code
 
 Testing
 - Mirror src structure: `src/security/module.py` -> `tests/security/test_module.py`

@@ -22,7 +22,7 @@ import subprocess
 import pytest
 from pytest_mock import MockerFixture
 
-from check_labels import REQUIRED_LABELS, check_labels, fetch_repo_labels, main
+from security.check_labels import REQUIRED_LABELS, check_labels, fetch_repo_labels, main
 
 
 REPO = "my-org/my-repo"
@@ -35,7 +35,7 @@ def _gh_result(labels: list[str]) -> subprocess.CompletedProcess:
 
 
 def test_fetch_repo_labels_returns_names(mocker: MockerFixture) -> None:
-    mock_gh = mocker.patch("check_labels.run_gh", return_value=_gh_result(["scope:security", "epic"]))
+    mock_gh = mocker.patch("security.check_labels.run_gh", return_value=_gh_result(["scope:security", "epic"]))
     assert fetch_repo_labels(REPO) == ["scope:security", "epic"]
     mock_gh.assert_called_once_with(
         ["label", "list", "--repo", REPO, "--json", "name", "--limit", "500"],
@@ -45,19 +45,19 @@ def test_fetch_repo_labels_returns_names(mocker: MockerFixture) -> None:
 def test_fetch_repo_labels_skips_empty_names(mocker: MockerFixture) -> None:
     payload = json.dumps([{"name": "good"}, {"name": ""}, {}])
     mocker.patch(
-        "check_labels.run_gh",
+        "security.check_labels.run_gh",
         return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout=payload, stderr=""),
     )
     assert fetch_repo_labels(REPO) == ["good"]
 
 
 def test_check_labels_all_present(mocker: MockerFixture) -> None:
-    mocker.patch("check_labels.fetch_repo_labels", return_value=list(REQUIRED_LABELS) + ["extra-label"])
+    mocker.patch("security.check_labels.fetch_repo_labels", return_value=list(REQUIRED_LABELS) + ["extra-label"])
     assert check_labels(REPO) == []
 
 
 def test_check_labels_some_missing(mocker: MockerFixture) -> None:
-    mocker.patch("check_labels.fetch_repo_labels", return_value=["scope:security", "epic"])
+    mocker.patch("security.check_labels.fetch_repo_labels", return_value=["scope:security", "epic"])
     missing = check_labels(REPO)
     assert "type:tech-debt" in missing
     assert "sec:adept-to-close" in missing
@@ -65,23 +65,23 @@ def test_check_labels_some_missing(mocker: MockerFixture) -> None:
 
 
 def test_check_labels_all_missing(mocker: MockerFixture) -> None:
-    mocker.patch("check_labels.fetch_repo_labels", return_value=[])
+    mocker.patch("security.check_labels.fetch_repo_labels", return_value=[])
     assert check_labels(REPO) == list(REQUIRED_LABELS)
 
 
 def test_check_labels_custom_required(mocker: MockerFixture) -> None:
-    mocker.patch("check_labels.fetch_repo_labels", return_value=["a"])
+    mocker.patch("security.check_labels.fetch_repo_labels", return_value=["a"])
     assert check_labels(REPO, required=["a", "b"]) == ["b"]
 
 
 def test_main_success(mocker: MockerFixture) -> None:
-    mock_check = mocker.patch("check_labels.check_labels", return_value=[])
+    mock_check = mocker.patch("security.check_labels.check_labels", return_value=[])
     assert main(["--repo", REPO]) == 0
     mock_check.assert_called_once_with(REPO)
 
 
 def test_main_failure(mocker: MockerFixture) -> None:
-    mocker.patch("check_labels.check_labels", return_value=["epic"])
+    mocker.patch("security.check_labels.check_labels", return_value=["epic"])
     assert main(["--repo", REPO]) == 1
 
 

@@ -35,9 +35,9 @@ Draft / debug (no writes):
     `python3 promote_alerts.py --file alerts.json --verbose --dry-run`
 
 Implementation:
-- Shared, cross-solution logic lives in the ``shared`` package
+- Core, cross-solution logic lives in the ``core`` package
     (common helpers, GitHub wrappers, priority mapping, template renderer).
-- Security-specific orchestration and domain logic lives in ``utils``.
+- Security-specific orchestration and domain logic lives in ``alerts``, ``issues``, ``notifications``.
 - This file remains the CLI entry-point only: argument parsing → wiring → main().
 """
 
@@ -45,22 +45,15 @@ import argparse
 import logging
 import os
 import shutil
-import sys
 
-# Ensure the repo root is on sys.path so `shared.*` is importable.
-_repo_root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-if _repo_root not in sys.path:
-    sys.path.insert(0, _repo_root)
+from core.config import parse_runner_debug, setup_logging
+from core.github.issues import gh_issue_list_by_label
+from core.priority import parse_severity_priority_map
 
-from shared.common import parse_runner_debug
-from shared.github_issues import gh_issue_list_by_label
-from shared.priority import parse_severity_priority_map
-
-from utils.alert_parser import load_open_alerts_from_file
-from utils.constants import LABEL_SCOPE_SECURITY
-from utils.issue_sync import sync_alerts_and_issues
-from shared.logging_config import setup_logging
-from utils.teams import notify_teams, notify_teams_severity_changes
+from security.alerts.parser import load_open_alerts_from_file
+from security.constants import LABEL_SCOPE_SECURITY
+from security.issues.sync import sync_alerts_and_issues
+from security.notifications.teams import notify_teams, notify_teams_severity_changes
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

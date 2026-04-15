@@ -22,7 +22,7 @@ import subprocess
 import pytest
 from pytest_mock import MockerFixture
 
-from collect_alert import (
+from security.collect_alert import (
     RULE_DETAIL_KEYS,
     VALID_STATES,
     _gh_api_json,
@@ -69,13 +69,13 @@ _RAW_ALERT: dict = {
 
 def _mock_happy_path(mocker: MockerFixture, repo_data: dict | None = None, raw_alerts: list | None = None):
     """Set up mocks for a successful main() run."""
-    mocker.patch("collect_alert.shutil.which", return_value="/usr/bin/gh")
+    mocker.patch("security.collect_alert.shutil.which", return_value="/usr/bin/gh")
     mocker.patch(
-        "collect_alert.run_gh",
+        "security.collect_alert.run_gh",
         return_value=_gh_ok("Logged in"),
     )
     mocker.patch(
-        "collect_alert._gh_api_json",
+        "security.collect_alert._gh_api_json",
         return_value=repo_data or {
             "id": 1,
             "name": "my-repo",
@@ -87,7 +87,7 @@ def _mock_happy_path(mocker: MockerFixture, repo_data: dict | None = None, raw_a
         },
     )
     mocker.patch(
-        "collect_alert._gh_api_paginate",
+        "security.collect_alert._gh_api_paginate",
         return_value=raw_alerts if raw_alerts is not None else [],
     )
 
@@ -214,19 +214,19 @@ def test_parse_alert_details_value_with_colon() -> None:
 
 def test_gh_api_json_success(mocker: MockerFixture) -> None:
     payload = {"id": 123, "name": "my-repo"}
-    mocker.patch("collect_alert.run_gh", return_value=_gh_ok(json.dumps(payload)))
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_ok(json.dumps(payload)))
     assert _gh_api_json("/repos/my-org/my-repo") == payload
 
 
 def test_gh_api_json_failure_exits(mocker: MockerFixture) -> None:
-    mocker.patch("collect_alert.run_gh", return_value=_gh_fail("not found"))
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_fail("not found"))
     with pytest.raises(SystemExit):
         _gh_api_json("/repos/my-org/my-repo")
 
 
 def test_gh_api_paginate_single_page(mocker: MockerFixture) -> None:
     alerts = [{"number": 1}, {"number": 2}]
-    mocker.patch("collect_alert.run_gh", return_value=_gh_ok(json.dumps(alerts)))
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_ok(json.dumps(alerts)))
     assert _gh_api_paginate("/repos/org/repo/alerts") == alerts
 
 
@@ -234,24 +234,24 @@ def test_gh_api_paginate_multiple_pages(mocker: MockerFixture) -> None:
     page1 = json.dumps([{"number": 1}])
     page2 = json.dumps([{"number": 2}])
     stdout = page1 + "\n" + page2
-    mocker.patch("collect_alert.run_gh", return_value=_gh_ok(stdout))
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_ok(stdout))
     result = _gh_api_paginate("/repos/org/repo/alerts")
     assert result == [{"number": 1}, {"number": 2}]
 
 
 def test_gh_api_paginate_single_object(mocker: MockerFixture) -> None:
-    mocker.patch("collect_alert.run_gh", return_value=_gh_ok(json.dumps({"key": "val"})))
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_ok(json.dumps({"key": "val"})))
     result = _gh_api_paginate("/endpoint")
     assert result == [{"key": "val"}]
 
 
 def test_gh_api_paginate_empty_array(mocker: MockerFixture) -> None:
-    mocker.patch("collect_alert.run_gh", return_value=_gh_ok("[]"))
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_ok("[]"))
     assert _gh_api_paginate("/endpoint") == []
 
 
 def test_gh_api_paginate_failure_exits(mocker: MockerFixture) -> None:
-    mocker.patch("collect_alert.run_gh", return_value=_gh_fail("error"))
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_fail("error"))
     with pytest.raises(SystemExit):
         _gh_api_paginate("/endpoint")
 
@@ -385,7 +385,7 @@ def test_main_repo_metadata_in_output(mocker: MockerFixture, tmp_path) -> None:
 
 def test_main_state_forwarded_to_paginate(mocker: MockerFixture, tmp_path) -> None:
     _mock_happy_path(mocker)
-    mock_paginate = mocker.patch("collect_alert._gh_api_paginate", return_value=[])
+    mock_paginate = mocker.patch("security.collect_alert._gh_api_paginate", return_value=[])
     out = str(tmp_path / "alerts.json")
     main(["--repo", REPO, "--state", "dismissed", "--out", out])
     endpoint = mock_paginate.call_args[0][0]
@@ -394,7 +394,7 @@ def test_main_state_forwarded_to_paginate(mocker: MockerFixture, tmp_path) -> No
 
 def test_main_state_all_omits_state_param(mocker: MockerFixture, tmp_path) -> None:
     _mock_happy_path(mocker)
-    mock_paginate = mocker.patch("collect_alert._gh_api_paginate", return_value=[])
+    mock_paginate = mocker.patch("security.collect_alert._gh_api_paginate", return_value=[])
     out = str(tmp_path / "alerts.json")
     main(["--repo", REPO, "--state", "all", "--out", out])
     endpoint = mock_paginate.call_args[0][0]
@@ -402,31 +402,31 @@ def test_main_state_all_omits_state_param(mocker: MockerFixture, tmp_path) -> No
 
 
 def test_main_invalid_repo_format_exits(mocker: MockerFixture, tmp_path) -> None:
-    mocker.patch("collect_alert.shutil.which", return_value="/usr/bin/gh")
-    mocker.patch("collect_alert.run_gh", return_value=_gh_ok("ok"))
+    mocker.patch("security.collect_alert.shutil.which", return_value="/usr/bin/gh")
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_ok("ok"))
     out = str(tmp_path / "alerts.json")
     with pytest.raises(SystemExit):
         main(["--repo", "noslash", "--out", out])
 
 
 def test_main_gh_not_found_exits(mocker: MockerFixture, tmp_path) -> None:
-    mocker.patch("collect_alert.shutil.which", return_value=None)
+    mocker.patch("security.collect_alert.shutil.which", return_value=None)
     out = str(tmp_path / "alerts.json")
     with pytest.raises(SystemExit):
         main(["--repo", REPO, "--out", out])
 
 
 def test_main_gh_not_authenticated_exits(mocker: MockerFixture, tmp_path) -> None:
-    mocker.patch("collect_alert.shutil.which", return_value="/usr/bin/gh")
-    mocker.patch("collect_alert.run_gh", return_value=_gh_fail("not logged in"))
+    mocker.patch("security.collect_alert.shutil.which", return_value="/usr/bin/gh")
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_fail("not logged in"))
     out = str(tmp_path / "alerts.json")
     with pytest.raises(SystemExit):
         main(["--repo", REPO, "--out", out])
 
 
 def test_main_refuses_overwrite(mocker: MockerFixture, tmp_path) -> None:
-    mocker.patch("collect_alert.shutil.which", return_value="/usr/bin/gh")
-    mocker.patch("collect_alert.run_gh", return_value=_gh_ok("ok"))
+    mocker.patch("security.collect_alert.shutil.which", return_value="/usr/bin/gh")
+    mocker.patch("security.collect_alert.run_gh", return_value=_gh_ok("ok"))
     out = tmp_path / "alerts.json"
     out.write_text("{}")
     with pytest.raises(SystemExit):
@@ -435,7 +435,7 @@ def test_main_refuses_overwrite(mocker: MockerFixture, tmp_path) -> None:
 
 def test_main_verbose_via_flag(mocker: MockerFixture, tmp_path) -> None:
     _mock_happy_path(mocker)
-    mock_setup = mocker.patch("collect_alert.setup_logging")
+    mock_setup = mocker.patch("security.collect_alert.setup_logging")
     out = str(tmp_path / "alerts.json")
     main(["--repo", REPO, "--out", out, "--verbose"])
     mock_setup.assert_called_once_with(True)
@@ -444,7 +444,7 @@ def test_main_verbose_via_flag(mocker: MockerFixture, tmp_path) -> None:
 def test_main_verbose_via_runner_debug(mocker: MockerFixture, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RUNNER_DEBUG", "1")
     _mock_happy_path(mocker)
-    mock_setup = mocker.patch("collect_alert.setup_logging")
+    mock_setup = mocker.patch("security.collect_alert.setup_logging")
     out = str(tmp_path / "alerts.json")
     main(["--repo", REPO, "--out", out])
     mock_setup.assert_called_once_with(True)

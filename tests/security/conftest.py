@@ -23,7 +23,7 @@ produced by ``collect_alert.py``.
 
 import pytest
 
-from utils.models import Alert
+from security.alerts.models import Alert
 
 
 # ── Raw alert payloads (read-only module-level originals) ──────────────
@@ -189,13 +189,13 @@ _PIPELINE_ALERT_317: dict = {
         "commit_sha": "d28cb4b49c437fdc4e26471ced2b128c63839d0e",
         "instance_url": None,
         "classifications": [],
-        "file": ".github/workflows/aquasec-night-scan.yml",
+        "file": ".github/workflows/aquasec-night-scan-example.yml",
         "start_line": 21,
         "end_line": None,
     },
     "alert_details": {
         "alert_hash": "bed23a624d7f1f07f56a07c6349bcd8b",
-        "artifact": ".github/workflows/aquasec-night-scan.yml",
+        "artifact": ".github/workflows/aquasec-night-scan-example.yml",
         "type": "pipelineMisconfigurations",
         "vulnerability": "AVD-PIPELINE-0008",
         "severity": "MEDIUM",
@@ -206,7 +206,7 @@ _PIPELINE_ALERT_317: dict = {
         "scm_file": (
             "https://github.com/test-org/test-repo/blob/"
             "64c62d98a7db5dbd80ae8b0affd531099cf54280/"
-            ".github/workflows/aquasec-night-scan.yml"
+            ".github/workflows/aquasec-night-scan-example.yml"
         ),
         "start_line": "21",
         "message": (

@@ -22,7 +22,7 @@ on:
     branches: [ master ]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -30,12 +30,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: '3.14'
 
       - name: Check presence of release notes in PR description
-        uses: AbsaOSS/release-notes-presence-check@8e586b26a5e27f899ee8590a5d988fd4780a3dbf # v0.4.0
+        uses: AbsaOSS/release-notes-presence-check@8e586b26a5e27f899ee8590a5d988fd4780a3dbf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

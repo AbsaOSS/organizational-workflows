@@ -1,55 +1,14 @@
-[project]
-name = "organizational-workflows"
-version = "0.1.0"
-requires-python = ">=3.14"
-dependencies = []
-
-[project.optional-dependencies]
-security = ["PyGithub>=2.0", "requests>=2.32"]
-dev = [
-    "organizational-workflows[security]",
-    "pytest>=8.0",
-    "pytest-cov>=6.0",
-]
-
-# ── pytest + coverage ────────────────────────────────────────────────
-
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = [".", "src", "src/security"]
-
-[tool.coverage.run]
-source = ["src/shared", "src/security"]
-omit = [
-    "*/tests/*",
-    "*/__pycache__/*",
-    "*/htmlcov/*",
-]
-
-[tool.coverage.report]
-show_missing = true
-skip_empty = true
-exclude_lines = [
-    "pragma: no cover",
-    "if __name__ == .__main__.",
-    "if TYPE_CHECKING:",
-]
-
-# ── formatting & type-checking ───────────────────────────────────────
+pythonpath = ["src", "src/security"]
 
 [tool.black]
 line-length = 120
 target-version = ['py314']
 force-exclude = '''test'''
 
+[tool.coverage.run]
+omit = ["tests/*"]
+
 [tool.mypy]
 check_untyped_defs = true
 exclude = "tests"
-
-[[tool.mypy.overrides]]
-module = "requests.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "derive_team_security_metrics"
-ignore_errors = true

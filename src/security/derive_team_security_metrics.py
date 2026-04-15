@@ -35,6 +35,7 @@ Outputs:
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 SNAPSHOT_CUR = os.environ.get("SNAPSHOT_CURRENT", "data/issues_snapshot.json")

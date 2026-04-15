@@ -1,14 +1,26 @@
-.DS_Store
-src/security/__pycache__/
-**/__pycache__/
-*.pyc
-/.idea
-target
-.bsp
-.idea
-*.iml
-.vscode
-src/security/alerts*.json
-src/security/.coverage
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test coverage
 .coverage
-output.txt
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

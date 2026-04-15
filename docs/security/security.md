@@ -246,7 +246,7 @@ The reusable workflow forwards it to the Python script as the `GH_PROJECT_ONLY_T
 
 #### Remove sec:adept-to-close on close
 
-Example caller (already available in [remove-adept-to-close-on-issue-close.yml](/docs/security/example_workflows/remove-adept-to-close-on-issue-close.yml)):
+Example caller (already available in [remove-adept-to-close-on-issue-close.yml](/docs/security/example_workflows/remove-resolved-finding-label.yml)):
 
 ```yaml
 name: Remove sec:adept-to-close on close
@@ -260,7 +260,7 @@ permissions:
 
 jobs:
   remove-label:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/remove-adept-to-close-on-issue-close.yml@master
+    uses: AbsaOSS/organizational-workflows/.github/workflows/remove-resolved-finding-label.yml@master
 ```
 
 > **Note:** The calling repository must grant the permissions the reusable workflow needs (listed in each workflow file). For cross-organization calls the reusable workflow repository must be set to "Accessible from repositories in the organization" under **Settings → Actions → General**.

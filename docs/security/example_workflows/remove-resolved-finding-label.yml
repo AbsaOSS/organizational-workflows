@@ -14,13 +14,9 @@
 # limitations under the License.
 #
 
-# Example caller workflow – add this to your application repository as
-# .github/workflows/remove-adept-to-close-on-issue-close.yml
-#
-# It delegates to the reusable workflow in the organizational-workflows repo.
-# Adjust <org> and <default-branch> to match your organization.
+# Example caller workflow – Add this to your repository as .github/workflows/remove-resolved-finding-label.yml
 
-name: Remove sec:adept-to-close on close
+name: Remove Resolved Finding Label
 
 on:
   issues:
@@ -31,4 +27,4 @@ permissions:
 
 jobs:
   remove-label:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/remove-adept-to-close-on-issue-close.yml@master
+    uses: AbsaOSS/organizational-workflows/.github/workflows/remove-resolved-finding-label.yml@c1fa5b54ff24fea071415da89abc4f0506344f01

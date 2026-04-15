@@ -14,12 +14,9 @@
 # limitations under the License.
 #
 
-# Example caller workflow – add this to your application repository as
-# .github/workflows/aquasec-night-scan.yml
-#
-# It delegates to the reusable workflow in the organizational-workflows repo.
+# Example caller workflow – Add this to your repository as .github/workflows/aquasec-night-scan.yml
 
-name: Aquasec Night Scan
+name: AquaSec Night Scan
 
 on:
   schedule:
@@ -35,21 +32,17 @@ permissions:
   actions: read
   issues: write
   security-events: write
-  repository-projects: write
 
 jobs:
   scan:
     uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@c1fa5b54ff24fea071415da89abc4f0506344f01
     with:
       severity-priority-map: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor'
-      project-number: 42   # Replace with your org's GitHub Project number for priority tracking
-      project-org: 'my-org'  # Replace with the org that owns the project (if different from repo org)
+      project-number: 42
+      project-org: 'my-org'
     secrets:
       AQUA_KEY: ${{ secrets.AQUA_KEY }}
       AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
       AQUA_GROUP_ID: ${{ secrets.AQUA_GROUP_ID }}
       AQUA_REPOSITORY_ID: ${{ secrets.AQUA_REPOSITORY_ID }}
       TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-      # Required only when project-org differs from this repository's org.
-      # See docs/security/security.md – "Cross-org project token" for how to create it.
-      GH_PROJECT_ONLY_TOKEN: ${{ secrets.GH_PROJECT_ONLY_TOKEN }}

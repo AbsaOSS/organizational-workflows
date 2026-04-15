@@ -14,14 +14,9 @@
 # limitations under the License.
 #
 
-# Reusable workflow – Remove sec:adept-to-close label when an issue is closed.
-#
-# Called from application repositories via workflow_call.
-# The caller must trigger on `issues: [closed]`.
-# Note: for `workflow_call`, the called workflow receives the same event payload as the caller,
-# so `context.payload` (aka `github.event`) is populated without needing to "forward" it via inputs.
+# SECURITY reusable workflow – Removing sec:adept-to-close label when an Issue is closed.
 
-name: Remove sec:adept-to-close on close
+name: Remove Resolved Finding Label
 
 on:
   workflow_call:

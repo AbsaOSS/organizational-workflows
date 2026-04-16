@@ -17,7 +17,7 @@ src/
 │   ├── helpers.py               # Pure utilities (sha256, iso_date, normalize_path)
 │   ├── models.py                # Shared data models (Issue)
 │   ├── priority.py              # Severity-to-priority mapping
-│   └── templates.py             # Generic Markdown template renderer
+│   └── rendering.py             # Generic Markdown template renderer
 │
 ├── security/                    # Security workflow domain
 │   ├── main.py                  # Pipeline orchestrator (check → collect → promote)

@@ -149,7 +149,7 @@ def test_no_body_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     args = _parse_args([])
     # stdin is a tty in tests, so it should raise
     fake_stdin = types.SimpleNamespace(isatty=lambda: True)
-    monkeypatch.setattr("security.send_to_teams.sys.stdin", fake_stdin)
+    monkeypatch.setattr("security.send_notifications.sys.stdin", fake_stdin)
     with pytest.raises(SystemExit):
         _resolve_body(args)
 
@@ -157,7 +157,7 @@ def test_from_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     """Body is read from stdin when neither --body nor --body-file is given."""
     args = _parse_args([])
     fake_stdin = types.SimpleNamespace(isatty=lambda: False, read=lambda: "piped content")
-    monkeypatch.setattr("security.send_to_teams.sys.stdin", fake_stdin)
+    monkeypatch.setattr("security.send_notifications.sys.stdin", fake_stdin)
     assert _resolve_body(args) == "piped content"
 
 
@@ -187,7 +187,7 @@ def test_no_webhook_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_main_sends_when_not_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """Non-dry-run path: main() calls send_to_teams with the webhook URL."""
     calls: list[tuple] = []
-    monkeypatch.setattr("security.send_to_teams.send_to_teams", lambda url, payload: calls.append((url, payload)))
+    monkeypatch.setattr("security.send_notifications.send_to_teams", lambda url, payload: calls.append((url, payload)))
     main(["--body", "hi", "--webhook-url", "https://hook"])
     assert len(calls) == 1
     assert calls[0][0] == "https://hook"
@@ -206,7 +206,7 @@ def test_success(monkeypatch: pytest.MonkeyPatch) -> None:
         calls.append((url, kwargs))
         return types.SimpleNamespace(status_code=200, text="1")
 
-    monkeypatch.setattr("security.send_to_teams.requests.post", fake_post)
+    monkeypatch.setattr("security.send_notifications.requests.post", fake_post)
     send_to_teams("https://hook", {"type": "message"})
     assert len(calls) == 1
 
@@ -214,6 +214,6 @@ def test_failure_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_post(url, **kwargs):
         return types.SimpleNamespace(status_code=500, text="error")
 
-    monkeypatch.setattr("security.send_to_teams.requests.post", fake_post)
+    monkeypatch.setattr("security.send_notifications.requests.post", fake_post)
     with pytest.raises(SystemExit, match="failed"):
         send_to_teams("https://hook", {"type": "message"})

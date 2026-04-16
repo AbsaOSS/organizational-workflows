@@ -1,0 +1,73 @@
+#
+# Copyright 2026 ABSA Group Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Reusable workflow – Remove sec:adept-to-close label when an issue is closed.
+#
+# Called from application repositories via workflow_call.
+# The caller must trigger on `issues: [closed]`.
+# Note: for `workflow_call`, the called workflow receives the same event payload as the caller,
+# so `context.payload` (aka `github.event`) is populated without needing to "forward" it via inputs.
+
+name: Remove sec:adept-to-close on close
+
+on:
+  workflow_call:
+
+permissions:
+  issues: write
+
+jobs:
+  cleanup-label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove label when conditions match
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const issue = context.payload.issue;
+
+            // Safety: ignore PRs (they can appear as issues in GitHub UI)
+            if (issue.pull_request) {
+              core.info('Skipping: payload refers to a pull request, not an issue.');
+              return;
+            }
+
+            const labels = (issue.labels ?? [])
+              .map(l => (typeof l === 'string' ? l : l?.name))
+              .filter(Boolean);
+
+            const hasScopeSecurity = labels.includes('scope:security');
+            const hasTechDebt = labels.includes('type:tech-debt');
+            const hasAdeptToClose = labels.includes('sec:adept-to-close');
+          
+            if (!hasScopeSecurity || !hasTechDebt) {
+              core.info(
+                `Skipping: required labels missing (scope:security=${hasScopeSecurity}, type:tech-debt=${hasTechDebt}).`
+              );
+              return;
+            }
+
+            if (!hasAdeptToClose) {
+              core.info('No-op: label sec:adept-to-close is not present on the issue.');
+              return;
+            }
+
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              name: 'sec:adept-to-close',
+            });

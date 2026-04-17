@@ -36,7 +36,7 @@ docs/                       # per-solution documentation
 ## Shared workflows
 
 Application repositories adopt a solution by adding a short **caller workflow** that delegates to the reusable workflow in this repo.
-Ready-to-copy example caller workflows are located in [`docs/security/example_workflows/`](docs/security/example_workflows/).
+Ready-to-copy example caller workflows are located in [`docs/security/example_workflows/`](docs/security/example_workflow/).
 See each solution's documentation for details and required secrets.
 
 ## Next

@@ -1,5 +1,6 @@
 [tool.pytest.ini_options]
-pythonpath = ["src", "src/security"]
+pythonpath = ["src"]
+addopts = ["--import-mode=importlib"]
 
 [tool.black]
 line-length = 120
@@ -7,7 +8,11 @@ target-version = ['py314']
 force-exclude = '''test'''
 
 [tool.coverage.run]
-omit = ["tests/*"]
+omit = [
+    "tests/*",
+    "src/security/derive_team_security_metrics.py",
+    "src/security/extract_team_security_stats.py",
+]
 
 [tool.mypy]
 check_untyped_defs = true

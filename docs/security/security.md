@@ -166,7 +166,7 @@ The caller needs the following **repository secrets** configured:
 | `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
 | `GH_PROJECT_ONLY_TOKEN` | no (required for cross-org projects) | Classic PAT with `project` scope on an account that is a member of the org owning the ProjectV2 board – see [Cross-org project token](#cross-org-project-token) |
 
-Example caller (already available in [aquasec-night-scan.yml](/docs/security/example_workflows/aquasec-night-scan.yml)):
+Example caller (already available in [aquasec-night-scan.yml](/docs/security/aquasec-night-scan-example.yml)):
 
 ```yaml
 name: Aquasec Night Scan
@@ -246,7 +246,7 @@ The reusable workflow forwards it to the Python script as the `GH_PROJECT_ONLY_T
 
 #### Remove sec:adept-to-close on close
 
-Example caller (already available in [remove-adept-to-close-on-issue-close.yml](/docs/security/example_workflows/remove-adept-to-close-on-issue-close.yml)):
+Example caller (already available in [remove-adept-to-close-on-issue-close.yml](/docs/security/example_workflow/remove-resolved-finding-label.yml)):
 
 ```yaml
 name: Remove sec:adept-to-close on close
@@ -260,7 +260,7 @@ permissions:
 
 jobs:
   remove-label:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/remove-adept-to-close-on-issue-close.yml@master
+    uses: AbsaOSS/organizational-workflows/.github/workflows/remove-resolved-finding-label.yml@master
 ```
 
 > **Note:** The calling repository must grant the permissions the reusable workflow needs (listed in each workflow file). For cross-organization calls the reusable workflow repository must be set to "Accessible from repositories in the organization" under **Settings → Actions → General**.

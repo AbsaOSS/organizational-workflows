@@ -23,15 +23,10 @@ import logging
 import os
 import re
 import shutil
-import sys
 from datetime import datetime, timezone
 
-_repo_root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-if _repo_root not in sys.path:
-    sys.path.insert(0, _repo_root)
-
-from shared.common import parse_runner_debug, run_gh
-from shared.logging_config import setup_logging
+from core.config import parse_runner_debug, setup_logging
+from core.github.client import run_gh
 
 logger = logging.getLogger(__name__)
 

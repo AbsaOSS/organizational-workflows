@@ -125,6 +125,7 @@ jobs:
 
       - name: Create issues from security alerts
         env:
+          PYTHONPATH: org-workflows/src
           GH_TOKEN: ${{ github.token }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
           SEVERITY_PRIORITY_MAP: ${{ inputs.severity-priority-map }}

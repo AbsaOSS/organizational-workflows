@@ -21,8 +21,6 @@ from security.constants import (
     LABEL_SCOPE_SECURITY,
     LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
-    SEC_EVENT_OPEN,
-    SEC_EVENT_REOPEN,
     SECMETA_TYPE_CHILD,
     SECMETA_TYPE_PARENT,
 )
@@ -39,13 +37,6 @@ def test_epic() -> None:
 
 def test_adept_to_close() -> None:
     assert LABEL_SEC_ADEPT_TO_CLOSE == "sec:adept-to-close"
-
-
-def test_open() -> None:
-    assert SEC_EVENT_OPEN == "open"
-
-def test_reopen() -> None:
-    assert SEC_EVENT_REOPEN == "reopen"
 
 
 def test_parent() -> None:

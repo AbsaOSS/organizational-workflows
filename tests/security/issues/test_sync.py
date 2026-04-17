@@ -27,7 +27,6 @@ from core.models import Issue
 from security.issues.sync import (
     _append_notification,
     _close_resolved_parent_issues,
-    _comment_child_event,
     _ensure_child_linked_to_parent,
     _flush_parent_body_updates,
     _handle_existing_child_issue,
@@ -250,19 +249,14 @@ def test_reopen_parent_dry_run() -> None:
     assert parent.state == "open"
 
 def test_reopen_parent_real(mocker: MockerFixture) -> None:
-    """Non-dry-run reopens issue and posts sec-event comment."""
+    """Non-dry-run reopens issue via state edit."""
     mock_edit_state = mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
-    mock_comment = mocker.patch("security.issues.sync.gh_issue_comment")
     parent = Issue(number=1, state="closed", title="P", body="b")
     maybe_reopen_parent_issue(
         "org/repo", parent, rule_id="R1", dry_run=False, context="reopen_child", child_issue_number=5,
     )
     assert parent.state == "open"
     mock_edit_state.assert_called_once_with("org/repo", 1, "open")
-    mock_comment.assert_called_once()
-    comment_body = mock_comment.call_args[0][2]
-    assert "reopen" in comment_body
-    assert "R1" in comment_body
 
 def test_reopen_parent_gh_failure(mocker: MockerFixture) -> None:
     """If gh_issue_edit_state fails, state stays closed."""
@@ -444,12 +438,10 @@ def test_rebuild_body_changed(mocker: MockerFixture, sast_alert: Alert) -> None:
 def test_rebuild_body_unchanged(sast_alert: Alert) -> None:
     """When body is identical, no API call is made."""
     from security.issues.builder import build_child_issue_body
-    from security.issues.sec_events import strip_sec_events_from_body
 
     secmeta = {"schema": "1", "type": "child", "fingerprint": "fp1"}
     human_body = build_child_issue_body(sast_alert)
     body = render_secmeta(secmeta) + "\n\n" + human_body
-    body = strip_sec_events_from_body(body)
     issue = Issue(number=1, state="open", title="T", body=body)
     ctx = _make_alert_context(alert=sast_alert)
     sync = _make_sync_context()
@@ -462,54 +454,6 @@ def test_rebuild_body_dry_run(sast_alert: Alert) -> None:
     sync = _make_sync_context(dry_run=True)
     secmeta = {"schema": "1", "type": "child", "fingerprint": "fp1"}
     _rebuild_and_apply_child_body(ctx=ctx, sync=sync, issue=issue, secmeta=secmeta)
-
-
-# =====================================================================
-# _comment_child_event
-# =====================================================================
-
-
-def test_comment_reopen_event(mocker: MockerFixture) -> None:
-    """Posts a reopen sec-event comment when reopened=True."""
-    mock_comment = mocker.patch("security.issues.sync.gh_issue_comment")
-    issue = Issue(number=1, state="open", title="T", body="b")
-    ctx = _make_alert_context()
-    sync = _make_sync_context()
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True)
-    mock_comment.assert_called_once()
-    comment_body = mock_comment.call_args[0][2]
-    assert "reopen" in comment_body
-
-def test_comment_occurrence_event_no_comment(mocker: MockerFixture) -> None:
-    """No sec-event comment when issue is already open (new_occurrence=True but reopened=False)."""
-    mock_comment = mocker.patch("security.issues.sync.gh_issue_comment")
-    issue = Issue(number=1, state="open", title="T", body="b")
-    ctx = _make_alert_context()
-    sync = _make_sync_context()
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False)
-    mock_comment.assert_not_called()
-
-def test_comment_no_event() -> None:
-    """No comment when neither reopened nor new_occurrence."""
-    issue = Issue(number=1, state="open", title="T", body="b")
-    ctx = _make_alert_context()
-    sync = _make_sync_context()
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False)
-
-def test_comment_reopen_dry_run() -> None:
-    """Dry-run mode does not call gh_issue_comment for reopen."""
-    issue = Issue(number=1, state="open", title="T", body="b")
-    ctx = _make_alert_context()
-    sync = _make_sync_context(dry_run=True)
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=True)
-
-def test_comment_occurrence_dry_run() -> None:
-    """No comment in any mode when issue is already open (occurrence-only path)."""
-    issue = Issue(number=1, state="open", title="T", body="b")
-    ctx = _make_alert_context()
-    sync = _make_sync_context(dry_run=True)
-    # Dry-run should also be silent for already-open issues.
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=False)
 
 
 # =====================================================================
@@ -555,7 +499,6 @@ def test_sync_title_dry_run() -> None:
 def test_handle_new_child_creates_issue(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Creates a new issue and registers it in the index."""
     mock_create = mocker.patch("security.issues.sync.gh_issue_create", return_value=42)
-    mocker.patch("security.issues.sync.gh_issue_comment")
     ctx = _make_alert_context(alert=sast_alert, rule_name="sast")
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
@@ -580,7 +523,6 @@ def test_handle_new_child_links_to_parent(mocker: MockerFixture, sast_alert: Ale
     """When a parent issue exists, the child is linked as a sub-issue."""
     mocker.patch("security.issues.sync.gh_issue_create", return_value=42)
     mock_sub = mocker.patch("security.issues.sync.gh_issue_add_sub_issue_by_number")
-    mocker.patch("security.issues.sync.gh_issue_comment")
     parent = Issue(number=1, state="open", title="P", body="pb")
     ctx = _make_alert_context(alert=sast_alert)
     sync = _make_sync_context(notifications=[])
@@ -672,7 +614,6 @@ def test_ensure_child_linked_api_failure_no_cache_update(mocker: MockerFixture) 
 def test_ensure_parent_creates_new(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Creates a parent issue when none exists for the rule_id."""
     mock_create = mocker.patch("security.issues.sync.gh_issue_create", return_value=99)
-    mocker.patch("security.issues.sync.gh_issue_comment")
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
     result = ensure_parent_issue(sast_alert, issues, index, dry_run=False)

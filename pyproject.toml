@@ -10,8 +10,6 @@ force-exclude = '''test'''
 [tool.coverage.run]
 omit = [
     "tests/*",
-    "src/security/derive_team_security_metrics.py",
-    "src/security/extract_team_security_stats.py",
 ]
 
 [tool.mypy]

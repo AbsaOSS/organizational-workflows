@@ -6,7 +6,7 @@ Each workflow domain is a self-contained package under `src/`. The workflows are
 designed to be called via `workflow_call` from other repositories.
 
 Structure
-```
+```text
 src/
 ├── core/                        # Shared foundation (GitHub API, config, helpers)
 │   ├── github/                  # GitHub CLI wrappers (issues, projects)

@@ -13,5 +13,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-"""GitHub API wrappers – CLI subprocess helpers, Issues CRUD, Projects V2 GraphQL."""

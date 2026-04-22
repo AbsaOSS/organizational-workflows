@@ -81,6 +81,5 @@ CHILD_BODY_TEMPLATE = """## General Information
 
 ## Detection Timeline
 
-- **Scan date:** {{ scan_date }}
 - **First seen:** {{ first_seen }}
 """

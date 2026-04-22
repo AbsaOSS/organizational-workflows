@@ -14,11 +14,20 @@
 # limitations under the License.
 #
 
-"""Pure utility functions – date helpers, hashing, and path normalisation."""
+"""Pure utility functions"""
 
 import hashlib
 import re
 from datetime import datetime, timezone
+
+# Matches lines that start with 1-6 '#' followed by a space
+_HEADING_RE = re.compile(r"^(#{1,6}\s)", re.MULTILINE)
+# Matches '>' at the start of a line (blockquote)
+_BLOCKQUOTE_RE = re.compile(r"^(>)", re.MULTILINE)
+# Matches horizontal rules: three or more -, *, or _ on a line by themselves
+_HR_RE = re.compile(r"^([-*_]{3,})\s*$", re.MULTILINE)
+# Matches '|' at the start of a line (table row).
+_TABLE_RE = re.compile(r"^(\|)", re.MULTILINE)
 
 
 def utc_today() -> str:
@@ -50,3 +59,16 @@ def normalize_path(path: str | None) -> str:
     p = p.lstrip("/")
     p = re.sub(r"/+", "/", p)
     return p
+
+
+def sanitize_markdown(text: str) -> str:
+    """Escape block-level Markdown so text renders as plain content in an issue body."""
+    if not text:
+        return text
+
+    sanitized = _HEADING_RE.sub(r"\\\1", text)
+    sanitized = _BLOCKQUOTE_RE.sub(r"\\\1", sanitized)
+    sanitized = _HR_RE.sub(r"\\\1", sanitized)
+    sanitized = _TABLE_RE.sub(r"\\\1", sanitized)
+
+    return sanitized

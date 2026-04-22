@@ -71,13 +71,11 @@ def _make_alert_context(**overrides: Any) -> AlertContext:
         alert=Alert(),
         alert_number=1,
         fingerprint="fp_test_123",
-        occurrence_fp="occ_fp_test",
         repo="test-org/test-repo",
-        first_seen="2026-01-01",
-        last_seen="2026-01-02",
         tool="AquaSec",
         rule_id="CVE-2026-1234",
         rule_name="sast",
+        rule_description="Test finding description",
         severity="high",
         cve="CVE-2026-1234",
         path="src/main.py",
@@ -302,47 +300,11 @@ def test_merge_new_alert_number() -> None:
         "type": "child",
         "fingerprint": "fp1",
         "gh_alert_numbers": '["100"]',
-        "occurrence_count": "1",
-        "last_occurrence_fp": "old_occ",
-        "first_seen": "2026-01-01",
-        "last_seen": "2026-01-01",
     })
-    ctx = _make_alert_context(alert_number=200, fingerprint="fp1", occurrence_fp="new_occ")
-    secmeta, new_occurrence = _merge_child_secmeta(ctx=ctx, issue=child)
+    ctx = _make_alert_context(alert_number=200, fingerprint="fp1")
+    secmeta = _merge_child_secmeta(ctx=ctx, issue=child)
     assert "200" in secmeta["gh_alert_numbers"]
     assert "100" in secmeta["gh_alert_numbers"]
-    assert new_occurrence is True
-    assert secmeta["occurrence_count"] == "2"
-
-def test_merge_same_occurrence_fp() -> None:
-    """Same occurrence_fp means no new occurrence counted."""
-    child = _issue_with_secmeta(1, {
-        "type": "child",
-        "fingerprint": "fp1",
-        "gh_alert_numbers": '["100"]',
-        "occurrence_count": "1",
-        "last_occurrence_fp": "same_occ",
-        "first_seen": "2026-01-01",
-        "last_seen": "2026-01-01",
-    })
-    ctx = _make_alert_context(alert_number=100, fingerprint="fp1", occurrence_fp="same_occ")
-    secmeta, new_occurrence = _merge_child_secmeta(ctx=ctx, issue=child)
-    assert new_occurrence is False
-    assert secmeta["occurrence_count"] == "1"
-
-def test_merge_date_range_expansion() -> None:
-    """first_seen takes the min, last_seen takes the max."""
-    child = _issue_with_secmeta(1, {
-        "type": "child",
-        "fingerprint": "fp1",
-        "first_seen": "2026-02-01",
-        "last_seen": "2026-02-15",
-        "occurrence_count": "1",
-    })
-    ctx = _make_alert_context(first_seen="2026-01-15", last_seen="2026-03-01")
-    secmeta, _ = _merge_child_secmeta(ctx=ctx, issue=child)
-    assert secmeta["first_seen"] == "2026-01-15"
-    assert secmeta["last_seen"] == "2026-03-01"
 
 def test_merge_removes_alert_hash() -> None:
     """Legacy alert_hash key is dropped during merge."""
@@ -350,25 +312,10 @@ def test_merge_removes_alert_hash() -> None:
         "type": "child",
         "alert_hash": "old_hash",
         "fingerprint": "fp1",
-        "occurrence_count": "1",
-        "first_seen": "2026-01-01",
-        "last_seen": "2026-01-01",
     })
     ctx = _make_alert_context(fingerprint="fp1")
-    secmeta, _ = _merge_child_secmeta(ctx=ctx, issue=child)
+    secmeta = _merge_child_secmeta(ctx=ctx, issue=child)
     assert "alert_hash" not in secmeta
-
-def test_merge_zero_occurrence_count_reset() -> None:
-    """occurrence_count <= 0 is reset to at least 1."""
-    child_secmeta_str = render_secmeta({
-        "type": "child", "fingerprint": "fp1",
-        "occurrence_count": "0", "last_occurrence_fp": "same_fp",
-        "first_seen": "2026-01-01", "last_seen": "2026-01-01",
-    })
-    child = Issue(number=1, state="open", title="T", body=child_secmeta_str + "\nBody\n")
-    ctx = _make_alert_context(fingerprint="fp1", occurrence_fp="same_fp")
-    secmeta, _ = _merge_child_secmeta(ctx=ctx, issue=child)
-    assert int(secmeta["occurrence_count"]) >= 1
 
 
 # =====================================================================
@@ -476,7 +423,7 @@ def test_sync_title_already_correct(mocker: MockerFixture) -> None:
     """Title is not updated when it matches the expected format."""
     mock_labels = mocker.patch("security.issues.sync.gh_issue_add_labels")
     from security.issues.builder import build_issue_title
-    title = build_issue_title("sast", "CVE-2026-1234", "fp_test_123")
+    title = build_issue_title("Test finding description", "sast", "CVE-2026-1234", "fp_test_123")
     issue = Issue(number=1, state="open", title=title, body="b")
     ctx = _make_alert_context(rule_name="sast", rule_id="CVE-2026-1234", fingerprint="fp_test_123")
     sync = _make_sync_context()
@@ -635,8 +582,6 @@ def test_ensure_parent_existing_returns_existing(sast_alert: Alert) -> None:
         "type": "parent",
         "rule_id": sast_alert.metadata.rule_id,
         "severity": "high",
-        "first_seen": "2026-01-01",
-        "last_seen": "2026-01-01",
     })
     issues = {10: parent}
     index = build_issue_index(issues)
@@ -650,8 +595,6 @@ def test_ensure_parent_severity_change_detected(sast_alert: Alert) -> None:
         "type": "parent",
         "rule_id": sast_alert.metadata.rule_id,
         "severity": "low",
-        "first_seen": "2026-01-01",
-        "last_seen": "2026-01-01",
     })
     issues = {10: parent}
     index = build_issue_index(issues)
@@ -682,8 +625,6 @@ def test_ensure_parent_body_deferred(sast_alert: Alert) -> None:
         "type": "parent",
         "rule_id": sast_alert.metadata.rule_id,
         "severity": "high",
-        "first_seen": "2026-01-01",
-        "last_seen": "2026-01-01",
     })
     original_body = parent.body
     issues = {10: parent}
@@ -700,8 +641,6 @@ def test_ensure_parent_title_drift_corrected(mocker: MockerFixture, sast_alert: 
         "type": "parent",
         "rule_id": sast_alert.metadata.rule_id,
         "severity": "high",
-        "first_seen": "2026-01-01",
-        "last_seen": "2026-01-01",
     })
     parent.title = "Wrong old title"
     issues = {10: parent}
@@ -917,7 +856,7 @@ def test_sync_severity_change_detected(sast_alert: Alert) -> None:
     """Severity change on existing parent is captured in result."""
     parent = _issue_with_secmeta(10, {
         "type": "parent", "rule_id": sast_alert.metadata.rule_id,
-        "severity": "low", "first_seen": "2026-01-01", "last_seen": "2026-01-01",
+        "severity": "low",
     })
     issues = {10: parent}
     result = sync_alerts_and_issues({303: sast_alert}, issues, dry_run=True)

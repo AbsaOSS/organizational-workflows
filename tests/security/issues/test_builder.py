@@ -278,19 +278,23 @@ def test_contains_confidence(vuln_alert: Alert) -> None:
 
 def test_format() -> None:
     fp = "a1b2c3d4e5f6"
-    title = build_issue_title("sast", "rule-123", fp)
-    assert title == "[SEC][FP=a1b2c3d4] sast"
+    title = build_issue_title("A description", "sast", "rule-123", fp)
+    assert title == "[SEC][FP=a1b2c3d4] A description"
+
+def test_fallback_to_rule_name() -> None:
+    title = build_issue_title(None, "sast", "rule-123", "abcdef12")
+    assert "sast" in title
 
 def test_fallback_to_rule_id() -> None:
-    title = build_issue_title(None, "rule-123", "abcdef12")
+    title = build_issue_title(None, None, "rule-123", "abcdef12")
     assert "rule-123" in title
 
 def test_fallback_to_default() -> None:
-    title = build_issue_title(None, "", "abcdef12")
+    title = build_issue_title(None, None, "", "abcdef12")
     assert "Security finding" in title
 
 def test_empty_fingerprint() -> None:
-    title = build_issue_title("sast", "rule-123", "")
+    title = build_issue_title("A description", "sast", "rule-123", "")
     assert "N/A" in title
 
 
@@ -303,7 +307,7 @@ def test_empty_fingerprint() -> None:
 
 def test_sast_avd_id(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
-    assert "req-with-very-false-aquasec-python" in body
+    assert "Requests with verify=False" in body
 
 def test_sast_alert_hash(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
@@ -311,7 +315,7 @@ def test_sast_alert_hash(sast_alert: Alert) -> None:
 
 def test_sast_title(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
-    assert "sast" in body
+    assert "Requests with verify=False" in body
 
 def test_sast_message_present(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
@@ -333,10 +337,6 @@ def test_sast_reachable_from_msg(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "False" in body
 
-def test_sast_scan_date(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "2026-02-24" in body
-
 def test_sast_first_seen(sast_alert: Alert) -> None:
     body = build_child_issue_body(sast_alert)
     assert "2025-09-17" in body
@@ -345,7 +345,7 @@ def test_sast_first_seen(sast_alert: Alert) -> None:
 
 def test_vuln_avd_id(vuln_alert: Alert) -> None:
     body = build_child_issue_body(vuln_alert)
-    assert "CVE-2026-25755" in body
+    assert "jsPDF PDF object injection" in body
 
 def test_vuln_installed_version(vuln_alert: Alert) -> None:
     body = build_child_issue_body(vuln_alert)
@@ -410,21 +410,6 @@ def test_all_template_sections_rendered(vuln_alert: Alert) -> None:
     assert "## Detection Timeline" in body
 
 
-def test_scan_date_falls_back_to_metadata_updated_at() -> None:
-    """When alert_details.scan_date is absent, fall back to metadata.updated_at."""
-    alert = Alert.from_dict({
-        "metadata": {
-            "rule_id": "X",
-            "updated_at": "2026-01-15T10:00:00Z",
-            "created_at": "2025-12-01T08:00:00Z",
-        },
-        "alert_details": {},  # scan_date absent → defaults to ""
-        "rule_details": {},
-    })
-    body = build_child_issue_body(alert)
-    assert "2026-01-15" in body
-
-
 def test_first_seen_falls_back_to_metadata_created_at() -> None:
     """When alert_details.first_seen is absent, fall back to metadata.created_at."""
     alert = Alert.from_dict({
@@ -440,7 +425,7 @@ def test_first_seen_falls_back_to_metadata_created_at() -> None:
     assert "2025-12-01" in body
 
 
-def test_scan_date_and_first_seen_yield_na_when_no_fallback() -> None:
+def test_first_seen_yields_na_when_no_fallback() -> None:
     """When neither alert_details nor metadata provide dates, render N/A."""
     alert = Alert.from_dict({
         "metadata": {"rule_id": "X"},  # no updated_at / created_at
@@ -448,4 +433,4 @@ def test_scan_date_and_first_seen_yield_na_when_no_fallback() -> None:
         "rule_details": {},
     })
     body = build_child_issue_body(alert)
-    assert body.count("N/A") >= 2
+    assert body.count("N/A") >= 1

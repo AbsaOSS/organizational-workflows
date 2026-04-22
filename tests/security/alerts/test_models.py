@@ -30,12 +30,14 @@ def test_alert_metadata_none_fields_do_not_crash() -> None:
         severity=None,   # type: ignore[arg-type]  – mirrors _normalise_alert output
         rule_id=None,    # type: ignore[arg-type]
         rule_name=None,  # type: ignore[arg-type]
+        rule_description=None,  # type: ignore[arg-type]
         state=None,      # type: ignore[arg-type]
         tool=None,       # type: ignore[arg-type]
     )
     assert md.severity == "unknown"
     assert md.rule_id == ""
     assert md.rule_name == ""
+    assert md.rule_description == ""
     assert md.state == ""
     assert md.tool == ""
 

@@ -95,7 +95,7 @@ jobs:
           verbose-logging: ${{ inputs.verbose-logging }}
 
       - name: Upload scan results to GitHub Security and quality
-        uses: github/codeql-action/upload-sarif@7434149006143a4d75b82a2f411ef15b03ccc2d7
+        uses: github/codeql-action/upload-sarif@0b7b740d4cd9b44f80c907b666497564df09d1d9
         with:
           sarif_file: ${{ steps.aquasec.outputs.nightscan-sarif-file }}
           category: aquasec

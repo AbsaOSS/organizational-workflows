@@ -24,11 +24,10 @@ This is the main business-logic module that ties together all other
 
 import logging
 
-from core.helpers import iso_date, normalize_path, utc_today
+from core.helpers import iso_date, normalize_path
 from core.github.issues import (
     gh_issue_add_labels,
     gh_issue_add_sub_issue_by_number,
-    gh_issue_comment,
     gh_issue_create,
     gh_issue_edit_body,
     gh_issue_edit_state,
@@ -47,8 +46,6 @@ from security.constants import (
     LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
     NOT_AVAILABLE,
-    SEC_EVENT_OPEN,
-    SEC_EVENT_REOPEN,
     SECMETA_TYPE_CHILD,
     SECMETA_TYPE_PARENT,
 )
@@ -61,7 +58,6 @@ from .builder import (
     classify_category,
 )
 from .models import AlertContext, IssueIndex, NotifiedIssue, SeverityChange, SyncContext, SyncResult
-from .sec_events import render_sec_event, strip_sec_events_from_body
 from .secmeta import json_list, load_secmeta, parse_json_list, render_secmeta
 from .templates import PARENT_BODY_TEMPLATE
 
@@ -127,30 +123,11 @@ def maybe_reopen_parent_issue(
             context,
             child_issue_number or "",
         )
-        logging.info(
-            "DRY-RUN: would comment parent reopen sec-event on issue #%d (rule_id=%s)",
-            parent_issue.number,
-            rule_id,
-        )
         parent_issue.state = "open"
         return
 
     if gh_issue_edit_state(repo, parent_issue.number, "open"):
         parent_issue.state = "open"
-        gh_issue_comment(
-            repo,
-            parent_issue.number,
-            render_sec_event(
-                {
-                    "action": SEC_EVENT_REOPEN,
-                    "seen_at": utc_today(),
-                    "source": "code_scanning",
-                    "rule_id": rule_id,
-                    "context": context,
-                    "child_issue": str(child_issue_number) if child_issue_number else "",
-                }
-            ),
-        )
 
 
 def _close_resolved_parent_issues(
@@ -288,7 +265,6 @@ def ensure_parent_issue(
             ).strip()
             + "\n"
         )
-        rebuilt = strip_sec_events_from_body(rebuilt)
 
         # Snapshot the original body on first encounter so we can
         # defer the API call until all alerts have been processed.
@@ -329,24 +305,6 @@ def ensure_parent_issue(
     num = gh_issue_create(repo_full, title, body, labels)
     if num is None:
         return None
-
-    # Parent lifecycle event (human visible): opened/created.
-    if dry_run:
-        logging.info("DRY-RUN: would comment parent open sec-event on issue #%d (rule_id=%s)", num, rule_id)
-    else:
-        gh_issue_comment(
-            repo_full,
-            num,
-            render_sec_event(
-                {
-                    "action": SEC_EVENT_OPEN,
-                    "seen_at": iso_date(alert.metadata.created_at),
-                    "source": "code_scanning",
-                    "rule_id": rule_id,
-                    "severity": alert.metadata.severity,
-                }
-            ),
-        )
 
     created = Issue(number=num, state="open", title=title, body=body)
     issues[num] = created
@@ -504,24 +462,6 @@ def _handle_new_child_issue(
         logging.info("Add sub-issue link parent=#%d child=#%d (alert %d)", parent_issue.number, num, ctx.alert_number)
         gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num)
 
-    gh_issue_comment(
-        ctx.repo,
-        num,
-        render_sec_event(
-            {
-                "action": SEC_EVENT_OPEN,
-                "seen_at": ctx.first_seen,
-                "source": "code_scanning",
-                "gh_alert_number": str(ctx.alert_number),
-                "occurrence_fp": str(ctx.occurrence_fp),
-                "commit_sha": str(ctx.commit_sha),
-                "path": str(ctx.path),
-                "start_line": str(ctx.start_line or ""),
-                "end_line": str(ctx.end_line or ""),
-            }
-        ),
-    )
-
     if sync.priority_sync is not None:
         sync.priority_sync.enqueue(ctx.repo, num, ctx.severity, sync.severity_priority_map)
 
@@ -638,7 +578,6 @@ def _rebuild_and_apply_child_body(
     """Render a fresh child body from *secmeta* + template and apply if changed."""
     human_body = build_child_issue_body(ctx.alert)
     new_body = render_secmeta(secmeta) + "\n\n" + human_body
-    new_body = strip_sec_events_from_body(new_body)
 
     if new_body != issue.body:
         if sync.dry_run:
@@ -650,32 +589,6 @@ def _rebuild_and_apply_child_body(
         else:
             gh_issue_edit_body(ctx.repo, issue.number, new_body)
             issue.body = new_body
-
-
-def _comment_child_event(
-    *,
-    ctx: AlertContext,
-    sync: SyncContext,
-    issue: Issue,
-    reopened: bool,
-) -> None:
-    """Post a reopen sec-event comment on the child issue."""
-    if reopened:
-        if sync.dry_run:
-            logging.info("DRY-RUN: would comment reopen event on issue #%d (alert %d)", issue.number, ctx.alert_number)
-        else:
-            gh_issue_comment(
-                ctx.repo,
-                issue.number,
-                render_sec_event(
-                    {
-                        "action": SEC_EVENT_REOPEN,
-                        "seen_at": utc_today(),
-                        "source": "code_scanning",
-                        "gh_alert_number": str(ctx.alert_number),
-                    }
-                ),
-            )
 
 
 def _sync_child_title_and_labels(
@@ -758,10 +671,9 @@ def _handle_existing_child_issue(
     if parent_issue is None and ctx.rule_id:
         parent_issue = find_parent_issue(sync.index, rule_id=ctx.rule_id)
 
-    reopened = _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=parent_issue)
+    _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=parent_issue)
     secmeta, _ = _merge_child_secmeta(ctx=ctx, issue=issue)
     _rebuild_and_apply_child_body(ctx=ctx, sync=sync, issue=issue, secmeta=secmeta)
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=reopened)
     _sync_child_title_and_labels(ctx=ctx, sync=sync, issue=issue)
 
     if parent_issue is not None:

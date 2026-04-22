@@ -87,7 +87,7 @@ def build_parent_template_values(alert: Alert, *, rule_id: str, severity: str) -
     return {
         "category": alert.metadata.rule_name or NOT_AVAILABLE,
         "avd_id": alert.alert_details.vulnerability or rule_id,
-        "title": rule_id,
+        "title": alert.metadata.rule_description or rule_id,
         "severity": severity,
         "published_date": iso_date(alert.rule_details.published_date or NOT_AVAILABLE),
         "package_name": alert.rule_details.package_name,
@@ -103,16 +103,10 @@ def build_parent_issue_body(alert: Alert) -> str:
     repo_full = alert.repo
 
     secmeta: dict[str, str] = {
-        "schema": "1",
         "type": SECMETA_TYPE_PARENT,
         "repo": repo_full,
-        "source": "code_scanning",
-        "tool": alert.metadata.tool,
-        "severity": severity,
         "rule_id": rule_id,
-        "first_seen": iso_date(alert.metadata.created_at),
-        "last_seen": iso_date(alert.metadata.updated_at),
-        "postponed_until": "",
+        "severity": severity,
     }
 
     values = build_parent_template_values(alert, rule_id=rule_id, severity=severity)
@@ -120,10 +114,15 @@ def build_parent_issue_body(alert: Alert) -> str:
     return render_secmeta(secmeta) + "\n\n" + human_body
 
 
-def build_issue_title(rule_name: str | None, rule_id: str, fingerprint: str) -> str:
+def build_issue_title(
+    rule_description: str | None,
+    rule_name: str | None,
+    rule_id: str,
+    fingerprint: str,
+) -> str:
     """Build the title string for a child issue."""
     prefix = fingerprint[:8] if fingerprint else NOT_AVAILABLE
-    summary = (rule_name or rule_id or "Security finding").strip() or "Security finding"
+    summary = (rule_description or rule_name or rule_id or "Security finding").strip()
     return f"[SEC][FP={prefix}] {summary}"
 
 
@@ -136,7 +135,7 @@ def build_child_issue_body(alert: Alert) -> str:
     vulnerability = alert.alert_details.vulnerability
     avd_id = vulnerability if vulnerability.startswith("AVD-") else NOT_AVAILABLE
 
-    title = alert.metadata.rule_id
+    title = alert.metadata.rule_description or alert.metadata.rule_id
 
     scm_file = alert.alert_details.scm_file
     start_line = alert.metadata.start_line
@@ -169,7 +168,6 @@ def build_child_issue_body(alert: Alert) -> str:
         "installed_version": alert.alert_details.installed_version,
         "fixed_version": alert.rule_details.fixed_version,
         "reachable": alert.alert_details.reachable,
-        "scan_date": iso_date(alert.alert_details.scan_date or alert.metadata.updated_at or NOT_AVAILABLE),
         "first_seen": iso_date(alert.alert_details.first_seen or alert.metadata.created_at or NOT_AVAILABLE),
     }
     return render_markdown_template(CHILD_BODY_TEMPLATE, values).strip() + "\n"

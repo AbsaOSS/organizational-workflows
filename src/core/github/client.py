@@ -19,6 +19,7 @@
 import logging
 import subprocess
 
+
 def run_cmd(
     cmd: list[str],
     *,

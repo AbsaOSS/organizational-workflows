@@ -102,7 +102,7 @@ def test_child_contains_all_placeholders() -> None:
         "{{ avd_id }}", "{{ alert_hash }}", "{{ title }}", "{{ message }}",
         "{{ repository_full_name }}", "{{ file_display }}", "{{ file_permalink }}",
         "{{ package_name }}", "{{ installed_version }}", "{{ fixed_version }}",
-        "{{ reachable }}", "{{ scan_date }}", "{{ first_seen }}",
+        "{{ reachable }}", "{{ first_seen }}",
     ]
     for ph in expected_placeholders:
         assert ph in CHILD_BODY_TEMPLATE, f"Missing placeholder: {ph}"
@@ -120,7 +120,6 @@ def test_child_renders_without_error() -> None:
         "installed_version": "1.0",
         "fixed_version": "2.0",
         "reachable": "True",
-        "scan_date": "2026-01-01",
         "first_seen": "2026-01-01",
     }
     result = render_markdown_template(CHILD_BODY_TEMPLATE, values)

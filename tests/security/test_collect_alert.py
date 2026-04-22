@@ -49,6 +49,7 @@ _RAW_ALERT: dict = {
     "rule": {
         "id": "rule-1",
         "name": "sast",
+        "description": "Requests with verify=False",
         "security_severity_level": "high",
         "severity": "error",
         "tags": ["HIGH", "sast"],
@@ -263,6 +264,7 @@ def test_normalise_alert_metadata() -> None:
     assert meta["state"] == "open"
     assert meta["rule_id"] == "rule-1"
     assert meta["rule_name"] == "sast"
+    assert meta["rule_description"] == "Requests with verify=False"
     assert meta["severity"] == "high"
     assert meta["confidence"] == "error"
     assert meta["tags"] == ["HIGH", "sast"]
@@ -298,6 +300,7 @@ def test_normalise_alert_minimal() -> None:
     assert meta["alert_number"] is None
     assert meta["state"] is None
     assert meta["rule_id"] is None
+    assert meta["rule_description"] is None
     assert meta["tool"] is None
     assert meta["file"] is None
     assert meta["tags"] == []

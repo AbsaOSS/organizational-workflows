@@ -21,7 +21,6 @@ and the bulk :class:`ProjectPrioritySync` class (prefetch -> enqueue -> flush).
 
 import json
 import logging
-
 from dataclasses import dataclass
 from typing import Any
 

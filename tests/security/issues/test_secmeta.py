@@ -115,10 +115,10 @@ def test_preferred_order() -> None:
     }
     rendered = render_secmeta(data)
     lines = rendered.strip().split("\n")
-    # schema should appear before fingerprint
-    schema_idx = next(i for i, l in enumerate(lines) if "schema=" in l)
+    # type should appear before fingerprint per preferred_order
+    type_idx = next(i for i, l in enumerate(lines) if "type=" in l)
     fp_idx = next(i for i, l in enumerate(lines) if "fingerprint=" in l)
-    assert schema_idx < fp_idx
+    assert type_idx < fp_idx
 
 def test_secmeta_roundtrip() -> None:
     """Render then parse should recover the original data."""

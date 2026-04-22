@@ -39,13 +39,6 @@ def test_adept_to_close() -> None:
     assert LABEL_SEC_ADEPT_TO_CLOSE == "sec:adept-to-close"
 
 
-def test_open() -> None:
-    assert SEC_EVENT_OPEN == "open"
-
-def test_reopen() -> None:
-    assert SEC_EVENT_REOPEN == "reopen"
-
-
 def test_parent() -> None:
     assert SECMETA_TYPE_PARENT == "parent"
 

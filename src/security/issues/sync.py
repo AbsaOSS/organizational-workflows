@@ -208,7 +208,7 @@ def ensure_parent_issue(
     existing = find_parent_issue(index, rule_id=rule_id)
     if existing is not None:
         # Keep parent issues aligned to the template as alerts evolve.
-        existing_secmeta = load_secmeta(existing.body) or {"schema": "1"}
+        existing_secmeta = load_secmeta(existing.body) or {}
 
         existing_severity = str(existing_secmeta.get("severity") or "unknown")
         existing_severity_cmp = existing_severity.lower()

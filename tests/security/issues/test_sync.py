@@ -36,6 +36,7 @@ from security.issues.sync import (
     _maybe_reopen_child,
     _merge_child_secmeta,
     _rebuild_and_apply_child_body,
+    _remove_adept_to_close_label,
     _sync_child_title_and_labels,
     build_issue_index,
     ensure_issue,
@@ -383,6 +384,45 @@ def test_reopen_child_cascades_to_parent(mocker: MockerFixture) -> None:
     sync = _make_sync_context(dry_run=True)
     _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=parent)
     assert parent.state == "open"
+
+
+# _remove_adept_to_close_label
+
+def test_remove_adept_label_present(mocker: MockerFixture) -> None:
+    """Removes sec:adept-to-close label when present on a reopened issue."""
+    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
+    issue = Issue(number=1, state="open", title="T", body="b", labels=["scope:security", "sec:adept-to-close"])
+    _remove_adept_to_close_label("org/repo", issue, dry_run=False)
+    mock_remove.assert_called_once_with("org/repo", 1, ["sec:adept-to-close"])
+    assert "sec:adept-to-close" not in issue.labels
+
+
+def test_remove_adept_label_not_present(mocker: MockerFixture) -> None:
+    """No-op when sec:adept-to-close label is not on the issue."""
+    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
+    issue = Issue(number=1, state="open", title="T", body="b", labels=["scope:security"])
+    _remove_adept_to_close_label("org/repo", issue, dry_run=False)
+    mock_remove.assert_not_called()
+
+
+def test_remove_adept_label_none_labels() -> None:
+    """No-op when issue.labels is None."""
+    issue = Issue(number=1, state="open", title="T", body="b", labels=None)
+    _remove_adept_to_close_label("org/repo", issue, dry_run=False)
+
+
+def test_reopen_child_removes_adept_label(mocker: MockerFixture) -> None:
+    """Reopening a child issue also removes the sec:adept-to-close label."""
+    mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
+    body = render_secmeta({"type": "child", "category": "sast"}) + "\nbody"
+    issue = Issue(number=5, state="closed", title="T", body=body, labels=["scope:security", "sec:adept-to-close"])
+    ctx = _make_alert_context()
+    sync = _make_sync_context()
+    result = _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=None)
+    assert result is True
+    mock_remove.assert_called_once_with("test-org/test-repo", 5, ["sec:adept-to-close"])
+    assert "sec:adept-to-close" not in issue.labels
 
 
 # =====================================================================

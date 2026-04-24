@@ -108,9 +108,10 @@ def test_issue_index_creation() -> None:
 
 def test_alert_context_creation() -> None:
     ctx = AlertContext(
-        alert={}, alert_number=1, fingerprint="fp", occurrence_fp="ofp",
-        repo="org/repo", first_seen="2026-01-01", last_seen="2026-01-02",
+        alert={}, alert_number=1, fingerprint="fp",
+        repo="org/repo",
         tool="AquaSec", rule_id="R1", rule_name="sast",
+        rule_description="Test finding description",
         severity="high", cve="CVE-79", path="src/f.py",
         start_line=10, end_line=20, commit_sha="abc123",
     )

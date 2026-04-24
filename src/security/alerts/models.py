@@ -34,6 +34,7 @@ class AlertMetadata:
     alert_url: str = ""
     rule_id: str = ""
     rule_name: str = ""
+    rule_description: str = ""
     severity: str = ""
     confidence: str = ""
     tags: list[str] = field(default_factory=list)
@@ -51,6 +52,7 @@ class AlertMetadata:
     def __post_init__(self) -> None:
         self.rule_id = (self.rule_id or "").strip()
         self.rule_name = (self.rule_name or "").strip()
+        self.rule_description = (self.rule_description or "").strip()
         self.severity = (self.severity or "").strip() or "unknown"
         self.state = (self.state or "").lower().strip()
         self.tool = (self.tool or "").strip()

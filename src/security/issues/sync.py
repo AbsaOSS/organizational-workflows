@@ -24,31 +24,28 @@ This is the main business-logic module that ties together all other
 
 import logging
 
-from core.helpers import iso_date, normalize_path, utc_today
+from core.helpers import normalize_path
 from core.github.issues import (
     gh_issue_add_labels,
     gh_issue_add_sub_issue_by_number,
-    gh_issue_comment,
     gh_issue_create,
     gh_issue_edit_body,
     gh_issue_edit_state,
     gh_issue_edit_title,
     gh_issue_get_sub_issue_numbers,
+    gh_issue_remove_labels,
 )
 from core.github.projects import ProjectPrioritySync, gh_project_get_priority_field
 from core.models import Issue
 from core.rendering import render_markdown_template
 
 from security.alerts.models import Alert
-from security.alerts.parser import compute_occurrence_fp
 from security.constants import (
     LABEL_EPIC,
     LABEL_SCOPE_SECURITY,
     LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
     NOT_AVAILABLE,
-    SEC_EVENT_OPEN,
-    SEC_EVENT_REOPEN,
     SECMETA_TYPE_CHILD,
     SECMETA_TYPE_PARENT,
 )
@@ -61,7 +58,6 @@ from .builder import (
     classify_category,
 )
 from .models import AlertContext, IssueIndex, NotifiedIssue, SeverityChange, SyncContext, SyncResult
-from .sec_events import render_sec_event, strip_sec_events_from_body
 from .secmeta import json_list, load_secmeta, parse_json_list, render_secmeta
 from .templates import PARENT_BODY_TEMPLATE
 
@@ -127,30 +123,11 @@ def maybe_reopen_parent_issue(
             context,
             child_issue_number or "",
         )
-        logging.info(
-            "DRY-RUN: would comment parent reopen sec-event on issue #%d (rule_id=%s)",
-            parent_issue.number,
-            rule_id,
-        )
         parent_issue.state = "open"
         return
 
     if gh_issue_edit_state(repo, parent_issue.number, "open"):
         parent_issue.state = "open"
-        gh_issue_comment(
-            repo,
-            parent_issue.number,
-            render_sec_event(
-                {
-                    "action": SEC_EVENT_REOPEN,
-                    "seen_at": utc_today(),
-                    "source": "code_scanning",
-                    "rule_id": rule_id,
-                    "context": context,
-                    "child_issue": str(child_issue_number) if child_issue_number else "",
-                }
-            ),
-        )
 
 
 def _close_resolved_parent_issues(
@@ -232,11 +209,7 @@ def ensure_parent_issue(
     existing = find_parent_issue(index, rule_id=rule_id)
     if existing is not None:
         # Keep parent issues aligned to the template as alerts evolve.
-        existing_secmeta = load_secmeta(existing.body) or {"schema": "1"}
-        existing_first = existing_secmeta.get("first_seen") or iso_date(alert.metadata.created_at)
-        existing_last = existing_secmeta.get("last_seen") or iso_date(alert.metadata.updated_at)
-        first_seen_final = min(existing_first, iso_date(alert.metadata.created_at))
-        last_seen_final = max(existing_last, iso_date(alert.metadata.updated_at))
+        existing_secmeta = load_secmeta(existing.body) or {}
 
         existing_severity = str(existing_secmeta.get("severity") or "unknown")
         existing_severity_cmp = existing_severity.lower()
@@ -253,7 +226,7 @@ def ensure_parent_issue(
             )
             if dry_run:
                 logging.info(
-                    "DRY-RUN: severity change on parent #%d (rule_id=%s): %s \u2192 %s",
+                    "DRY-RUN: severity change on parent #%d (rule_id=%s): %s - %s",
                     existing.number,
                     rule_id,
                     existing_severity_cmp,
@@ -266,16 +239,10 @@ def ensure_parent_issue(
 
         existing_secmeta.update(
             {
-                "schema": existing_secmeta.get("schema") or "1",
                 "type": SECMETA_TYPE_PARENT,
                 "repo": repo_full,
-                "source": existing_secmeta.get("source") or "code_scanning",
-                "tool": alert.metadata.tool or existing_secmeta.get("tool") or "",
                 "severity": severity_stored,
                 "rule_id": rule_id,
-                "first_seen": first_seen_final,
-                "last_seen": last_seen_final,
-                "postponed_until": existing_secmeta.get("postponed_until", ""),
             }
         )
 
@@ -288,7 +255,6 @@ def ensure_parent_issue(
             ).strip()
             + "\n"
         )
-        rebuilt = strip_sec_events_from_body(rebuilt)
 
         # Snapshot the original body on first encounter so we can
         # defer the API call until all alerts have been processed.
@@ -329,24 +295,6 @@ def ensure_parent_issue(
     num = gh_issue_create(repo_full, title, body, labels)
     if num is None:
         return None
-
-    # Parent lifecycle event (human visible): opened/created.
-    if dry_run:
-        logging.info("DRY-RUN: would comment parent open sec-event on issue #%d (rule_id=%s)", num, rule_id)
-    else:
-        gh_issue_comment(
-            repo_full,
-            num,
-            render_sec_event(
-                {
-                    "action": SEC_EVENT_OPEN,
-                    "seen_at": iso_date(alert.metadata.created_at),
-                    "source": "code_scanning",
-                    "rule_id": rule_id,
-                    "severity": alert.metadata.severity,
-                }
-            ),
-        )
 
     created = Issue(number=num, state="open", title=title, body=body)
     issues[num] = created
@@ -397,29 +345,17 @@ def _handle_new_child_issue(
     """Create a new child issue for an alert that has no matching issue yet."""
     category = classify_category(ctx.alert)
     secmeta: dict[str, str] = {
-        "schema": "1",
         "type": SECMETA_TYPE_CHILD,
         "fingerprint": ctx.fingerprint,
         "repo": ctx.repo,
-        "source": "code_scanning",
-        "tool": ctx.tool,
-        "severity": ctx.severity,
-        "category": category,
         "rule_id": ctx.rule_id,
-        "first_seen": ctx.first_seen,
-        "last_seen": ctx.last_seen,
-        "last_seen_commit": ctx.commit_sha,
-        "postponed_until": "",
+        "severity": ctx.severity,
         "gh_alert_numbers": json_list([str(ctx.alert_number)]),
-        "occurrence_count": "1",
-        "last_occurrence_fp": ctx.occurrence_fp,
     }
-    if ctx.cve:
-        secmeta["cve"] = ctx.cve
 
     human_body = build_child_issue_body(ctx.alert)
     body = render_secmeta(secmeta) + "\n\n" + human_body
-    title = build_issue_title(ctx.rule_name, ctx.rule_id, ctx.fingerprint)
+    title = build_issue_title(ctx.rule_description, ctx.rule_name, ctx.rule_id, ctx.fingerprint)
 
     if sync.dry_run:
         labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
@@ -428,8 +364,7 @@ def _handle_new_child_issue(
         commit_short = ctx.commit_sha[:8] if ctx.commit_sha else ""
         logging.info(
             "DRY-RUN: create child alert=%d rule_id=%s sev=%s"
-            " fp=%s tool=%s commit=%s loc=%s title=%r labels=[%s]"
-            " | secmeta:first_seen=%s last_seen=%s occurrence_count=1 gh_alert_numbers=[%d]",
+            " fp=%s tool=%s commit=%s loc=%s title=%r labels=[%s] gh_alert_numbers=[%d]",
             ctx.alert_number,
             ctx.rule_id,
             ctx.severity,
@@ -439,8 +374,6 @@ def _handle_new_child_issue(
             loc,
             title,
             ",".join(labels),
-            ctx.first_seen,
-            ctx.last_seen,
             ctx.alert_number,
         )
         if parent_issue is None and ctx.rule_id:
@@ -504,26 +437,30 @@ def _handle_new_child_issue(
         logging.info("Add sub-issue link parent=#%d child=#%d (alert %d)", parent_issue.number, num, ctx.alert_number)
         gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num)
 
-    gh_issue_comment(
-        ctx.repo,
-        num,
-        render_sec_event(
-            {
-                "action": SEC_EVENT_OPEN,
-                "seen_at": ctx.first_seen,
-                "source": "code_scanning",
-                "gh_alert_number": str(ctx.alert_number),
-                "occurrence_fp": str(ctx.occurrence_fp),
-                "commit_sha": str(ctx.commit_sha),
-                "path": str(ctx.path),
-                "start_line": str(ctx.start_line or ""),
-                "end_line": str(ctx.end_line or ""),
-            }
-        ),
-    )
-
     if sync.priority_sync is not None:
         sync.priority_sync.enqueue(ctx.repo, num, ctx.severity, sync.severity_priority_map)
+
+
+def _remove_adept_to_close_label(repo: str, issue: Issue, *, dry_run: bool) -> None:
+    """Remove the ``sec:adept-to-close`` label from *issue* if present."""
+    if not issue.labels or LABEL_SEC_ADEPT_TO_CLOSE not in issue.labels:
+        return
+
+    if dry_run:
+        logging.info(
+            "DRY-RUN: would remove label %r from issue #%d",
+            LABEL_SEC_ADEPT_TO_CLOSE,
+            issue.number,
+        )
+    else:
+        logging.info(
+            "Security - Removing label %r from reopened issue #%d",
+            LABEL_SEC_ADEPT_TO_CLOSE,
+            issue.number,
+        )
+        gh_issue_remove_labels(repo, issue.number, [LABEL_SEC_ADEPT_TO_CLOSE])
+
+    issue.labels.remove(LABEL_SEC_ADEPT_TO_CLOSE)
 
 
 def _maybe_reopen_child(
@@ -549,6 +486,7 @@ def _maybe_reopen_child(
         logging.info("Reopened issue #%d (alert %d)", issue.number, ctx.alert_number)
 
     if reopened:
+        _remove_adept_to_close_label(ctx.repo, issue, dry_run=sync.dry_run)
         maybe_reopen_parent_issue(
             ctx.repo,
             parent_issue,
@@ -578,12 +516,9 @@ def _merge_child_secmeta(
     *,
     ctx: AlertContext,
     issue: Issue,
-) -> tuple[dict[str, str], bool]:
-    """Merge incoming alert data into the child issue's secmeta.
-
-    Returns ``(updated_secmeta, new_occurrence)``.
-    """
-    secmeta = load_secmeta(issue.body) or {"schema": "1"}
+) -> dict[str, str]:
+    """Merge incoming alert data into the child issue's secmeta."""
+    secmeta = load_secmeta(issue.body) or {}
     secmeta.pop("alert_hash", None)
 
     existing_alerts = parse_json_list(secmeta.get("gh_alert_numbers"))
@@ -592,40 +527,18 @@ def _merge_child_secmeta(
     if str(ctx.alert_number) not in existing_alerts:
         existing_alerts.append(str(ctx.alert_number))
 
-    last_occ_fp = secmeta.get("last_occurrence_fp", "")
-    occurrence_count = int(secmeta.get("occurrence_count") or "0" or 0)
-    new_occurrence = bool(ctx.occurrence_fp and ctx.occurrence_fp != last_occ_fp)
-    if occurrence_count <= 0:
-        occurrence_count = 1
-    if new_occurrence:
-        occurrence_count += 1
-
-    existing_first = secmeta.get("first_seen") or ctx.first_seen
-    existing_last = secmeta.get("last_seen") or ctx.last_seen
-    first_seen_final = min(existing_first, ctx.first_seen)
-    last_seen_final = max(existing_last, ctx.last_seen)
-
     secmeta.update(
         {
+            "type": SECMETA_TYPE_CHILD,
             "fingerprint": ctx.fingerprint,
             "repo": ctx.repo,
-            "source": secmeta.get("source") or "code_scanning",
-            "tool": ctx.tool or secmeta.get("tool", ""),
-            "severity": ctx.severity,
-            "category": classify_category(ctx.alert) or secmeta.get("category", ""),
             "rule_id": ctx.rule_id or secmeta.get("rule_id", ""),
-            "first_seen": first_seen_final,
-            "last_seen": last_seen_final,
-            "last_seen_commit": ctx.commit_sha or secmeta.get("last_seen_commit", ""),
+            "severity": ctx.severity,
             "gh_alert_numbers": json_list(existing_alerts),
-            "occurrence_count": str(occurrence_count),
-            "last_occurrence_fp": ctx.occurrence_fp or last_occ_fp,
         }
     )
-    if ctx.cve:
-        secmeta["cve"] = ctx.cve
 
-    return secmeta, new_occurrence
+    return secmeta
 
 
 def _rebuild_and_apply_child_body(
@@ -638,7 +551,6 @@ def _rebuild_and_apply_child_body(
     """Render a fresh child body from *secmeta* + template and apply if changed."""
     human_body = build_child_issue_body(ctx.alert)
     new_body = render_secmeta(secmeta) + "\n\n" + human_body
-    new_body = strip_sec_events_from_body(new_body)
 
     if new_body != issue.body:
         if sync.dry_run:
@@ -652,32 +564,6 @@ def _rebuild_and_apply_child_body(
             issue.body = new_body
 
 
-def _comment_child_event(
-    *,
-    ctx: AlertContext,
-    sync: SyncContext,
-    issue: Issue,
-    reopened: bool,
-) -> None:
-    """Post a reopen sec-event comment on the child issue."""
-    if reopened:
-        if sync.dry_run:
-            logging.info("DRY-RUN: would comment reopen event on issue #%d (alert %d)", issue.number, ctx.alert_number)
-        else:
-            gh_issue_comment(
-                ctx.repo,
-                issue.number,
-                render_sec_event(
-                    {
-                        "action": SEC_EVENT_REOPEN,
-                        "seen_at": utc_today(),
-                        "source": "code_scanning",
-                        "gh_alert_number": str(ctx.alert_number),
-                    }
-                ),
-            )
-
-
 def _sync_child_title_and_labels(
     *,
     ctx: AlertContext,
@@ -685,7 +571,7 @@ def _sync_child_title_and_labels(
     issue: Issue,
 ) -> None:
     """Fix title drift and ensure required labels and priority on the child issue."""
-    expected_title = build_issue_title(ctx.rule_name, ctx.rule_id, ctx.fingerprint)
+    expected_title = build_issue_title(ctx.rule_description, ctx.rule_name, ctx.rule_id, ctx.fingerprint)
     if expected_title != (issue.title or ""):
         if sync.dry_run:
             logging.info(
@@ -758,10 +644,9 @@ def _handle_existing_child_issue(
     if parent_issue is None and ctx.rule_id:
         parent_issue = find_parent_issue(sync.index, rule_id=ctx.rule_id)
 
-    reopened = _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=parent_issue)
-    secmeta, _ = _merge_child_secmeta(ctx=ctx, issue=issue)
+    _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=parent_issue)
+    secmeta = _merge_child_secmeta(ctx=ctx, issue=issue)
     _rebuild_and_apply_child_body(ctx=ctx, sync=sync, issue=issue, secmeta=secmeta)
-    _comment_child_event(ctx=ctx, sync=sync, issue=issue, reopened=reopened)
     _sync_child_title_and_labels(ctx=ctx, sync=sync, issue=issue)
 
     if parent_issue is not None:
@@ -801,11 +686,7 @@ def ensure_issue(
             "Ensure the collector/scanner includes an 'Alert hash: ...' line."
         )
 
-    occurrence_fp = compute_occurrence_fp(commit_sha, path, start_line, end_line)
-
     repo_full = alert.repo
-    first_seen = iso_date(alert.metadata.created_at)
-    last_seen = iso_date(alert.metadata.updated_at)
 
     parent_issue = ensure_parent_issue(
         alert,
@@ -826,13 +707,11 @@ def ensure_issue(
         alert=alert,
         alert_number=alert_number,
         fingerprint=fingerprint,
-        occurrence_fp=occurrence_fp,
         repo=repo_full,
-        first_seen=first_seen,
-        last_seen=last_seen,
         tool=alert.metadata.tool,
         rule_id=rule_id,
         rule_name=alert.metadata.rule_name,
+        rule_description=alert.metadata.rule_description,
         severity=alert.metadata.severity,
         cve=cve,
         path=path,

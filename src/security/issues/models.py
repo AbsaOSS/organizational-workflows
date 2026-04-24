@@ -91,13 +91,11 @@ class AlertContext:
     alert: Alert
     alert_number: int
     fingerprint: str
-    occurrence_fp: str
     repo: str
-    first_seen: str
-    last_seen: str
     tool: str
     rule_id: str
     rule_name: str
+    rule_description: str
     severity: str
     cve: str
     path: str

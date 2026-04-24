@@ -79,22 +79,12 @@ def render_kv_lines(
 def render_secmeta(secmeta: dict[str, str]) -> str:
     """Render a secmeta dict as a hidden HTML-comment block for issue bodies."""
     preferred_order = [
-        "schema",
+        "type",
         "fingerprint",
         "repo",
-        "source",
-        "tool",
-        "severity",
-        "cve",
-        "category",
         "rule_id",
-        "first_seen",
-        "last_seen",
-        "last_seen_commit",
-        "postponed_until",
+        "severity",
         "gh_alert_numbers",
-        "occurrence_count",
-        "last_occurrence_fp",
     ]
     lines = render_kv_lines(secmeta, preferred_order)
     return "<!--secmeta\n" + "\n".join(lines) + "\n-->"

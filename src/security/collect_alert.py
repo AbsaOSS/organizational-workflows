@@ -127,6 +127,7 @@ def _normalise_alert(alert: dict) -> dict:
             "alert_url": alert.get("html_url"),
             "rule_id": rule.get("id"),
             "rule_name": rule.get("name"),
+            "rule_description": rule.get("description"),
             "severity": rule.get("security_severity_level"),
             "confidence": rule.get("severity"),
             "tags": rule.get("tags") or [],

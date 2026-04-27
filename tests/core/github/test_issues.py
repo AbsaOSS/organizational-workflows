@@ -41,6 +41,7 @@ from core.github.issues import (
     gh_issue_get_rest_id,
     gh_issue_get_sub_issue_numbers,
     gh_issue_list_by_label,
+    gh_issue_remove_labels,
 )
 
 
@@ -327,6 +328,19 @@ def test_add_labels_not_found_hint(mocker: MockerFixture, caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="root"):
         gh_issue_add_labels("org/repo", 1, ["bug"])
     assert any("deleted or transferred" in r.message for r in caplog.records)
+
+
+# gh_issue_remove_labels
+
+def test_remove_labels_success(mocker: MockerFixture) -> None:
+    mock_run = mocker.patch("core.github.issues.run_gh", return_value=_ok())
+    gh_issue_remove_labels("org/repo", 1, ["sec:adept-to-close"])
+    mock_run.assert_called_once()
+
+def test_remove_labels_no_labels_skips_call(mocker: MockerFixture) -> None:
+    mock_run = mocker.patch("core.github.issues.run_gh")
+    gh_issue_remove_labels("org/repo", 1, [])
+    mock_run.assert_not_called()
 
 
 def test_create_issue_success_url(mocker: MockerFixture) -> None:

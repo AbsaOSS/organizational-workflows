@@ -18,7 +18,7 @@
 
 from typing import Any
 
-from core.helpers import iso_date, sanitize_markdown
+from core.helpers import iso_date, normalize_bullet_list, sanitize_markdown
 from core.rendering import render_markdown_template, strip_na_sections
 
 from security.constants import NOT_AVAILABLE, SECMETA_TYPE_PARENT
@@ -54,14 +54,14 @@ def alert_extra_data(alert: Alert) -> dict[str, Any]:
 
     return {
         "rule": alert.metadata.rule_id,
-        "owasp": sanitize_markdown(owasp),
+        "owasp": sanitize_markdown(normalize_bullet_list(owasp)),
         "category": alert.metadata.rule_name or NOT_AVAILABLE,
         "advisory_url": alert.metadata.help_uri or NOT_AVAILABLE,
         "impact": sanitize_markdown(alert.rule_details.impact),
         "likelihood": sanitize_markdown(alert.rule_details.likelihood),
         "confidence": sanitize_markdown(alert.rule_details.confidence),
         "remediation": sanitize_markdown(alert.rule_details.remediation),
-        "references": sanitize_markdown(references),
+        "references": sanitize_markdown(normalize_bullet_list(references)),
     }
 
 

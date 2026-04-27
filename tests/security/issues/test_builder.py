@@ -180,6 +180,24 @@ def test_references_not_overridden_when_present() -> None:
     assert "should-not-appear" not in refs
 
 
+def test_references_indented_bullets_normalized() -> None:
+    """Indented bullet items from AquaSec are normalized to top-level bullets."""
+    alert = Alert.from_dict({
+        "metadata": {"rule_id": "CVE-2026-XXXX"},
+        "rule_details": {
+            "references": (
+                "- https://first.example.com\n"
+                "  - https://second.example.com\n"
+                "  - https://third.example.com"
+            ),
+        },
+    })
+    refs = alert_extra_data(alert)["references"]
+    for line in refs.splitlines():
+        if line.strip():
+            assert line.startswith("- "), f"Expected top-level bullet, got: {line!r}"
+
+
 # =====================================================================
 # build_parent_issue_body
 # =====================================================================

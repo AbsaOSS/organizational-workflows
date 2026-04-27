@@ -33,6 +33,7 @@ from core.github.issues import (
     gh_issue_edit_state,
     gh_issue_edit_title,
     gh_issue_get_sub_issue_numbers,
+    gh_issue_remove_labels,
 )
 from core.github.projects import ProjectPrioritySync, gh_project_get_priority_field
 from core.models import Issue
@@ -440,6 +441,28 @@ def _handle_new_child_issue(
         sync.priority_sync.enqueue(ctx.repo, num, ctx.severity, sync.severity_priority_map)
 
 
+def _remove_adept_to_close_label(repo: str, issue: Issue, *, dry_run: bool) -> None:
+    """Remove the ``sec:adept-to-close`` label from *issue* if present."""
+    if not issue.labels or LABEL_SEC_ADEPT_TO_CLOSE not in issue.labels:
+        return
+
+    if dry_run:
+        logging.info(
+            "DRY-RUN: would remove label %r from issue #%d",
+            LABEL_SEC_ADEPT_TO_CLOSE,
+            issue.number,
+        )
+    else:
+        logging.info(
+            "Security - Removing label %r from reopened issue #%d",
+            LABEL_SEC_ADEPT_TO_CLOSE,
+            issue.number,
+        )
+        gh_issue_remove_labels(repo, issue.number, [LABEL_SEC_ADEPT_TO_CLOSE])
+
+    issue.labels.remove(LABEL_SEC_ADEPT_TO_CLOSE)
+
+
 def _maybe_reopen_child(
     *,
     ctx: AlertContext,
@@ -463,6 +486,7 @@ def _maybe_reopen_child(
         logging.info("Reopened issue #%d (alert %d)", issue.number, ctx.alert_number)
 
     if reopened:
+        _remove_adept_to_close_label(ctx.repo, issue, dry_run=sync.dry_run)
         maybe_reopen_parent_issue(
             ctx.repo,
             parent_issue,

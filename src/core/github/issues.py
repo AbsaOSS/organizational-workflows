@@ -280,6 +280,21 @@ def gh_issue_add_labels(repo: str, number: int, labels: list[str]) -> None:
         logging.warning("Failed to add labels to #%d%s: %s", number, _not_found_hint(res), res.stderr)
 
 
+def gh_issue_remove_labels(repo: str, number: int, labels: list[str]) -> None:
+    """Remove *labels* from issue *number* (idempotent)."""
+    if not labels:
+        return
+
+    args: list[str] = ["issue", "edit", str(number), "--repo", repo]
+
+    for label in labels:
+        args += ["--remove-label", label]
+
+    res = run_gh(args)
+    if res.returncode != 0:
+        logging.warning("Failed to remove labels from #%d%s: %s", number, _not_found_hint(res), res.stderr)
+
+
 def gh_issue_comment(repo: str, number: int, body: str) -> bool:
     """Post a comment with *body* on issue *number*.
 

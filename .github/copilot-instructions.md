@@ -41,7 +41,7 @@ Python style
 - F-strings in exceptions: `raise ValueError(f"Error {var}")`
 - Google-style docstrings
 - Single blank line at end of file
-- No documentation for `__init__` methods
+- No documentation for `__init__` methods and test modules
 
 Patterns
 - Classes with `__init__` cannot throw exceptions

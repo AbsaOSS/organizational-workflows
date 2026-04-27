@@ -18,7 +18,7 @@
 
 from typing import Any
 
-from core.helpers import iso_date
+from core.helpers import iso_date, sanitize_markdown
 from core.rendering import render_markdown_template
 
 from security.constants import NOT_AVAILABLE, SECMETA_TYPE_PARENT
@@ -60,7 +60,7 @@ def alert_extra_data(alert: Alert) -> dict[str, Any]:
         "impact": alert.rule_details.impact,
         "likelihood": alert.rule_details.likelihood,
         "confidence": alert.rule_details.confidence,
-        "remediation": alert.rule_details.remediation,
+        "remediation": sanitize_markdown(alert.rule_details.remediation),
         "references": references,
     }
 
@@ -87,7 +87,7 @@ def build_parent_template_values(alert: Alert, *, rule_id: str, severity: str) -
     return {
         "category": alert.metadata.rule_name or NOT_AVAILABLE,
         "avd_id": alert.alert_details.vulnerability or rule_id,
-        "title": alert.metadata.rule_description or rule_id,
+        "title": sanitize_markdown(alert.metadata.rule_description or rule_id),
         "severity": severity,
         "published_date": iso_date(alert.rule_details.published_date or NOT_AVAILABLE),
         "package_name": alert.rule_details.package_name,
@@ -135,7 +135,7 @@ def build_child_issue_body(alert: Alert) -> str:
     vulnerability = alert.alert_details.vulnerability
     avd_id = vulnerability if vulnerability.startswith("AVD-") else NOT_AVAILABLE
 
-    title = alert.metadata.rule_description or alert.metadata.rule_id
+    title = sanitize_markdown(alert.metadata.rule_description or alert.metadata.rule_id)
 
     scm_file = alert.alert_details.scm_file
     start_line = alert.metadata.start_line
@@ -151,7 +151,7 @@ def build_child_issue_body(alert: Alert) -> str:
         file_display = file_name or NOT_AVAILABLE
 
     alert_hash = alert.alert_details.alert_hash
-    message = alert.alert_details.message
+    message = sanitize_markdown(alert.alert_details.message)
 
     category = classify_category(alert)
 

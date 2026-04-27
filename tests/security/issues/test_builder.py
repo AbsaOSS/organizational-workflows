@@ -211,15 +211,15 @@ def test_parent_body_confidence(vuln_alert: Alert) -> None:
 
 @pytest.mark.parametrize("description, rule_name, rule_id, fingerprint, expected", [
     ("A description", "sast", "rule-123", "a1b2c3d4e5f6", "[SEC][FP=a1b2c3d4] A description"),
-    (None, "sast", "rule-123", "abcdef12", "sast"),
-    (None, None, "rule-123", "abcdef12", "rule-123"),
-    (None, None, "", "abcdef12", "Security finding"),
-    ("A description", "sast", "rule-123", "", "N/A"),
+    (None, "sast", "rule-123", "abcdef12", "[SEC][FP=abcdef12] sast"),
+    (None, None, "rule-123", "abcdef12", "[SEC][FP=abcdef12] rule-123"),
+    (None, None, "", "abcdef12", "[SEC][FP=abcdef12] Security finding"),
+    ("A description", "sast", "rule-123", "", "[SEC][FP=N/A] A description"),
 ], ids=["full_format", "fallback_rule_name", "fallback_rule_id", "fallback_default", "empty_fingerprint"])
 def test_build_issue_title(
     description: str | None, rule_name: str | None, rule_id: str, fingerprint: str, expected: str
 ) -> None:
-    assert expected in build_issue_title(description, rule_name, rule_id, fingerprint)
+    assert expected == build_issue_title(description, rule_name, rule_id, fingerprint)
 
 
 # =====================================================================
@@ -322,7 +322,7 @@ def test_message_with_heading_is_escaped() -> None:
         "rule_details": {},
     })
     body = build_child_issue_body(alert)
-    assert not any(l.strip().startswith("## Black") for l in body.split("\n")), "Message heading should be escaped"
+    assert not any(line.strip().startswith("## Black") for line in body.split("\n")), "Message heading should be escaped"
     assert r"\## Black" in body
 
 
@@ -333,5 +333,5 @@ def test_parent_remediation_heading_is_escaped() -> None:
         "rule_details": {"remediation": "## Step 1\nDo something **important**."},
     }, repo="org/repo")
     body = build_parent_issue_body(alert)
-    assert not any(l.strip() == "## Step 1" for l in body.split("\n")), "Remediation heading should be escaped"
+    assert not any(line.strip() == "## Step 1" for line in body.split("\n")), "Remediation heading should be escaped"
     assert r"\## Step 1" in body

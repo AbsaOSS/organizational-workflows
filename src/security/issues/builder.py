@@ -54,14 +54,14 @@ def alert_extra_data(alert: Alert) -> dict[str, Any]:
 
     return {
         "rule": alert.metadata.rule_id,
-        "owasp": owasp,
+        "owasp": sanitize_markdown(owasp),
         "category": alert.metadata.rule_name or NOT_AVAILABLE,
         "advisory_url": alert.metadata.help_uri or NOT_AVAILABLE,
         "impact": sanitize_markdown(alert.rule_details.impact),
         "likelihood": sanitize_markdown(alert.rule_details.likelihood),
         "confidence": sanitize_markdown(alert.rule_details.confidence),
         "remediation": sanitize_markdown(alert.rule_details.remediation),
-        "references": references,
+        "references": sanitize_markdown(references),
     }
 
 

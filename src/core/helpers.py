@@ -61,6 +61,23 @@ def normalize_path(path: str | None) -> str:
     return p
 
 
+def normalize_bullet_list(text: str) -> str:
+    """Normalize a Markdown bullet list so all items are at the top level.
+
+    Some sources (e.g. AquaSec) emit the first bullet without indentation
+    and subsequent bullets with leading whitespace, producing a nested list.
+    This function strips leading whitespace from any line whose stripped form
+    starts with ``- ``, so every item renders at the same level.
+    """
+    if not text:
+        return text
+    lines = []
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        lines.append(f"- {stripped[2:]}" if stripped.startswith("- ") else line)
+    return "\n".join(lines)
+
+
 def sanitize_markdown(text: str) -> str:
     """Escape block-level Markdown so text renders as plain content in an issue body."""
     if not text:

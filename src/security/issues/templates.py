@@ -16,15 +16,13 @@
 
 """Security-specific Markdown body templates."""
 
-PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
+PARENT_BODY_TEMPLATE = """## General Information
 
-## General Information
-
-- **Category:** {{ category }}
-- **AVD ID:** {{ avd_id }}
 - **Title:** {{ title }}
+- **Category:** {{ category }}
 - **Severity:** {{ severity }}
 - **Published date:** {{ published_date }}
+- **Short Description:** {{ short_description }}
 
 ## Affected Package
 
@@ -33,9 +31,9 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 
 ## Classification
 
-- **CVE:** {{ extraData.cve }}
-- **OWASP:** {{ extraData.owasp }}
+- **Rule:** {{ extraData.rule }}
 - **Category:** {{ extraData.category }}
+- **Advisory URL:** {{ extraData.advisory_url }}
 
 ## Risk Assessment
 
@@ -46,9 +44,13 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 - **Confidence:** {{ extraData.confidence }}  
   *(How confident the finding is; likelihood of false positive)*
 
-## Recommended Remediation
+## Remediation
 
 {{ extraData.remediation }}
+
+## OWASP
+
+{{ extraData.owasp }}
 
 ## References
 
@@ -58,12 +60,13 @@ PARENT_BODY_TEMPLATE = """# Security Alert – {{ avd_id }}
 
 CHILD_BODY_TEMPLATE = """## General Information
 
-- **Category:** {{ category }}
-- **AVD ID:** {{ avd_id }}
-- **Alert hash:** {{ alert_hash }}
 - **Title:** {{ title }}
+- **Category:** {{ category }}
+- **Rule:** {{ rule_id }}
+- **Alert hash:** {{ alert_hash }}
+- **First seen:** {{ first_seen }}
 
-## Vulnerability Description
+## Description
 
 {{ message }}
 
@@ -71,6 +74,8 @@ CHILD_BODY_TEMPLATE = """## General Information
 
 - **Repository:** {{ repository_full_name }}
 - **File:** [{{ file_display }}]({{ file_permalink }})
+- **Start Line:** {{ start_line }}
+- **End Line:** {{ end_line }}
 
 ## Dependency Details
 
@@ -78,8 +83,4 @@ CHILD_BODY_TEMPLATE = """## General Information
 - **Installed version:** {{ installed_version }}
 - **Fixed version:** {{ fixed_version }}
 - **Reachable:** {{ reachable }}
-
-## Detection Timeline
-
-- **First seen:** {{ first_seen }}
 """

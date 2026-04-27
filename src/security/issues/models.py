@@ -97,7 +97,6 @@ class AlertContext:
     rule_name: str
     rule_description: str
     severity: str
-    cve: str
     path: str
     start_line: int | None
     end_line: int | None

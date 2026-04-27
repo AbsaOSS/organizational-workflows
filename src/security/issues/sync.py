@@ -36,7 +36,7 @@ from core.github.issues import (
 )
 from core.github.projects import ProjectPrioritySync, gh_project_get_priority_field
 from core.models import Issue
-from core.rendering import render_markdown_template
+from core.rendering import render_markdown_template, strip_na_sections
 
 from security.alerts.models import Alert
 from security.constants import (
@@ -44,7 +44,6 @@ from security.constants import (
     LABEL_SCOPE_SECURITY,
     LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
-    NOT_AVAILABLE,
     SECMETA_TYPE_CHILD,
     SECMETA_TYPE_PARENT,
 )
@@ -248,9 +247,11 @@ def ensure_parent_issue(
         rebuilt = (
             render_secmeta(existing_secmeta)
             + "\n\n"
-            + render_markdown_template(
-                PARENT_BODY_TEMPLATE,
-                build_parent_template_values(alert, rule_id=rule_id, severity=severity_stored),
+            + strip_na_sections(
+                render_markdown_template(
+                    PARENT_BODY_TEMPLATE,
+                    build_parent_template_values(alert, rule_id=rule_id, severity=severity_stored),
+                )
             ).strip()
             + "\n"
         )
@@ -647,7 +648,6 @@ def ensure_issue(
         return
 
     rule_id = alert.metadata.rule_id
-    cve = rule_id if rule_id.upper().startswith("CVE-") else NOT_AVAILABLE
 
     path = normalize_path(alert.metadata.file)
     start_line = alert.metadata.start_line
@@ -689,7 +689,6 @@ def ensure_issue(
         rule_name=alert.metadata.rule_name,
         rule_description=alert.metadata.rule_description,
         severity=alert.metadata.severity,
-        cve=cve,
         path=path,
         start_line=start_line,
         end_line=end_line,

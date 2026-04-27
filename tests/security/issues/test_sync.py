@@ -77,7 +77,6 @@ def _make_alert_context(**overrides: Any) -> AlertContext:
         rule_name="sast",
         rule_description="Test finding description",
         severity="high",
-        cve="CVE-2026-1234",
         path="src/main.py",
         start_line=10,
         end_line=20,

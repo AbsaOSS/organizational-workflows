@@ -14,8 +14,6 @@
 # limitations under the License.
 #
 
-"""Unit tests for ``utils.issue_builder``."""
-
 import pytest
 
 from security.issues.builder import (
@@ -31,17 +29,14 @@ from security.alerts.models import Alert
 
 
 # =====================================================================
-# Low-level helpers
+# alert_extra_data
 # =====================================================================
 
 
 def test_extra_data_from_nested() -> None:
     """Extra data is synthesised from nested metadata + rule_details."""
     alert = Alert.from_dict({
-        "metadata": {
-            "rule_id": "CVE-123",
-            "rule_name": "sast",
-        },
+        "metadata": {"rule_id": "CVE-123", "rule_name": "sast"},
         "rule_details": {
             "confidence": "error",
             "owasp": "https://owasp.org/Top10/A07",
@@ -57,340 +52,234 @@ def test_extra_data_from_nested() -> None:
     assert extra["confidence"] == "error"
     assert extra["category"] == "sast"
 
+
 def test_extra_data_non_cve() -> None:
     """Non-CVE rule_id results in N/A for cve field."""
-    alert = Alert.from_dict({
-        "metadata": {"rule_id": "RULE-1", "rule_name": "sast"},
-        "rule_details": {},
-    })
-    extra = alert_extra_data(alert)
-    assert extra["cve"] == "N/A"
-
-
-def test_sast(sast_alert: Alert) -> None:
-    assert classify_category(sast_alert) == "sast"
-
-def test_vuln(vuln_alert: Alert) -> None:
-    assert classify_category(vuln_alert) == "vulnerabilities"
-
-def test_empty() -> None:
-    assert classify_category(Alert()) == ""
+    alert = Alert.from_dict({"metadata": {"rule_id": "RULE-1", "rule_name": "sast"}, "rule_details": {}})
+    assert alert_extra_data(alert)["cve"] == "N/A"
 
 
 # =====================================================================
-# Parent issue builders
+# classify_category
 # =====================================================================
 
 
-def test_with_severity() -> None:
-    assert build_parent_issue_title("CVE-2026-25755", "high") == (
-        "[HIGH] Security Alert \u2013 CVE-2026-25755"
-    )
+@pytest.mark.parametrize("raw, expected", [
+    ({"metadata": {"rule_name": "sast"}}, "sast"),
+    ({"metadata": {"rule_name": "vulnerabilities"}}, "vulnerabilities"),
+    ({}, ""),
+], ids=["sast", "vulnerabilities", "empty"])
+def test_classify_category(raw: dict, expected: str) -> None:
+    assert expected == classify_category(Alert.from_dict(raw))
 
-def test_without_severity() -> None:
-    assert build_parent_issue_title("CVE-2026-25755") == (
-        "Security Alert \u2013 CVE-2026-25755"
-    )
+
+# =====================================================================
+# build_parent_issue_title
+# =====================================================================
+
+
+@pytest.mark.parametrize("severity, expected", [
+    ("high", "[HIGH] Security Alert \u2013 CVE-2026-25755"),
+    ("", "Security Alert \u2013 CVE-2026-25755"),
+], ids=["with_severity", "without_severity"])
+def test_build_parent_issue_title(severity: str, expected: str) -> None:
+    assert expected == build_parent_issue_title("CVE-2026-25755", severity)
+
+
+# =====================================================================
+# build_parent_template_values
+# =====================================================================
 
 
 def test_sast_category_from_rule_name(sast_alert: Alert) -> None:
-    vals = build_parent_template_values(
-        sast_alert, rule_id="req-with-very-false-aquasec-python", severity="high"
-    )
+    vals = build_parent_template_values(sast_alert, rule_id="req-with-very-false-aquasec-python", severity="high")
     assert vals["category"] == "sast"
 
+
 def test_vuln_category_from_rule_name(vuln_alert: Alert) -> None:
-    vals = build_parent_template_values(
-        vuln_alert, rule_id="CVE-2026-25755", severity="high"
-    )
+    vals = build_parent_template_values(vuln_alert, rule_id="CVE-2026-25755", severity="high")
     assert vals["category"] == "vulnerabilities"
 
+
 def test_avd_id_uses_vulnerability(sast_alert: Alert) -> None:
-    vals = build_parent_template_values(
-        sast_alert, rule_id="req-with-very-false-aquasec-python", severity="high"
-    )
+    vals = build_parent_template_values(sast_alert, rule_id="req-with-very-false-aquasec-python", severity="high")
     assert vals["avd_id"] == "req-with-very-false-aquasec-python"
 
-def test_published_date_from_rule_details(sast_alert: Alert) -> None:
-    """Published date comes from rule_details.published_date."""
-    vals = build_parent_template_values(
-        sast_alert, rule_id="test", severity="high"
-    )
-    # SAST fixture has rule_details.published_date = None; absent dates map to N/A
-    assert vals["published_date"] == "N/A"
 
-
-def test_published_date_none_in_raw_dict() -> None:
-    """published_date=None in the raw dict (as returned by _parse_rule_details for a
-    missing field) must yield N/A, not today's date via iso_date(None).
-    """
-    raw: dict = {
-        "metadata": {"rule_id": "x", "severity": "low"},
-        "rule_details": {"published_date": None},
-    }
-    alert = Alert.from_dict(raw)
-    vals = build_parent_template_values(alert, rule_id="x", severity="low")
-    assert vals["published_date"] == "N/A"
-
-
-def test_published_date_absent_from_raw_dict() -> None:
-    """published_date key absent entirely from rule_details must also yield N/A."""
-    raw: dict = {
-        "metadata": {"rule_id": "x", "severity": "low"},
-        "rule_details": {},
-    }
-    alert = Alert.from_dict(raw)
-    vals = build_parent_template_values(alert, rule_id="x", severity="low")
-    assert vals["published_date"] == "N/A"
+@pytest.mark.parametrize("rule_details", [
+    {"published_date": None},
+    {},
+], ids=["published_date_none", "published_date_absent"])
+def test_published_date_yields_na(rule_details: dict) -> None:
+    alert = Alert.from_dict({"metadata": {"rule_id": "x", "severity": "low"}, "rule_details": rule_details})
+    assert "N/A" == build_parent_template_values(alert, rule_id="x", severity="low")["published_date"]
 
 
 def test_extra_data_synthesised(sast_alert: Alert) -> None:
-    """Fields are synthesised from the nested alert structure."""
-    vals = build_parent_template_values(
-        sast_alert, rule_id="test", severity="high"
-    )
-    extra = vals["extraData"]
+    extra = build_parent_template_values(sast_alert, rule_id="test", severity="high")["extraData"]
     assert isinstance(extra, dict)
     assert extra["confidence"] == "error"
     assert extra["category"] == "sast"
-    # OWASP reference derived from rule_details.owasp
     assert "owasp" in extra["owasp"].lower()
 
+
 def test_extra_data_references(vuln_alert: Alert) -> None:
-    vals = build_parent_template_values(
-        vuln_alert, rule_id="CVE-2026-25755", severity="high"
-    )
-    refs = vals["extraData"]["references"]
+    refs = build_parent_template_values(vuln_alert, rule_id="CVE-2026-25755", severity="high")["extraData"]["references"]
     assert "redhat.com" in refs
 
 
-def test_references_fallback_to_metadata_urls() -> None:
-    """When rule_details.references is absent, fall back to metadata.help_uri / alert_url."""
+def test_all_template_keys_present(sast_alert: Alert) -> None:
+    vals = build_parent_template_values(sast_alert, rule_id="test", severity="high")
+    required = {"category", "avd_id", "title", "severity", "published_date", "package_name", "fixed_version", "extraData"}
+    assert required.issubset(vals.keys())
+
+
+def test_extra_data_sub_keys(sast_alert: Alert) -> None:
+    extra = build_parent_template_values(sast_alert, rule_id="test", severity="high")["extraData"]
+    required_extra = {"cve", "owasp", "category", "impact", "likelihood", "confidence", "remediation", "references"}
+    assert required_extra.issubset(extra.keys())
+
+
+# =====================================================================
+# References fallback (_synthesize_references)
+# =====================================================================
+
+
+def test_references_fallback_to_both_urls() -> None:
+    """When rule_details.references is absent, both help_uri and alert_url are included."""
     alert = Alert.from_dict({
         "metadata": {
             "rule_id": "RULE-1",
             "help_uri": "https://example.com/rule",
             "alert_url": "https://github.com/org/repo/security/code-scanning/1",
         },
-        "rule_details": {},  # references will be normalised to N/A
-    })
-    extra = alert_extra_data(alert)
-    assert "https://example.com/rule" in extra["references"]
-    assert "https://github.com/org/repo/security/code-scanning/1" in extra["references"]
-
-
-def test_references_fallback_help_uri_only() -> None:
-    """Fallback uses only help_uri when alert_url is absent."""
-    alert = Alert.from_dict({
-        "metadata": {
-            "rule_id": "RULE-2",
-            "help_uri": "https://docs.example.com/cve",
-        },
         "rule_details": {},
     })
-    extra = alert_extra_data(alert)
-    assert "https://docs.example.com/cve" in extra["references"]
+    refs = alert_extra_data(alert)["references"]
+    assert "https://example.com/rule" in refs
+    assert "https://github.com/org/repo/security/code-scanning/1" in refs
 
 
-def test_references_no_fallback_urls_yields_na() -> None:
-    """Fallback returns N/A when metadata has no useful URLs either."""
-    alert = Alert.from_dict({
-        "metadata": {"rule_id": "RULE-3"},
-        "rule_details": {},
-    })
-    extra = alert_extra_data(alert)
-    assert extra["references"] == "N/A"
+@pytest.mark.parametrize("metadata, expected", [
+    ({"rule_id": "RULE-2", "help_uri": "https://docs.example.com/cve"}, "https://docs.example.com/cve"),
+    ({"rule_id": "RULE-3"}, "N/A"),
+], ids=["help_uri_only", "no_urls_yields_na"])
+def test_references_fallback(metadata: dict, expected: str) -> None:
+    alert = Alert.from_dict({"metadata": metadata, "rule_details": {}})
+    assert expected in alert_extra_data(alert)["references"]
 
 
 def test_references_not_overridden_when_present() -> None:
-    """rule_details.references is used as-is when it contains a value."""
+    """rule_details.references is used as-is; metadata URLs are ignored."""
     alert = Alert.from_dict({
-        "metadata": {
-            "rule_id": "RULE-4",
-            "help_uri": "https://should-not-appear.example.com",
-        },
+        "metadata": {"rule_id": "RULE-4", "help_uri": "https://should-not-appear.example.com"},
         "rule_details": {"references": "- https://explicit-ref.example.com"},
     })
-    extra = alert_extra_data(alert)
-    assert "https://explicit-ref.example.com" in extra["references"]
-    assert "should-not-appear" not in extra["references"]
-
-def test_all_template_keys_present(sast_alert: Alert) -> None:
-    """Every placeholder in PARENT_BODY_TEMPLATE has a corresponding value."""
-    vals = build_parent_template_values(
-        sast_alert, rule_id="test", severity="high"
-    )
-    required = {
-        "category", "avd_id", "title", "severity",
-        "published_date", "package_name",
-        "fixed_version", "extraData",
-    }
-    assert required.issubset(vals.keys())
-
-def test_extra_data_sub_keys(sast_alert: Alert) -> None:
-    """All extraData keys referenced in the template are present."""
-    vals = build_parent_template_values(
-        sast_alert, rule_id="test", severity="high"
-    )
-    extra = vals["extraData"]
-    required_extra = {
-        "cve", "owasp", "category", "impact",
-        "likelihood", "confidence", "remediation", "references",
-    }
-    assert required_extra.issubset(extra.keys())
+    refs = alert_extra_data(alert)["references"]
+    assert "https://explicit-ref.example.com" in refs
+    assert "should-not-appear" not in refs
 
 
 # =====================================================================
-# Parent issue body (full render)
+# build_parent_issue_body
 # =====================================================================
 
 
-def test_contains_secmeta_block(sast_alert: Alert) -> None:
-    body = build_parent_issue_body(sast_alert)
-    assert "<!--secmeta" in body
-    assert "type=parent" in body
+@pytest.mark.parametrize("expected", [
+    "<!--secmeta",
+    "type=parent",
+    "req-with-very-false-aquasec-python",
+    "**Category:** sast",
+    "owasp.org",
+], ids=["secmeta_block", "secmeta_type", "rule_id", "category_section", "owasp_reference"])
+def test_parent_body_contains(sast_alert: Alert, expected: str) -> None:
+    assert expected in build_parent_issue_body(sast_alert)
 
-def test_contains_severity(sast_alert: Alert) -> None:
-    body = build_parent_issue_body(sast_alert)
-    assert "high" in body.lower()
 
-def test_contains_rule_id(sast_alert: Alert) -> None:
-    body = build_parent_issue_body(sast_alert)
-    assert "req-with-very-false-aquasec-python" in body
+def test_parent_body_contains_severity(sast_alert: Alert) -> None:
+    assert "high" in build_parent_issue_body(sast_alert).lower()
 
-def test_contains_category_section(sast_alert: Alert) -> None:
-    body = build_parent_issue_body(sast_alert)
-    assert "**Category:** sast" in body
 
-def test_contains_owasp_reference(sast_alert: Alert) -> None:
-    body = build_parent_issue_body(sast_alert)
-    assert "owasp.org" in body
-
-def test_contains_confidence(vuln_alert: Alert) -> None:
-    body = build_parent_issue_body(vuln_alert)
-    assert "error" in body
+def test_parent_body_confidence(vuln_alert: Alert) -> None:
+    assert "error" in build_parent_issue_body(vuln_alert)
 
 
 # =====================================================================
-# Child issue title
+# build_issue_title (child title)
 # =====================================================================
 
 
-def test_format() -> None:
-    fp = "a1b2c3d4e5f6"
-    title = build_issue_title("A description", "sast", "rule-123", fp)
-    assert title == "[SEC][FP=a1b2c3d4] A description"
-
-def test_fallback_to_rule_name() -> None:
-    title = build_issue_title(None, "sast", "rule-123", "abcdef12")
-    assert "sast" in title
-
-def test_fallback_to_rule_id() -> None:
-    title = build_issue_title(None, None, "rule-123", "abcdef12")
-    assert "rule-123" in title
-
-def test_fallback_to_default() -> None:
-    title = build_issue_title(None, None, "", "abcdef12")
-    assert "Security finding" in title
-
-def test_empty_fingerprint() -> None:
-    title = build_issue_title("A description", "sast", "rule-123", "")
-    assert "N/A" in title
+@pytest.mark.parametrize("description, rule_name, rule_id, fingerprint, expected", [
+    ("A description", "sast", "rule-123", "a1b2c3d4e5f6", "[SEC][FP=a1b2c3d4] A description"),
+    (None, "sast", "rule-123", "abcdef12", "sast"),
+    (None, None, "rule-123", "abcdef12", "rule-123"),
+    (None, None, "", "abcdef12", "Security finding"),
+    ("A description", "sast", "rule-123", "", "N/A"),
+], ids=["full_format", "fallback_rule_name", "fallback_rule_id", "fallback_default", "empty_fingerprint"])
+def test_build_issue_title(
+    description: str | None, rule_name: str | None, rule_id: str, fingerprint: str, expected: str
+) -> None:
+    assert expected in build_issue_title(description, rule_name, rule_id, fingerprint)
 
 
 # =====================================================================
-# Child issue body
+# build_child_issue_body
 # =====================================================================
 
 
 # SAST alert (303)
 
-def test_sast_avd_id(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "Requests with verify=False" in body
+@pytest.mark.parametrize("expected", [
+    "Requests with verify=False",
+    "3e9c8c338f318e0d06647c2f79406fd4",
+    "verify=False",
+    "test-org/test-repo",
+    "https://github.com/test-org/test-repo/blob/",
+    "95",
+    "False",
+    "2025-09-17",
+], ids=["title", "alert_hash", "message", "repository", "scm_url", "target_line", "reachable", "first_seen"])
+def test_sast_child_body_contains(sast_alert: Alert, expected: str) -> None:
+    assert expected in build_child_issue_body(sast_alert)
 
-def test_sast_alert_hash(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "3e9c8c338f318e0d06647c2f79406fd4" in body
-
-def test_sast_title(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "Requests with verify=False" in body
-
-def test_sast_message_present(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "verify=False" in body
-
-def test_sast_repository(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "test-org/test-repo" in body
-
-def test_sast_scm_file_full_url(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "https://github.com/test-org/test-repo/blob/" in body
-
-def test_sast_target_line(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "95" in body
-
-def test_sast_reachable_from_msg(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "False" in body
-
-def test_sast_first_seen(sast_alert: Alert) -> None:
-    body = build_child_issue_body(sast_alert)
-    assert "2025-09-17" in body
 
 # Vulnerability alert (312)
 
-def test_vuln_avd_id(vuln_alert: Alert) -> None:
-    body = build_child_issue_body(vuln_alert)
-    assert "jsPDF PDF object injection" in body
+@pytest.mark.parametrize("expected", [
+    "jsPDF PDF object injection",
+    "3.0.3",
+    "True",
+    "aul-ui/package.json",
+    "068f963657211cd416dac1f9b30d606c",
+    "2026-02-20",
+    "## General Information",
+    "## Vulnerability Description",
+    "## Location",
+    "## Dependency Details",
+    "## Detection Timeline",
+], ids=["title", "installed_version", "reachable", "scm_file", "alert_hash", "first_seen",
+        "section_general", "section_vuln", "section_location", "section_dependency", "section_timeline"])
+def test_vuln_child_body_contains(vuln_alert: Alert, expected: str) -> None:
+    assert expected in build_child_issue_body(vuln_alert)
 
-def test_vuln_installed_version(vuln_alert: Alert) -> None:
-    body = build_child_issue_body(vuln_alert)
-    assert "3.0.3" in body
-
-def test_vuln_reachable(vuln_alert: Alert) -> None:
-    body = build_child_issue_body(vuln_alert)
-    assert "True" in body
-
-def test_vuln_scm_file(vuln_alert: Alert) -> None:
-    body = build_child_issue_body(vuln_alert)
-    assert "aul-ui/package.json" in body
-
-def test_vuln_alert_hash(vuln_alert: Alert) -> None:
-    body = build_child_issue_body(vuln_alert)
-    assert "068f963657211cd416dac1f9b30d606c" in body
-
-def test_vuln_first_seen(vuln_alert: Alert) -> None:
-    body = build_child_issue_body(vuln_alert)
-    assert "2026-02-20" in body
 
 # Pipeline alert (317)
 
-def test_pipeline_category(pipeline_alert: Alert) -> None:
-    body = build_child_issue_body(pipeline_alert)
-    assert "pipelineMisconfigurations" in body
+@pytest.mark.parametrize("expected", [
+    "pipelineMisconfigurations",
+    "**Installed version:**",
+    "False",
+], ids=["category", "installed_version_label", "reachable"])
+def test_pipeline_child_body_contains(pipeline_alert: Alert, expected: str) -> None:
+    assert expected in build_child_issue_body(pipeline_alert)
 
-def test_pipeline_no_installed_version(pipeline_alert: Alert) -> None:
-    body = build_child_issue_body(pipeline_alert)
-    assert "**Installed version:**" in body
-
-def test_pipeline_reachable(pipeline_alert: Alert) -> None:
-    body = build_child_issue_body(pipeline_alert)
-    assert "False" in body
 
 # Edge cases
 
 def test_minimal_alert() -> None:
-    minimal = Alert.from_dict({
-        "metadata": {"rule_id": "UNKNOWN"},
-        "alert_details": {},
-        "rule_details": {},
-    })
-    body = build_child_issue_body(minimal)
-    assert "UNKNOWN" in body
+    minimal = Alert.from_dict({"metadata": {"rule_id": "UNKNOWN"}, "alert_details": {}, "rule_details": {}})
+    assert "UNKNOWN" in build_child_issue_body(minimal)
+
 
 def test_repo_fallback_to_alert_details() -> None:
     alert = Alert.from_dict({
@@ -398,16 +287,7 @@ def test_repo_fallback_to_alert_details() -> None:
         "alert_details": {"repository": "org/repo-from-details"},
         "rule_details": {},
     })
-    body = build_child_issue_body(alert)
-    assert "org/repo-from-details" in body
-
-def test_all_template_sections_rendered(vuln_alert: Alert) -> None:
-    body = build_child_issue_body(vuln_alert)
-    assert "## General Information" in body
-    assert "## Vulnerability Description" in body
-    assert "## Location" in body
-    assert "## Dependency Details" in body
-    assert "## Detection Timeline" in body
+    assert "org/repo-from-details" in build_child_issue_body(alert)
 
 
 def test_first_seen_falls_back_to_metadata_created_at() -> None:
@@ -418,19 +298,41 @@ def test_first_seen_falls_back_to_metadata_created_at() -> None:
             "updated_at": "2026-01-15T10:00:00Z",
             "created_at": "2025-12-01T08:00:00Z",
         },
-        "alert_details": {},  # first_seen absent → defaults to ""
+        "alert_details": {},
         "rule_details": {},
     })
-    body = build_child_issue_body(alert)
-    assert "2025-12-01" in body
+    assert "2025-12-01" in build_child_issue_body(alert)
 
 
 def test_first_seen_yields_na_when_no_fallback() -> None:
     """When neither alert_details nor metadata provide dates, render N/A."""
+    alert = Alert.from_dict({"metadata": {"rule_id": "X"}, "alert_details": {}, "rule_details": {}})
+    assert build_child_issue_body(alert).count("N/A") >= 1
+
+
+# =====================================================================
+# Markdown sanitisation in rendered bodies
+# =====================================================================
+
+
+def test_message_with_heading_is_escaped() -> None:
+    """Markdown headings in the message field must not create real headings."""
     alert = Alert.from_dict({
-        "metadata": {"rule_id": "X"},  # no updated_at / created_at
-        "alert_details": {},
+        "metadata": {"rule_id": "CVE-TEST", "rule_description": "Test vuln"},
+        "alert_details": {"message": "## Black is the uncompromising formatter."},
         "rule_details": {},
     })
     body = build_child_issue_body(alert)
-    assert body.count("N/A") >= 1
+    assert not any(l.strip().startswith("## Black") for l in body.split("\n")), "Message heading should be escaped"
+    assert r"\## Black" in body
+
+
+def test_parent_remediation_heading_is_escaped() -> None:
+    """Markdown headings in remediation must be escaped in the parent body."""
+    alert = Alert.from_dict({
+        "metadata": {"rule_id": "CVE-PARENT", "severity": "high", "rule_name": "sast"},
+        "rule_details": {"remediation": "## Step 1\nDo something **important**."},
+    }, repo="org/repo")
+    body = build_parent_issue_body(alert)
+    assert not any(l.strip() == "## Step 1" for l in body.split("\n")), "Remediation heading should be escaped"
+    assert r"\## Step 1" in body

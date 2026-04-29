@@ -39,7 +39,7 @@ def test_contains_all_placeholders() -> None:
     expected_placeholders = [
         "{{ category }}", "{{ title }}", "{{ severity }}",
         "{{ published_date }}", "{{ short_description }}", "{{ package_name }}",
-        "{{ fixed_version }}", "{{ extraData.rule }}", "{{ extraData.owasp }}",
+        "{{ fixed_version }}", "{{ extraData.rule_id }}", "{{ extraData.owasp }}",
         "{{ extraData.category }}", "{{ extraData.advisory_url }}",
         "{{ extraData.impact }}",
         "{{ extraData.likelihood }}", "{{ extraData.confidence }}",
@@ -59,7 +59,7 @@ def test_renders_without_error() -> None:
         "package_name": "pkg",
         "fixed_version": "2.0",
         "extraData": {
-            "rule": "CVE-123",
+            "rule_id": "CVE-123",
             "owasp": "A07",
             "category": "sast",
             "advisory_url": "https://example.com/advisory",
@@ -82,7 +82,7 @@ def test_renders_impact_and_likelihood() -> None:
         "short_description": "desc",
         "package_name": "pkg", "fixed_version": "2.0",
         "extraData": {
-            "rule": "N/A", "owasp": "N/A", "category": "sast",
+            "rule_id": "N/A", "owasp": "N/A", "category": "sast",
             "advisory_url": "N/A",
             "impact": "medium", "likelihood": "medium",
             "confidence": "error", "remediation": "upgrade",
@@ -103,8 +103,8 @@ def test_child_contains_required_sections() -> None:
 
 def test_child_contains_all_placeholders() -> None:
     expected_placeholders = [
-        "{{ rule_id }}", "{{ alert_hash }}", "{{ title }}", "{{ message }}",
-        "{{ repository_full_name }}", "{{ file_display }}", "{{ file_permalink }}",
+        "{{ severity }}", "{{ rule_id }}", "{{ alert_hash }}", "{{ title }}", "{{ message }}",
+        "{{ repository_link }}", "{{ file_display }}", "{{ file_permalink }}",
         "{{ package_name }}", "{{ installed_version }}", "{{ fixed_version }}",
         "{{ reachable }}", "{{ first_seen }}", "{{ start_line }}", "{{ end_line }}",
     ]
@@ -113,12 +113,13 @@ def test_child_contains_all_placeholders() -> None:
 
 def test_child_renders_without_error() -> None:
     values = {
+        "severity": "high",
         "rule_id": "CVE-123",
         "alert_hash": "abc",
         "title": "Test",
         "message": "msg",
         "first_seen": "2026-01-01",
-        "repository_full_name": "org/repo",
+        "repository_link": '<a href="https://github.com/org/repo" target="_blank">org/repo</a>',
         "file_display": "file.py",
         "file_permalink": "https://example.com/file.py#L10",
         "start_line": "10",

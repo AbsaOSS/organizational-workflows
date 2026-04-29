@@ -264,7 +264,7 @@ def ensure_parent_issue(
         existing.body = rebuilt
 
         # Detect parent title drift and update when needed.
-        expected_title = build_parent_issue_title(rule_id, severity_stored)
+        expected_title = build_parent_issue_title(rule_id)
         if expected_title != (existing.title or ""):
             if dry_run:
                 logging.info(
@@ -282,7 +282,7 @@ def ensure_parent_issue(
 
         return existing
 
-    title = build_parent_issue_title(rule_id, alert.metadata.severity)
+    title = build_parent_issue_title(rule_id)
     body = build_parent_issue_body(alert)
     labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT, LABEL_EPIC]
     if dry_run:
@@ -356,7 +356,7 @@ def _handle_new_child_issue(
 
     human_body = build_child_issue_body(ctx.alert)
     body = render_secmeta(secmeta) + "\n\n" + human_body
-    title = build_issue_title(ctx.rule_description, ctx.rule_name, ctx.rule_id, ctx.fingerprint)
+    title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
 
     if sync.dry_run:
         labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
@@ -572,7 +572,7 @@ def _sync_child_title_and_labels(
     issue: Issue,
 ) -> None:
     """Fix title drift and ensure required labels and priority on the child issue."""
-    expected_title = build_issue_title(ctx.rule_description, ctx.rule_name, ctx.rule_id, ctx.fingerprint)
+    expected_title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
     if expected_title != (issue.title or ""):
         if sync.dry_run:
             logging.info(

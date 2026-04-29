@@ -16,15 +16,29 @@
 
 """Issue title / body construction from Alert dataclasses."""
 
+import html
 from typing import Any
 
 from core.helpers import iso_date, normalize_bullet_list, sanitize_markdown
 from core.rendering import render_markdown_template, strip_na_sections
 
-from security.constants import NOT_AVAILABLE, SECMETA_TYPE_PARENT
+from security.constants import NOT_AVAILABLE, SECMETA_TYPE_PARENT, SECURITY_FINDING_DEFAULT, GITHUB_BASE_URL
+
 from security.alerts.models import Alert
 from security.issues.secmeta import render_secmeta
 from security.issues.templates import CHILD_BODY_TEMPLATE, PARENT_BODY_TEMPLATE
+
+
+def _new_window_link(text: str, url: str | None) -> str:
+    """Wrap *text* in an HTML anchor that opens in a new window.
+
+    Returns plain *text* when *url* is empty or ``N/A``.
+    """
+    safe_text = html.escape(text or "", quote=False)
+    if url and url != NOT_AVAILABLE:
+        safe_url = html.escape(url, quote=True)
+        return f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_text}</a>'
+    return safe_text
 
 
 def _synthesize_references(alert: Alert) -> str:
@@ -53,7 +67,7 @@ def alert_extra_data(alert: Alert) -> dict[str, Any]:
         owasp = _synthesize_owasp(alert)
 
     return {
-        "rule": alert.metadata.rule_id,
+        "rule_id": alert.metadata.rule_id,
         "owasp": sanitize_markdown(normalize_bullet_list(owasp)),
         "category": alert.metadata.rule_name or NOT_AVAILABLE,
         "advisory_url": alert.metadata.help_uri or NOT_AVAILABLE,
@@ -70,10 +84,9 @@ def classify_category(alert: Alert) -> str:
     return alert.metadata.rule_name
 
 
-def build_parent_issue_title(rule_id: str, severity: str = "") -> str:
+def build_parent_issue_title(rule_id: str) -> str:
     """Build the title string for a parent issue."""
-    sev_tag = f"[{severity.upper()}] " if severity else ""
-    return f"{sev_tag}Security Alert – {rule_id}".strip()
+    return f"Security Alert – {rule_id}".strip()
 
 
 def build_parent_template_values(alert: Alert, *, rule_id: str, severity: str) -> dict[str, Any]:
@@ -116,14 +129,14 @@ def build_parent_issue_body(alert: Alert) -> str:
 
 def build_issue_title(
     rule_description: str | None,
-    rule_name: str | None,
-    rule_id: str,
     fingerprint: str,
+    severity: str = "",
 ) -> str:
     """Build the title string for a child issue."""
     prefix = fingerprint[:8] if fingerprint else NOT_AVAILABLE
-    summary = (rule_description or rule_name or rule_id or "Security finding").strip()
-    return f"[SEC][FP={prefix}] {summary}"
+    sev_tag = f":{severity.upper()}" if severity else ""
+    summary = (rule_description or SECURITY_FINDING_DEFAULT).strip()
+    return f"[SEC{sev_tag}][FP={prefix}] {summary}"
 
 
 def build_child_issue_body(alert: Alert) -> str:
@@ -166,15 +179,17 @@ def build_child_issue_body(alert: Alert) -> str:
     message = sanitize_markdown(alert.alert_details.message)
 
     category = classify_category(alert)
+    repository_link = _new_window_link(repo_full, f"{GITHUB_BASE_URL}/{repo_full}")
 
     values: dict[str, Any] = {
+        "severity": alert.metadata.severity,
         "category": category or NOT_AVAILABLE,
         "rule_id": alert.metadata.rule_id,
         "alert_hash": alert_hash,
         "title": title,
         "first_seen": iso_date(alert.alert_details.first_seen or alert.metadata.created_at),
         "message": message,
-        "repository_full_name": repo_full,
+        "repository_link": repository_link,
         "file_display": file_display,
         "file_permalink": file_permalink,
         "start_line": start_line_val,

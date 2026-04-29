@@ -48,15 +48,9 @@ def test_extra_data_from_nested() -> None:
     })
     extra = alert_extra_data(alert)
     assert isinstance(extra, dict)
-    assert extra["rule"] == "CVE-123"
+    assert extra["rule_id"] == "CVE-123"
     assert extra["confidence"] == "error"
     assert extra["category"] == "sast"
-
-
-def test_extra_data_non_cve() -> None:
-    """Non-CVE rule_id still appears as the rule field."""
-    alert = Alert.from_dict({"metadata": {"rule_id": "RULE-1", "rule_name": "sast"}, "rule_details": {}})
-    assert alert_extra_data(alert)["rule"] == "RULE-1"
 
 
 # =====================================================================
@@ -78,12 +72,8 @@ def test_classify_category(raw: dict, expected: str) -> None:
 # =====================================================================
 
 
-@pytest.mark.parametrize("severity, expected", [
-    ("high", "[HIGH] Security Alert \u2013 CVE-2026-25755"),
-    ("", "Security Alert \u2013 CVE-2026-25755"),
-], ids=["with_severity", "without_severity"])
-def test_build_parent_issue_title(severity: str, expected: str) -> None:
-    assert expected == build_parent_issue_title("CVE-2026-25755", severity)
+def test_build_parent_issue_title() -> None:
+    assert "Security Alert \u2013 CVE-2026-25755" == build_parent_issue_title("CVE-2026-25755")
 
 
 # =====================================================================
@@ -136,7 +126,7 @@ def test_all_template_keys_present(sast_alert: Alert) -> None:
 
 def test_extra_data_sub_keys(sast_alert: Alert) -> None:
     extra = build_parent_template_values(sast_alert, rule_id="test", severity="high")["extraData"]
-    required_extra = {"rule", "owasp", "category", "advisory_url", "impact", "likelihood", "confidence", "remediation", "references"}
+    required_extra = {"rule_id", "owasp", "category", "advisory_url", "impact", "likelihood", "confidence", "remediation", "references"}
     assert required_extra.issubset(extra.keys())
 
 
@@ -227,17 +217,16 @@ def test_parent_body_confidence(vuln_alert: Alert) -> None:
 # =====================================================================
 
 
-@pytest.mark.parametrize("description, rule_name, rule_id, fingerprint, expected", [
-    ("A description", "sast", "rule-123", "a1b2c3d4e5f6", "[SEC][FP=a1b2c3d4] A description"),
-    (None, "sast", "rule-123", "abcdef12", "[SEC][FP=abcdef12] sast"),
-    (None, None, "rule-123", "abcdef12", "[SEC][FP=abcdef12] rule-123"),
-    (None, None, "", "abcdef12", "[SEC][FP=abcdef12] Security finding"),
-    ("A description", "sast", "rule-123", "", "[SEC][FP=N/A] A description"),
-], ids=["full_format", "fallback_rule_name", "fallback_rule_id", "fallback_default", "empty_fingerprint"])
+@pytest.mark.parametrize("description, fingerprint, severity, expected", [
+    ("A description", "a1b2c3d4e5f6", "high", "[SEC:HIGH][FP=a1b2c3d4] A description"),
+    (None, "abcdef12", "medium", "[SEC:MEDIUM][FP=abcdef12] Security finding"),
+    (None, "abcdef12", "", "[SEC][FP=abcdef12] Security finding"),
+    ("A description", "", "critical", "[SEC:CRITICAL][FP=N/A] A description"),
+], ids=["full_format", "no_description_fallback", "no_severity", "empty_fingerprint"])
 def test_build_issue_title(
-    description: str | None, rule_name: str | None, rule_id: str, fingerprint: str, expected: str
+    description: str | None, fingerprint: str, severity: str, expected: str
 ) -> None:
-    assert expected == build_issue_title(description, rule_name, rule_id, fingerprint)
+    assert expected == build_issue_title(description, fingerprint, severity)
 
 
 # =====================================================================
@@ -256,7 +245,10 @@ def test_build_issue_title(
     "95",
     "False",
     "2025-09-17",
-], ids=["title", "alert_hash", "message", "repository", "scm_url", "target_line", "reachable", "first_seen"])
+    "**Severity:** high",
+    'target="_blank"',
+], ids=["title", "alert_hash", "message", "repository", "scm_url", "target_line", "reachable", "first_seen",
+        "severity", "new_window_links"])
 def test_sast_child_body_contains(sast_alert: Alert, expected: str) -> None:
     assert expected in build_child_issue_body(sast_alert)
 

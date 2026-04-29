@@ -16,6 +16,7 @@
 
 """Issue title / body construction from Alert dataclasses."""
 
+import html
 from typing import Any
 
 from core.helpers import iso_date, normalize_bullet_list, sanitize_markdown
@@ -33,9 +34,11 @@ def _new_window_link(text: str, url: str | None) -> str:
 
     Returns plain *text* when *url* is empty or ``N/A``.
     """
+    safe_text = html.escape(text or "", quote=False)
     if url and url != NOT_AVAILABLE:
-        return f'<a href="{url}" target="_blank">{text}</a>'
-    return text
+        safe_url = html.escape(url, quote=True)
+        return f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_text}</a>'
+    return safe_text
 
 
 def _synthesize_references(alert: Alert) -> str:

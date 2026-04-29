@@ -21,6 +21,16 @@ name: AquaSec Scan
 on:
   workflow_call:
     inputs:
+      dry-run:
+        description: >
+          Simulate the issue management side of the workflow without making any persistent changes.
+          The AquaSec scan and SARIF upload run normally so alerts are fresh.
+          Issue creation, updates, labelling, sub-issue linking, and Teams notifications are
+          skipped; all actions that would have been taken are logged in the workflow output instead.
+        required: false
+        type: boolean
+        default: false
+
       verbose-logging:
         description: 'Enable verbose logging for AquaSec scan'
         required: false
@@ -132,4 +142,4 @@ jobs:
           PROJECT_NUMBER: ${{ inputs.project-number }}
           PROJECT_ORG: ${{ inputs.project-org }}
         run: |
-          python3 org-workflows/src/security/main.py
+          python3 org-workflows/src/security/main.py ${{ inputs.dry-run && '--dry-run' || '' }}

@@ -31,7 +31,7 @@ PARENT_BODY_TEMPLATE = """## General Information
 
 ## Classification
 
-- **Rule:** {{ extraData.rule }}
+- **Rule:** {{ extraData.rule_id }}
 - **Category:** {{ extraData.category }}
 - **Advisory URL:** {{ extraData.advisory_url }}
 
@@ -60,6 +60,7 @@ PARENT_BODY_TEMPLATE = """## General Information
 
 CHILD_BODY_TEMPLATE = """## General Information
 
+- **Severity:** {{ severity }}
 - **Title:** {{ title }}
 - **Category:** {{ category }}
 - **Rule:** {{ rule_id }}
@@ -72,7 +73,7 @@ CHILD_BODY_TEMPLATE = """## General Information
 
 ## Location
 
-- **Repository:** {{ repository_full_name }}
+- **Repository:** {{ repository_link }}
 - **File:** [{{ file_display }}]({{ file_permalink }})
 - **Start Line:** {{ start_line }}
 - **End Line:** {{ end_line }}

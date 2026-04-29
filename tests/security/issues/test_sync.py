@@ -483,7 +483,7 @@ def test_sync_title_already_correct(mocker: MockerFixture) -> None:
     """Title is not updated when it matches the expected format."""
     mock_labels = mocker.patch("security.issues.sync.gh_issue_add_labels")
     from security.issues.builder import build_issue_title
-    title = build_issue_title("Test finding description", "sast", "CVE-2026-1234", "fp_test_123")
+    title = build_issue_title("Test finding description", "fp_test_123", "high")
     issue = Issue(number=1, state="open", title=title, body="b")
     ctx = _make_alert_context(rule_name="sast", rule_id="CVE-2026-1234", fingerprint="fp_test_123")
     sync = _make_sync_context()

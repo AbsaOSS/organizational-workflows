@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       dry-run:
-        description: Simulate the workflow without making any persistent changes.
+        description: Enable Dry Run mode
         required: false
         type: boolean
         default: false

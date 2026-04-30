@@ -93,7 +93,7 @@ def load_open_alerts_from_file(path: str) -> LoadedAlerts:
 
     repo_meta = data.get("repo") or {}
 
-    repo_full = str(repo_meta.get("full_name"))
+    repo_full = repo_meta.get("full_name") or ""
     if not repo_full:
         raise SystemExit(f"ERROR: repo.full_name not found in {path}")
 

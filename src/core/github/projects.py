@@ -24,6 +24,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from security.constants import DRY_RUN_PREFIX
 from .client import run_gh
 from ..priority import resolve_priority
 
@@ -279,8 +280,10 @@ class ProjectPrioritySync:
 
         if self.dry_run:
             logging.info(
-                f"DRY-RUN: would set Priority={priority_value!r} on issue #{issue_number} "
-                f"in project #{self.project_number}"
+                DRY_RUN_PREFIX + "Would set Priority=%s on issue #%d in project %d",
+                priority_value,
+                issue_number,
+                self.project_number,
             )
             return
 

@@ -93,16 +93,14 @@ def load_open_alerts_from_file(path: str) -> LoadedAlerts:
 
     repo_meta = data.get("repo") or {}
 
-    repo_full = repo_meta.get("full_name")
+    repo_full = str(repo_meta.get("full_name"))
     if not repo_full:
         raise SystemExit(f"ERROR: repo.full_name not found in {path}")
 
-    repo_full = str(repo_full)
     alerts = data.get("alerts", [])
-    logging.info(f"Loaded {len(alerts)} alerts from {path} (repo={repo_full})")
+    logging.debug("Loaded %d security alert/s from %s", len(alerts), path)
 
     open_alerts = [a for a in alerts if str(a.get("metadata", {}).get("state", "")).lower() == "open"]
-    logging.info(f"Found {len(open_alerts)} open alerts")
 
     open_by_number: dict[int, Alert] = {}
     for raw in open_alerts:

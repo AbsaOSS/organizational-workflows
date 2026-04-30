@@ -41,10 +41,12 @@ from core.rendering import render_markdown_template, strip_na_sections
 
 from security.alerts.models import Alert
 from security.constants import (
+    DRY_RUN_PREFIX,
     LABEL_EPIC,
     LABEL_SCOPE_SECURITY,
     LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
+    LOGGING_PREFIX,
     SECMETA_TYPE_CHILD,
     SECMETA_TYPE_PARENT,
 )
@@ -56,7 +58,7 @@ from .builder import (
     build_parent_template_values,
     classify_category,
 )
-from .models import AlertContext, IssueIndex, NotifiedIssue, SeverityChange, SyncContext, SyncResult
+from .models import AlertContext, IssueIndex, NotifiedIssue, SeverityChange, SyncContext, SyncResult, SyncStats
 from .secmeta import json_list, load_secmeta, parse_json_list, render_secmeta
 from .templates import PARENT_BODY_TEMPLATE
 
@@ -116,11 +118,9 @@ def maybe_reopen_parent_issue(
 
     if dry_run:
         logging.info(
-            "DRY-RUN: would reopen parent issue #%d (rule_id=%s) due_to=%s child=%s",
+            DRY_RUN_PREFIX + "Would reopen parent issue #%d %s",
             parent_issue.number,
             rule_id,
-            context,
-            child_issue_number or "",
         )
         parent_issue.state = "open"
         return
@@ -134,6 +134,7 @@ def _close_resolved_parent_issues(
     index: IssueIndex,
     *,
     dry_run: bool,
+    stats: SyncStats,
 ) -> None:
     """Close open parent issues whose known child issues are all closed."""
     child_issues_by_rule_id: dict[str, list[Issue]] = {}
@@ -170,22 +171,19 @@ def _close_resolved_parent_issues(
 
         if dry_run:
             logging.info(
-                "DRY-RUN: would close parent issue #%d (rule_id=%s) because all %d child issue(s) are closed",
+                DRY_RUN_PREFIX + "Would close parent issue #%d (all children resolved)",
                 parent_issue.number,
-                rule_id,
-                len(child_issues),
             )
-            parent_issue.state = "closed"
+            stats.parents_closed += 1
             continue
 
         if gh_issue_edit_state(repo, parent_issue.number, "closed"):
             logging.info(
-                "Closed parent issue #%d (rule_id=%s) because all %d child issue(s) are closed",
+                LOGGING_PREFIX + "Closed parent issue #%d (all children resolved)",
                 parent_issue.number,
-                rule_id,
-                len(child_issues),
             )
             parent_issue.state = "closed"
+            stats.parents_closed += 1
 
 
 def ensure_parent_issue(
@@ -198,6 +196,7 @@ def ensure_parent_issue(
     priority_sync: ProjectPrioritySync | None = None,
     severity_changes: list[SeverityChange] | None = None,
     parent_original_bodies: dict[int, tuple[str, str]] | None = None,
+    stats: SyncStats | None = None,
 ) -> Issue | None:
     """Find or create the parent issue for the alert's ``rule_id``."""
     rule_id = alert.metadata.rule_id
@@ -225,9 +224,8 @@ def ensure_parent_issue(
             )
             if dry_run:
                 logging.info(
-                    "DRY-RUN: severity change on parent #%d (rule_id=%s): %s - %s",
+                    DRY_RUN_PREFIX + "Severity changed on parent #%d: %s → %s",
                     existing.number,
-                    rule_id,
                     existing_severity_cmp,
                     incoming_severity_cmp,
                 )
@@ -268,14 +266,18 @@ def ensure_parent_issue(
         if expected_title != (existing.title or ""):
             if dry_run:
                 logging.info(
-                    "DRY-RUN: would update parent issue #%d title from %r to %r",
-                    existing.number,
-                    existing.title,
-                    expected_title,
+                    DRY_RUN_PREFIX + "Would update parent issue #%d title to: %s", existing.number, expected_title
                 )
+                if stats is not None:
+                    stats.parents_title_updated += 1
             else:
                 if gh_issue_edit_title(repo_full, existing.number, expected_title):
                     existing.title = expected_title
+                    logging.info(
+                        LOGGING_PREFIX + "Updated parent issue #%d title to: %s", existing.number, expected_title
+                    )
+                    if stats is not None:
+                        stats.parents_title_updated += 1
 
         if priority_sync is not None:
             priority_sync.enqueue(repo_full, existing.number, severity_stored, severity_priority_map or {})
@@ -286,11 +288,17 @@ def ensure_parent_issue(
     body = build_parent_issue_body(alert)
     labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT, LABEL_EPIC]
     if dry_run:
-        logging.info("DRY-RUN: create parent rule_id=%s title=%r labels=%s", rule_id, title, labels)
+        logging.info(
+            DRY_RUN_PREFIX + "Would create parent issue for rule %s (severity: %s)",
+            rule_id,
+            alert.metadata.severity,
+        )
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             logging.debug("DRY-RUN: body_preview_begin")
             logging.debug(body)
             logging.debug("DRY-RUN: body_preview_end")
+        if stats is not None:
+            stats.parents_created += 1
         return None
 
     num = gh_issue_create(repo_full, title, body, labels)
@@ -300,7 +308,9 @@ def ensure_parent_issue(
     created = Issue(number=num, state="open", title=title, body=body)
     issues[num] = created
     index.parent_by_rule_id[rule_id] = created
-    logging.info("Created parent issue #%d for rule_id=%s", num, rule_id)
+    logging.info(LOGGING_PREFIX + "Created parent issue #%d for rule %s", num, rule_id)
+    if stats is not None:
+        stats.parents_created += 1
 
     if priority_sync is not None:
         priority_sync.enqueue(
@@ -359,36 +369,25 @@ def _handle_new_child_issue(
     title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
 
     if sync.dry_run:
-        labels = [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT]
-
-        loc = f"{ctx.path}:{ctx.start_line or ''}".rstrip(":")
-        commit_short = ctx.commit_sha[:8] if ctx.commit_sha else ""
-        logging.info(
-            "DRY-RUN: create child alert=%d rule_id=%s sev=%s"
-            " fp=%s tool=%s commit=%s loc=%s title=%r labels=[%s] gh_alert_numbers=[%d]",
-            ctx.alert_number,
-            ctx.rule_id,
-            ctx.severity,
-            ctx.fingerprint[:8],
-            ctx.tool,
-            commit_short,
-            loc,
-            title,
-            ",".join(labels),
-            ctx.alert_number,
-        )
-        if parent_issue is None and ctx.rule_id:
+        if parent_issue is not None:
             logging.info(
-                "DRY-RUN: add sub-issue link parent_rule_id=%s child=(new) alert=%d",
+                DRY_RUN_PREFIX + "Would create child issue for alert %d (rule: %s, severity: %s) linked to parent #%d",
+                ctx.alert_number,
                 ctx.rule_id,
-                ctx.alert_number,
-            )
-        elif parent_issue is not None:
-            logging.info(
-                "DRY-RUN: add sub-issue link parent=#%d child=(new) alert=%d",
+                ctx.severity,
                 parent_issue.number,
-                ctx.alert_number,
             )
+            sync.stats.children_linked += 1
+        else:
+            logging.info(
+                DRY_RUN_PREFIX + "Would create child issue for alert %d (rule: %s, severity: %s)",
+                ctx.alert_number,
+                ctx.rule_id,
+                ctx.severity,
+            )
+            if ctx.rule_id:
+                logging.debug("No parent issue yet for rule_id=%s – link will happen on next sync", ctx.rule_id)
+        sync.stats.children_created += 1
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             logging.debug("DRY-RUN: body_preview_begin")
             logging.debug(body)
@@ -411,7 +410,8 @@ def _handle_new_child_issue(
     if num is None:
         return
 
-    logging.info("Created issue #%d for alert %d (fp=%s)", num, ctx.alert_number, ctx.fingerprint[:8])
+    logging.info(LOGGING_PREFIX + "Created child issue #%d for alert %d", num, ctx.alert_number)
+    sync.stats.children_created += 1
     created = Issue(number=num, state="open", title=title, body=body)
     sync.issues[num] = created
     sync.index.by_fingerprint[ctx.fingerprint] = created
@@ -435,7 +435,7 @@ def _handle_new_child_issue(
             context="new_child",
             child_issue_number=num,
         )
-        logging.info("Add sub-issue link parent=#%d child=#%d (alert %d)", parent_issue.number, num, ctx.alert_number)
+        logging.debug("Add sub-issue link parent=#%d child=#%d (alert %d)", parent_issue.number, num, ctx.alert_number)
         gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num)
 
     if sync.priority_sync is not None:
@@ -449,13 +449,13 @@ def _remove_adept_to_close_label(repo: str, issue: Issue, *, dry_run: bool) -> N
 
     if dry_run:
         logging.info(
-            "DRY-RUN: would remove label %r from issue #%d",
+            DRY_RUN_PREFIX + "Would remove label %r from issue #%d",
             LABEL_SEC_ADEPT_TO_CLOSE,
             issue.number,
         )
     else:
         logging.info(
-            "Security - Removing label %r from reopened issue #%d",
+            LOGGING_PREFIX + "Removed label %r from reopened issue #%d",
             LABEL_SEC_ADEPT_TO_CLOSE,
             issue.number,
         )
@@ -481,12 +481,13 @@ def _maybe_reopen_child(
     reopened = False
     if sync.dry_run:
         reopened = True
-        logging.info("DRY-RUN: would reopen issue #%d (alert %d)", issue.number, ctx.alert_number)
+        logging.info(DRY_RUN_PREFIX + "Would reopen issue #%d", issue.number)
     elif gh_issue_edit_state(ctx.repo, issue.number, "open"):
         reopened = True
-        logging.info("Reopened issue #%d (alert %d)", issue.number, ctx.alert_number)
+        logging.info(LOGGING_PREFIX + "Reopened issue #%d", issue.number)
 
     if reopened:
+        sync.stats.children_reopened += 1
         _remove_adept_to_close_label(ctx.repo, issue, dry_run=sync.dry_run)
         maybe_reopen_parent_issue(
             ctx.repo,
@@ -555,14 +556,16 @@ def _rebuild_and_apply_child_body(
 
     if new_body != issue.body:
         if sync.dry_run:
-            logging.info("DRY-RUN: would update issue #%d body to template (alert %d)", issue.number, ctx.alert_number)
+            logging.info(DRY_RUN_PREFIX + "Would update child issue #%d body", issue.number)
             if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug("DRY-RUN: body_preview_begin")
+                logging.debug("DRY-RUN: Body preview begin child issue #%d", issue.number)
                 logging.debug(new_body)
-                logging.debug("DRY-RUN: body_preview_end")
+                logging.debug("DRY-RUN: Body preview end child issue #%d", issue.number)
         else:
             gh_issue_edit_body(ctx.repo, issue.number, new_body)
             issue.body = new_body
+            logging.info(LOGGING_PREFIX + "Updated child issue #%d body", issue.number)
+        sync.stats.children_body_updated += 1
 
 
 def _sync_child_title_and_labels(
@@ -575,24 +578,14 @@ def _sync_child_title_and_labels(
     expected_title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
     if expected_title != (issue.title or ""):
         if sync.dry_run:
-            logging.info(
-                "DRY-RUN: would update issue #%d title from %r to %r",
-                issue.number,
-                issue.title,
-                expected_title,
-            )
+            logging.info(DRY_RUN_PREFIX + "Would update child issue #%d title to: %s", issue.number, expected_title)
         else:
             if gh_issue_edit_title(ctx.repo, issue.number, expected_title):
                 issue.title = expected_title
+                logging.info(LOGGING_PREFIX + "Updated child issue #%d title to: %s", issue.number, expected_title)
+        sync.stats.children_title_updated += 1
 
-    if sync.dry_run:
-        logging.info(
-            "DRY-RUN: would ensure labels on issue #%d: [%s, %s]",
-            issue.number,
-            LABEL_SCOPE_SECURITY,
-            LABEL_TYPE_TECH_DEBT,
-        )
-    else:
+    if not sync.dry_run:
         gh_issue_add_labels(ctx.repo, issue.number, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
 
     if sync.priority_sync is not None:
@@ -616,22 +609,22 @@ def _ensure_child_linked_to_parent(
 
     if sync.dry_run:
         logging.info(
-            "DRY-RUN: would add missing sub-issue link parent=#%d child=#%d (rule_id=%s)",
-            parent_issue.number,
+            DRY_RUN_PREFIX + "Would link child issue #%d to parent #%d",
             issue.number,
-            ctx.rule_id,
+            parent_issue.number,
         )
         cache[parent_issue.number].add(issue.number)
+        sync.stats.children_linked += 1
         return
 
     logging.info(
-        "Adding missing sub-issue link parent=#%d child=#%d (rule_id=%s)",
-        parent_issue.number,
+        LOGGING_PREFIX + "Linked child issue #%d to parent #%d",
         issue.number,
-        ctx.rule_id,
+        parent_issue.number,
     )
     if gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, issue.number):
         cache[parent_issue.number].add(issue.number)
+        sync.stats.children_linked += 1
 
 
 def _handle_existing_child_issue(
@@ -697,6 +690,7 @@ def ensure_issue(
         priority_sync=sync.priority_sync,
         severity_changes=severity_changes,
         parent_original_bodies=parent_original_bodies,
+        stats=sync.stats,
     )
     matched = find_issue_in_index(
         sync.index,
@@ -762,6 +756,7 @@ def _flush_parent_body_updates(
     issues: dict[int, Issue],
     *,
     dry_run: bool,
+    stats: SyncStats,
 ) -> None:
     """Write deferred parent-issue body updates to GitHub."""
     for num, (repo, original_body) in parent_original_bodies.items():
@@ -770,20 +765,23 @@ def _flush_parent_body_updates(
             continue
         if issue.body != original_body:
             if dry_run:
-                logging.info("DRY-RUN: would update parent issue #%d body to template", num)
+                logging.info(DRY_RUN_PREFIX + "Would update parent issue #%d body", num)
                 if logging.getLogger().isEnabledFor(logging.DEBUG):
-                    logging.debug("DRY-RUN: body_preview_begin")
+                    logging.debug("DRY-RUN: Body preview begin parent issue #%d", num)
                     logging.debug(issue.body)
-                    logging.debug("DRY-RUN: body_preview_end")
+                    logging.debug("DRY-RUN: Body preview end parent issue #%d", num)
             else:
                 gh_issue_edit_body(repo, num, issue.body)
+                logging.info(LOGGING_PREFIX + "Updated parent issue #%d body", num)
+            stats.parents_body_updated += 1
 
 
-def _label_orphan_issues(
+def _label_adept_to_close_issues(
     alerts: dict[int, Alert],
     index: IssueIndex,
     *,
     dry_run: bool,
+    stats: SyncStats,
 ) -> None:
     """Detect open child issues with no matching alert and add the adept-to-close label."""
     alert_fingerprints: set[str] = set()
@@ -793,23 +791,23 @@ def _label_orphan_issues(
             alert_fingerprints.add(fp)
 
     open_issue_fps = {fp for fp, issue in index.by_fingerprint.items() if issue.state.lower() == "open"}
-    orphan_fps = open_issue_fps - alert_fingerprints
+    unmatched_fps = open_issue_fps - alert_fingerprints
 
-    if not orphan_fps:
-        logging.debug("No orphan child issues detected \u2013 skipping sec:adept-to-close labelling")
+    if not unmatched_fps:
+        logging.debug("No unmatched child issues – skipping adept-to-close labelling")
         return
 
-    logging.info("Detected %d orphan child issue(s) (open issue without matching alert)", len(orphan_fps))
+    logging.info(LOGGING_PREFIX + "Detected %d child issue/s with no matching alert", len(unmatched_fps))
 
-    for fp in orphan_fps:
+    for fp in unmatched_fps:
         issue = index.by_fingerprint[fp]
         repo = load_secmeta(issue.body).get("repo", "")
         if not repo:
-            logging.debug("Skip orphan labelling for issue #%d: no repo in secmeta", issue.number)
+            logging.debug("Skipping adept-to-close labelling for issue #%d: no repo in secmeta", issue.number)
             continue
         if issue.labels and LABEL_SEC_ADEPT_TO_CLOSE in issue.labels:
             logging.debug(
-                "Label %r already on issue #%d (fingerprint=%s\u2026) \u2013 skipping",
+                "Label %r already on issue #%d (fingerprint=%s…) – skipping",
                 LABEL_SEC_ADEPT_TO_CLOSE,
                 issue.number,
                 fp[:12],
@@ -817,19 +815,16 @@ def _label_orphan_issues(
             continue
         if dry_run:
             logging.info(
-                "DRY-RUN: would add label %r to issue #%d (fingerprint=%s\u2026) \u2013 no matching open alert",
-                LABEL_SEC_ADEPT_TO_CLOSE,
+                DRY_RUN_PREFIX + "Would mark issue #%d for closure (no matching alert)",
                 issue.number,
-                fp[:12],
             )
         else:
             logging.info(
-                "Adding label %r to issue #%d (fingerprint=%s\u2026) \u2013 no matching open alert",
-                LABEL_SEC_ADEPT_TO_CLOSE,
+                LOGGING_PREFIX + "Marked issue #%d for closure (no matching alert)",
                 issue.number,
-                fp[:12],
             )
             gh_issue_add_labels(repo, issue.number, [LABEL_SEC_ADEPT_TO_CLOSE])
+        stats.children_marked_for_closure += 1
 
 
 def sync_alerts_and_issues(
@@ -874,12 +869,54 @@ def sync_alerts_and_issues(
             parent_original_bodies=parent_original_bodies,
         )
 
-    _flush_parent_body_updates(parent_original_bodies, issues, dry_run=dry_run)
+    _flush_parent_body_updates(parent_original_bodies, issues, dry_run=dry_run, stats=sync.stats)
 
     if priority_sync is not None:
         priority_sync.flush()
 
-    _label_orphan_issues(alerts, index, dry_run=dry_run)
-    _close_resolved_parent_issues(issues, index, dry_run=dry_run)
+    _label_adept_to_close_issues(alerts, index, dry_run=dry_run, stats=sync.stats)
+    _close_resolved_parent_issues(issues, index, dry_run=dry_run, stats=sync.stats)
+
+    _log_sync_summary(sync.stats, dry_run=dry_run)
 
     return SyncResult(notifications=notifications, severity_changes=severity_changes)
+
+
+def _log_sync_summary(stats: SyncStats, *, dry_run: bool) -> None:
+    """Log a compact multi-line summary of the completed sync run."""
+    prefix = DRY_RUN_PREFIX if dry_run else LOGGING_PREFIX
+
+    parent_parts: list[str] = []
+    if stats.parents_created:
+        parent_parts.append(f"created: {stats.parents_created}")
+    if stats.parents_title_updated:
+        parent_parts.append(f"title updated: {stats.parents_title_updated}")
+    if stats.parents_body_updated:
+        parent_parts.append(f"body updated: {stats.parents_body_updated}")
+    if stats.parents_closed:
+        parent_parts.append(f"closed: {stats.parents_closed}")
+
+    child_parts: list[str] = []
+    if stats.children_created:
+        child_parts.append(f"created: {stats.children_created}")
+    if stats.children_reopened:
+        child_parts.append(f"reopened: {stats.children_reopened}")
+    if stats.children_title_updated:
+        child_parts.append(f"title updated: {stats.children_title_updated}")
+    if stats.children_body_updated:
+        child_parts.append(f"body updated: {stats.children_body_updated}")
+    if stats.children_linked:
+        child_parts.append(f"linked: {stats.children_linked}")
+    if stats.children_marked_for_closure:
+        child_parts.append(f"marked for closure: {stats.children_marked_for_closure}")
+
+    if not parent_parts and not child_parts:
+        logging.info(prefix + "Sync complete: no changes")
+        return
+
+    lines = [prefix + "Sync complete:"]
+    if parent_parts:
+        lines.append("  [DRY-RUN] Parent issues - " + ", ".join(parent_parts))
+    if child_parts:
+        lines.append("  [DRY-RUN] Child issues  - " + ", ".join(child_parts))
+    logging.info("\n".join(lines))

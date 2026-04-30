@@ -18,6 +18,7 @@
 orchestration functions with mocked GitHub CLI calls.
 """
 
+import logging
 from typing import Any
 
 import pytest
@@ -32,7 +33,8 @@ from security.issues.sync import (
     _handle_existing_child_issue,
     _handle_new_child_issue,
     _init_priority_sync,
-    _label_orphan_issues,
+    _label_adept_to_close_issues,
+    _log_sync_summary,
     _maybe_reopen_child,
     _merge_child_secmeta,
     _rebuild_and_apply_child_body,
@@ -53,6 +55,7 @@ from security.issues.models import (
     NotifiedIssue,
     SeverityChange,
     SyncContext,
+    SyncStats,
 )
 from security.issues.secmeta import render_secmeta
 
@@ -529,6 +532,17 @@ def test_handle_new_child_dry_run(sast_alert: Alert) -> None:
     assert notifications[0].issue_number == 0
 
 
+def test_handle_new_child_dry_run_with_parent_increments_linked(sast_alert: Alert) -> None:
+    """Dry-run with a parent increments children_linked alongside children_created."""
+    parent = Issue(number=7, state="open", title="P", body="pb")
+    ctx = _make_alert_context(alert=sast_alert)
+    notifications: list[NotifiedIssue] = []
+    sync = _make_sync_context(dry_run=True, notifications=notifications)
+    _handle_new_child_issue(ctx=ctx, sync=sync, parent_issue=parent)
+    assert 1 == sync.stats.children_created
+    assert 1 == sync.stats.children_linked
+
+
 def test_handle_new_child_links_to_parent(mocker: MockerFixture, sast_alert: Alert) -> None:
     """When a parent issue exists, the child is linked as a sub-issue."""
     mocker.patch("security.issues.sync.gh_issue_create", return_value=42)
@@ -716,8 +730,25 @@ def test_ensure_parent_title_drift_corrected(mocker: MockerFixture, sast_alert: 
     parent.title = "Wrong old title"
     issues = {10: parent}
     index = build_issue_index(issues)
-    ensure_parent_issue(sast_alert, issues, index, dry_run=False)
+    stats = SyncStats()
+    ensure_parent_issue(sast_alert, issues, index, dry_run=False, stats=stats)
     mock_title.assert_called_once()
+    assert 1 == stats.parents_title_updated
+
+
+def test_ensure_parent_title_drift_dry_run(sast_alert: Alert) -> None:
+    """Dry-run increments parents_title_updated without calling the API."""
+    parent = _issue_with_secmeta(10, {
+        "type": "parent",
+        "rule_id": sast_alert.metadata.rule_id,
+        "severity": "high",
+    })
+    parent.title = "Wrong old title"
+    issues = {10: parent}
+    index = build_issue_index(issues)
+    stats = SyncStats()
+    ensure_parent_issue(sast_alert, issues, index, dry_run=True, stats=stats)
+    assert 1 == stats.parents_title_updated
 
 
 # =====================================================================
@@ -730,7 +761,7 @@ def test_flush_writes_changed_bodies(mocker: MockerFixture) -> None:
     mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_body")
     issue = Issue(number=1, state="open", title="T", body="new body")
     bods = {1: ("org/repo", "old body")}
-    _flush_parent_body_updates(bods, {1: issue}, dry_run=False)
+    _flush_parent_body_updates(bods, {1: issue}, dry_run=False, stats=SyncStats())
     mock_edit.assert_called_once_with("org/repo", 1, "new body")
 
 
@@ -738,24 +769,24 @@ def test_flush_skips_unchanged() -> None:
     """Does not call API if body is unchanged."""
     issue = Issue(number=1, state="open", title="T", body="same body")
     bods = {1: ("org/repo", "same body")}
-    _flush_parent_body_updates(bods, {1: issue}, dry_run=False)
+    _flush_parent_body_updates(bods, {1: issue}, dry_run=False, stats=SyncStats())
 
 
 def test_flush_dry_run() -> None:
     """Dry-run logs instead of calling API."""
     issue = Issue(number=1, state="open", title="T", body="new body")
     bods = {1: ("org/repo", "old body")}
-    _flush_parent_body_updates(bods, {1: issue}, dry_run=True)
+    _flush_parent_body_updates(bods, {1: issue}, dry_run=True, stats=SyncStats())
 
 
 def test_flush_missing_issue() -> None:
     """Skips silently if issue is no longer in the dict."""
     bods = {99: ("org/repo", "old body")}
-    _flush_parent_body_updates(bods, {}, dry_run=False)
+    _flush_parent_body_updates(bods, {}, dry_run=False, stats=SyncStats())
 
 
 # =====================================================================
-# _label_orphan_issues
+# _label_adept_to_close_issues
 # =====================================================================
 
 
@@ -767,7 +798,7 @@ def test_label_orphan_no_orphans() -> None:
         100: Alert.from_dict(
             {"metadata": {"state": "open"}, "alert_details": {"alert_hash": "fp1"}, "rule_details": {}}),
     }
-    _label_orphan_issues(alerts, index, dry_run=False)
+    _label_adept_to_close_issues(alerts, index, dry_run=False, stats=SyncStats())
 
 
 def test_label_orphan_found(mocker: MockerFixture) -> None:
@@ -778,7 +809,7 @@ def test_label_orphan_found(mocker: MockerFixture) -> None:
     })
     index = build_issue_index({1: child})
     alerts: dict[int, Alert] = {}
-    _label_orphan_issues(alerts, index, dry_run=False)
+    _label_adept_to_close_issues(alerts, index, dry_run=False, stats=SyncStats())
     mock_labels.assert_called_once()
     label_args = mock_labels.call_args[0][2]
     assert "sec:adept-to-close" in label_args
@@ -790,7 +821,7 @@ def test_label_orphan_dry_run() -> None:
         "type": "child", "fingerprint": "fp_orphan", "repo": "org/repo",
     })
     index = build_issue_index({1: child})
-    _label_orphan_issues({}, index, dry_run=True)
+    _label_adept_to_close_issues({}, index, dry_run=True, stats=SyncStats())
 
 
 def test_label_orphan_skips_already_labelled() -> None:
@@ -800,16 +831,16 @@ def test_label_orphan_skips_already_labelled() -> None:
     })
     child.labels = ["sec:adept-to-close"]
     index = build_issue_index({1: child})
-    _label_orphan_issues({}, index, dry_run=False)
+    _label_adept_to_close_issues({}, index, dry_run=False, stats=SyncStats())
 
 
 def test_label_orphan_skips_closed_issues() -> None:
-    """Closed child issues are not labelled as orphans."""
+    """Closed child issues are not labelled as unmatched."""
     child = _issue_with_secmeta(1, {
         "type": "child", "fingerprint": "fp_orphan", "repo": "org/repo",
     }, state="closed")
     index = build_issue_index({1: child})
-    _label_orphan_issues({}, index, dry_run=False)
+    _label_adept_to_close_issues({}, index, dry_run=False, stats=SyncStats())
 
 
 def test_label_orphan_no_repo_in_secmeta() -> None:
@@ -818,7 +849,7 @@ def test_label_orphan_no_repo_in_secmeta() -> None:
         "type": "child", "fingerprint": "fp_orphan",
     })
     index = build_issue_index({1: child})
-    _label_orphan_issues({}, index, dry_run=False)
+    _label_adept_to_close_issues({}, index, dry_run=False, stats=SyncStats())
 
 
 # =====================================================================
@@ -841,7 +872,7 @@ def test_close_resolved_parent_issue(mocker: MockerFixture) -> None:
     issues = {10: parent, 11: child_one, 12: child_two}
     index = build_issue_index(issues)
 
-    _close_resolved_parent_issues(issues, index, dry_run=False)
+    _close_resolved_parent_issues(issues, index, dry_run=False, stats=SyncStats())
 
     mock_edit.assert_called_once_with("org/repo", 10, "closed")
     assert parent.state == "closed"
@@ -859,7 +890,7 @@ def test_close_resolved_parent_skips_open_child(mocker: MockerFixture) -> None:
     issues = {10: parent, 11: child}
     index = build_issue_index(issues)
 
-    _close_resolved_parent_issues(issues, index, dry_run=False)
+    _close_resolved_parent_issues(issues, index, dry_run=False, stats=SyncStats())
 
     mock_edit.assert_not_called()
     assert parent.state == "open"
@@ -1007,3 +1038,34 @@ def test_init_priority_sync_field_lookup_fails(mocker: MockerFixture) -> None:
         project_org="org", dry_run=False,
     )
     assert result is None
+
+
+# =====================================================================
+# _log_sync_summary
+# =====================================================================
+
+
+@pytest.mark.parametrize("dry_run,prefix", [
+    (False, "Security Alerts to Issues - "),
+    (True, "Security Alerts to Issues [DRY-RUN] - "),
+])
+def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefix: str) -> None:
+    """Summary emits correct prefix, grouped table, and collapses empty groups."""
+    # Empty stats → single "no changes" line with the right prefix
+    with caplog.at_level(logging.INFO):
+        _log_sync_summary(SyncStats(), dry_run=dry_run)
+    assert any(prefix in r.message and "no changes" in r.message for r in caplog.records)
+    caplog.clear()
+
+    # Full stats → grouped table; zero groups omitted
+    stats = SyncStats(
+        parents_created=2, parents_title_updated=1,
+        children_created=15, children_reopened=1, children_title_updated=2, children_body_updated=3,
+    )
+    with caplog.at_level(logging.INFO):
+        _log_sync_summary(stats, dry_run=dry_run)
+    messages = [r.message for r in caplog.records]
+    assert any(prefix in m and "Sync complete:" in m for m in messages)
+    assert any("Parent issues" in m and "created: 2" in m and "title updated: 1" in m for m in messages)
+    assert any("Child issues" in m and "created: 15" in m and "reopened: 1" in m and "title updated: 2" in m and "body updated: 3" in m for m in messages)
+    assert not any("linked" in m for m in messages)

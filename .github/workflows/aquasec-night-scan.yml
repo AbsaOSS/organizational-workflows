@@ -22,9 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       dry-run:
-        description: >
-          Simulate the workflow without making any persistent changes.
-          Intended actions are logged in the workflow output instead.
+        description: Simulate the workflow without making any persistent changes.
         required: false
         type: boolean
         default: false

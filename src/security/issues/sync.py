@@ -265,17 +265,15 @@ def ensure_parent_issue(
         expected_title = build_parent_issue_title(rule_id)
         if expected_title != (existing.title or ""):
             if dry_run:
-                logging.info(
-                    DRY_RUN_PREFIX + "Would update parent issue #%d title to: %s", existing.number, expected_title
-                )
+                logging.info(DRY_RUN_PREFIX + "Would update parent issue #%d title", existing.number)
+                logging.debug("DRY-RUN: Would update title for parent issue #%d to %s", existing.number, expected_title)
                 if stats is not None:
                     stats.parents_title_updated += 1
             else:
                 if gh_issue_edit_title(repo_full, existing.number, expected_title):
                     existing.title = expected_title
-                    logging.info(
-                        LOGGING_PREFIX + "Updated parent issue #%d title to: %s", existing.number, expected_title
-                    )
+                    logging.info(LOGGING_PREFIX + "Updated parent issue #%d title", existing.number)
+                    logging.debug("New updated title for parent issue #%d: %s", existing.number, expected_title)
                     if stats is not None:
                         stats.parents_title_updated += 1
 
@@ -578,11 +576,13 @@ def _sync_child_title_and_labels(
     expected_title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
     if expected_title != (issue.title or ""):
         if sync.dry_run:
-            logging.info(DRY_RUN_PREFIX + "Would update child issue #%d title to: %s", issue.number, expected_title)
+            logging.info(DRY_RUN_PREFIX + "Would update child issue #%d title", issue.number)
+            logging.debug("DRY-RUN: Would update title for child issue #%d to %s", issue.number, expected_title)
         else:
             if gh_issue_edit_title(ctx.repo, issue.number, expected_title):
                 issue.title = expected_title
-                logging.info(LOGGING_PREFIX + "Updated child issue #%d title to: %s", issue.number, expected_title)
+                logging.info(LOGGING_PREFIX + "Updated child issue #%d title", issue.number)
+                logging.debug("New updated title for child issue #%d: %s", issue.number, expected_title)
         sync.stats.children_title_updated += 1
 
     if not sync.dry_run:

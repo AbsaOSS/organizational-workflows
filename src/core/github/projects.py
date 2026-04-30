@@ -57,7 +57,7 @@ def _run_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[st
         args += ["-F", f"{k}={v}"]
     res = run_gh(args)
     if res.returncode != 0:
-        logging.warning(f"GraphQL call failed: {res.stderr}")
+        logging.warning("GraphQL call failed: %s", res.stderr.strip())
         return None
     try:
         return json.loads(res.stdout)

@@ -239,7 +239,7 @@ def test_reopen_parent_none(mocker: MockerFixture) -> None:
     """No-op when parent_issue is None — no gh call is made."""
     mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state")
     maybe_reopen_parent_issue(
-        "org/repo", None, rule_id="R1", dry_run=False, context="test",
+        "org/repo", None, rule_id="R1", dry_run=False, stats=SyncStats(),
     )
     mock_edit.assert_not_called()
 
@@ -248,7 +248,7 @@ def test_reopen_parent_already_open() -> None:
     """No-op when parent is already open."""
     parent = Issue(number=1, state="open", title="P", body="b")
     maybe_reopen_parent_issue(
-        "org/repo", parent, rule_id="R1", dry_run=False, context="test",
+        "org/repo", parent, rule_id="R1", dry_run=False, stats=SyncStats(),
     )
     assert parent.state == "open"
 
@@ -257,7 +257,7 @@ def test_reopen_parent_dry_run() -> None:
     """In dry-run mode, sets state to open without calling gh."""
     parent = Issue(number=1, state="closed", title="P", body="b")
     maybe_reopen_parent_issue(
-        "org/repo", parent, rule_id="R1", dry_run=True, context="test", child_issue_number=5,
+        "org/repo", parent, rule_id="R1", dry_run=True, stats=SyncStats(),
     )
     assert parent.state == "open"
 
@@ -267,7 +267,7 @@ def test_reopen_parent_real(mocker: MockerFixture) -> None:
     mock_edit_state = mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
     parent = Issue(number=1, state="closed", title="P", body="b")
     maybe_reopen_parent_issue(
-        "org/repo", parent, rule_id="R1", dry_run=False, context="reopen_child", child_issue_number=5,
+        "org/repo", parent, rule_id="R1", dry_run=False, stats=SyncStats(),
     )
     assert parent.state == "open"
     mock_edit_state.assert_called_once_with("org/repo", 1, "open")
@@ -278,7 +278,7 @@ def test_reopen_parent_gh_failure(mocker: MockerFixture) -> None:
     mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=False)
     parent = Issue(number=1, state="closed", title="P", body="b")
     maybe_reopen_parent_issue(
-        "org/repo", parent, rule_id="R1", dry_run=False, context="test",
+        "org/repo", parent, rule_id="R1", dry_run=False, stats=SyncStats(),
     )
     assert parent.state == "closed"
 

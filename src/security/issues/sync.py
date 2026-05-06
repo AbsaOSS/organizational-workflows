@@ -115,10 +115,9 @@ def maybe_reopen_parent_issue(
     *,
     rule_id: str,
     dry_run: bool,
-    context: str,
-    child_issue_number: int | None = None,
+    stats: SyncStats,
 ) -> None:
-    """Reopen *parent_issue* (if closed) and record a sec-event comment."""
+    """Reopen *parent_issue* (if closed)."""
     if parent_issue is None:
         return
 
@@ -132,10 +131,12 @@ def maybe_reopen_parent_issue(
             rule_id,
         )
         parent_issue.state = "open"
+        stats.parents_reopened += 1
         return
 
     if gh_issue_edit_state(repo, parent_issue.number, "open"):
         parent_issue.state = "open"
+        stats.parents_reopened += 1
 
 
 def _close_resolved_parent_issues(
@@ -434,8 +435,7 @@ def _handle_new_child_issue(
             parent_issue,
             rule_id=ctx.rule_id,
             dry_run=sync.dry_run,
-            context="new_child",
-            child_issue_number=num,
+            stats=sync.stats,
         )
         logging.debug("Add sub-issue link parent=#%d child=#%d (alert %d)", parent_issue.number, num, ctx.alert_number)
         gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num)
@@ -498,8 +498,7 @@ def _maybe_reopen_child(
             parent_issue,
             rule_id=ctx.rule_id,
             dry_run=sync.dry_run,
-            context="reopen_child",
-            child_issue_number=issue.number,
+            stats=sync.stats,
         )
         existing_secmeta = load_secmeta(issue.body)
         reopen_category = (existing_secmeta.get("category") or "").strip() or classify_category(ctx.alert)
@@ -584,12 +583,13 @@ def _sync_child_title_and_labels(
         if sync.dry_run:
             logging.info(DRY_RUN_PREFIX + "Would update child issue #%d title", issue.number)
             logging.debug("DRY-RUN: Would update title for child issue #%d to %s", issue.number, expected_title)
+            sync.stats.children_title_updated += 1
         else:
             if gh_issue_edit_title(ctx.repo, issue.number, expected_title):
                 issue.title = expected_title
                 logging.info(LOGGING_PREFIX + "Updated child issue #%d title", issue.number)
                 logging.debug("New updated title for child issue #%d: %s", issue.number, expected_title)
-        sync.stats.children_title_updated += 1
+                sync.stats.children_title_updated += 1
 
     if not sync.dry_run:
         gh_issue_add_labels(ctx.repo, issue.number, [LABEL_SCOPE_SECURITY, LABEL_TYPE_TECH_DEBT])
@@ -889,6 +889,8 @@ def _log_sync_summary(stats: SyncStats, *, dry_run: bool) -> None:
         parent_parts.append(f"title updated: {stats.parents_title_updated}")
     if stats.parents_body_updated:
         parent_parts.append(f"body updated: {stats.parents_body_updated}")
+    if stats.parents_reopened:
+        parent_parts.append(f"reopened: {stats.parents_reopened}")
     if stats.parents_closed:
         parent_parts.append(f"closed: {stats.parents_closed}")
 

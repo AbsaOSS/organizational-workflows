@@ -86,6 +86,7 @@ class SyncStats:
     parents_created: int = 0
     parents_title_updated: int = 0
     parents_body_updated: int = 0
+    parents_reopened: int = 0
     parents_closed: int = 0
     children_created: int = 0
     children_reopened: int = 0

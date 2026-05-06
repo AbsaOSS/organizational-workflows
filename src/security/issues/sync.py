@@ -58,7 +58,16 @@ from .builder import (
     build_parent_template_values,
     classify_category,
 )
-from .models import AlertContext, IssueIndex, NotifiedIssue, SeverityChange, SyncContext, SyncResult, SyncStats
+from .models import (
+    AlertContext,
+    IssueIndex,
+    NotifiedIssue,
+    ParentOriginalBodies,
+    SeverityChange,
+    SyncContext,
+    SyncResult,
+    SyncStats,
+)
 from .secmeta import json_list, load_secmeta, parse_json_list, render_secmeta
 from .templates import PARENT_BODY_TEMPLATE
 
@@ -194,9 +203,9 @@ def ensure_parent_issue(
     dry_run: bool,
     severity_priority_map: dict[str, str] | None = None,
     priority_sync: ProjectPrioritySync | None = None,
-    severity_changes: list[SeverityChange] | None = None,
-    parent_original_bodies: dict[int, tuple[str, str]] | None = None,
-    stats: SyncStats | None = None,
+    severity_changes: list[SeverityChange],
+    parent_original_bodies: ParentOriginalBodies,
+    stats: SyncStats,
 ) -> Issue | None:
     """Find or create the parent issue for the alert's ``rule_id``."""
     rule_id = alert.metadata.rule_id
@@ -229,8 +238,7 @@ def ensure_parent_issue(
                     existing_severity_cmp,
                     incoming_severity_cmp,
                 )
-            if severity_changes is not None:
-                severity_changes.append(change)
+            severity_changes.append(change)
 
         severity_stored = incoming_severity or existing_severity
 
@@ -257,7 +265,7 @@ def ensure_parent_issue(
 
         # Snapshot the original body on first encounter so we can
         # defer the API call until all alerts have been processed.
-        if parent_original_bodies is not None and existing.number not in parent_original_bodies:
+        if existing.number not in parent_original_bodies:
             parent_original_bodies[existing.number] = (repo_full, existing.body or "")
         existing.body = rebuilt
 
@@ -267,15 +275,13 @@ def ensure_parent_issue(
             if dry_run:
                 logging.info(DRY_RUN_PREFIX + "Would update parent issue #%d title", existing.number)
                 logging.debug("DRY-RUN: Would update title for parent issue #%d to %s", existing.number, expected_title)
-                if stats is not None:
-                    stats.parents_title_updated += 1
+                stats.parents_title_updated += 1
             else:
                 if gh_issue_edit_title(repo_full, existing.number, expected_title):
                     existing.title = expected_title
                     logging.info(LOGGING_PREFIX + "Updated parent issue #%d title", existing.number)
                     logging.debug("New updated title for parent issue #%d: %s", existing.number, expected_title)
-                    if stats is not None:
-                        stats.parents_title_updated += 1
+                    stats.parents_title_updated += 1
 
         if priority_sync is not None:
             priority_sync.enqueue(repo_full, existing.number, severity_stored, severity_priority_map or {})
@@ -295,8 +301,7 @@ def ensure_parent_issue(
             logging.debug("DRY-RUN: body_preview_begin")
             logging.debug(body)
             logging.debug("DRY-RUN: body_preview_end")
-        if stats is not None:
-            stats.parents_created += 1
+        stats.parents_created += 1
         return None
 
     num = gh_issue_create(repo_full, title, body, labels)
@@ -307,8 +312,7 @@ def ensure_parent_issue(
     issues[num] = created
     index.parent_by_rule_id[rule_id] = created
     logging.info(LOGGING_PREFIX + "Created parent issue #%d for rule %s", num, rule_id)
-    if stats is not None:
-        stats.parents_created += 1
+    stats.parents_created += 1
 
     if priority_sync is not None:
         priority_sync.enqueue(
@@ -650,9 +654,6 @@ def _handle_existing_child_issue(
 def ensure_issue(
     alert: Alert,
     sync: SyncContext,
-    *,
-    severity_changes: list[SeverityChange] | None = None,
-    parent_original_bodies: dict[int, tuple[str, str]] | None = None,
 ) -> None:
     """Process a single alert: create or update its child issue and parent."""
     alert_number = alert.metadata.alert_number
@@ -688,8 +689,8 @@ def ensure_issue(
         dry_run=sync.dry_run,
         severity_priority_map=sync.severity_priority_map,
         priority_sync=sync.priority_sync,
-        severity_changes=severity_changes,
-        parent_original_bodies=parent_original_bodies,
+        severity_changes=sync.severity_changes,
+        parent_original_bodies=sync.parent_original_bodies,
         stats=sync.stats,
     )
     matched = find_issue_in_index(
@@ -752,7 +753,7 @@ def _init_priority_sync(
 
 
 def _flush_parent_body_updates(
-    parent_original_bodies: dict[int, tuple[str, str]],
+    parent_original_bodies: ParentOriginalBodies,
     issues: dict[int, Issue],
     *,
     dry_run: bool,
@@ -839,10 +840,8 @@ def sync_alerts_and_issues(
     """Sync open alerts into issues."""
 
     notifications: list[NotifiedIssue] = []
-    severity_changes: list[SeverityChange] = []
     index = build_issue_index(issues)
     spm = severity_priority_map or {}
-    parent_original_bodies: dict[int, tuple[str, str]] = {}
 
     priority_sync = _init_priority_sync(
         alerts,
@@ -862,14 +861,9 @@ def sync_alerts_and_issues(
     )
 
     for alert in alerts.values():
-        ensure_issue(
-            alert,
-            sync,
-            severity_changes=severity_changes,
-            parent_original_bodies=parent_original_bodies,
-        )
+        ensure_issue(alert, sync)
 
-    _flush_parent_body_updates(parent_original_bodies, issues, dry_run=dry_run, stats=sync.stats)
+    _flush_parent_body_updates(sync.parent_original_bodies, issues, dry_run=dry_run, stats=sync.stats)
 
     if priority_sync is not None:
         priority_sync.flush()
@@ -879,7 +873,7 @@ def sync_alerts_and_issues(
 
     _log_sync_summary(sync.stats, dry_run=dry_run)
 
-    return SyncResult(notifications=notifications, severity_changes=severity_changes)
+    return SyncResult(notifications=notifications, severity_changes=sync.severity_changes)
 
 
 def _log_sync_summary(stats: SyncStats, *, dry_run: bool) -> None:

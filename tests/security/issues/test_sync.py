@@ -53,6 +53,7 @@ from security.issues.models import (
     AlertContext,
     IssueIndex,
     NotifiedIssue,
+    ParentOriginalBodies,
     SeverityChange,
     SyncContext,
     SyncStats,
@@ -641,7 +642,10 @@ def test_ensure_parent_creates_new(mocker: MockerFixture, sast_alert: Alert) -> 
     mock_create = mocker.patch("security.issues.sync.gh_issue_create", return_value=99)
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    result = ensure_parent_issue(sast_alert, issues, index, dry_run=False)
+    result = ensure_parent_issue(
+        sast_alert, issues, index, dry_run=False,
+        severity_changes=[], parent_original_bodies={}, stats=SyncStats(),
+    )
     assert result is not None
     assert result.number == 99
     mock_create.assert_called_once()
@@ -652,7 +656,10 @@ def test_ensure_parent_dry_run(sast_alert: Alert) -> None:
     """Dry-run does not create an issue, returns None."""
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    result = ensure_parent_issue(sast_alert, issues, index, dry_run=True)
+    result = ensure_parent_issue(
+        sast_alert, issues, index, dry_run=True,
+        severity_changes=[], parent_original_bodies={}, stats=SyncStats(),
+    )
     assert result is None
 
 
@@ -665,7 +672,10 @@ def test_ensure_parent_existing_returns_existing(sast_alert: Alert) -> None:
     })
     issues = {10: parent}
     index = build_issue_index(issues)
-    result = ensure_parent_issue(sast_alert, issues, index, dry_run=True)
+    result = ensure_parent_issue(
+        sast_alert, issues, index, dry_run=True,
+        severity_changes=[], parent_original_bodies={}, stats=SyncStats(),
+    )
     assert result is not None
     assert result.number == 10
 
@@ -680,7 +690,10 @@ def test_ensure_parent_severity_change_detected(sast_alert: Alert) -> None:
     issues = {10: parent}
     index = build_issue_index(issues)
     changes: list[SeverityChange] = []
-    ensure_parent_issue(sast_alert, issues, index, dry_run=True, severity_changes=changes)
+    ensure_parent_issue(
+        sast_alert, issues, index, dry_run=True,
+        severity_changes=changes, parent_original_bodies={}, stats=SyncStats(),
+    )
     assert len(changes) == 1
     assert changes[0].old_severity == "low"
     assert changes[0].new_severity == "high"
@@ -691,7 +704,10 @@ def test_ensure_parent_no_rule_id() -> None:
     alert = Alert.from_dict({"metadata": {"rule_id": ""}, "alert_details": {}, "rule_details": {}})
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    assert ensure_parent_issue(alert, issues, index, dry_run=False) is None
+    assert ensure_parent_issue(
+        alert, issues, index, dry_run=False,
+        severity_changes=[], parent_original_bodies={}, stats=SyncStats(),
+    ) is None
 
 
 def test_ensure_parent_create_fails(mocker: MockerFixture, sast_alert: Alert) -> None:
@@ -699,7 +715,10 @@ def test_ensure_parent_create_fails(mocker: MockerFixture, sast_alert: Alert) ->
     mocker.patch("security.issues.sync.gh_issue_create", return_value=None)
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    result = ensure_parent_issue(sast_alert, issues, index, dry_run=False)
+    result = ensure_parent_issue(
+        sast_alert, issues, index, dry_run=False,
+        severity_changes=[], parent_original_bodies={}, stats=SyncStats(),
+    )
     assert result is None
 
 
@@ -713,8 +732,11 @@ def test_ensure_parent_body_deferred(sast_alert: Alert) -> None:
     original_body = parent.body
     issues = {10: parent}
     index = build_issue_index(issues)
-    bods: dict[int, tuple[str, str]] = {}
-    ensure_parent_issue(sast_alert, issues, index, dry_run=True, parent_original_bodies=bods)
+    bods: ParentOriginalBodies = {}
+    ensure_parent_issue(
+        sast_alert, issues, index, dry_run=True,
+        severity_changes=[], parent_original_bodies=bods, stats=SyncStats(),
+    )
     assert 10 in bods
     assert bods[10][1] == original_body
 
@@ -731,7 +753,10 @@ def test_ensure_parent_title_drift_corrected(mocker: MockerFixture, sast_alert: 
     issues = {10: parent}
     index = build_issue_index(issues)
     stats = SyncStats()
-    ensure_parent_issue(sast_alert, issues, index, dry_run=False, stats=stats)
+    ensure_parent_issue(
+        sast_alert, issues, index, dry_run=False,
+        severity_changes=[], parent_original_bodies={}, stats=stats,
+    )
     mock_title.assert_called_once()
     assert 1 == stats.parents_title_updated
 
@@ -747,7 +772,10 @@ def test_ensure_parent_title_drift_dry_run(sast_alert: Alert) -> None:
     issues = {10: parent}
     index = build_issue_index(issues)
     stats = SyncStats()
-    ensure_parent_issue(sast_alert, issues, index, dry_run=True, stats=stats)
+    ensure_parent_issue(
+        sast_alert, issues, index, dry_run=True,
+        severity_changes=[], parent_original_bodies={}, stats=stats,
+    )
     assert 1 == stats.parents_title_updated
 
 

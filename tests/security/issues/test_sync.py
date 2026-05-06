@@ -389,6 +389,27 @@ def test_reopen_child_cascades_to_parent(mocker: MockerFixture) -> None:
     assert parent.state == "open"
 
 
+def test_reopen_child_dry_run_updates_state() -> None:
+    """Dry-run reopen sets issue.state to 'open' in memory."""
+    body = render_secmeta({"type": "child"}) + "\nbody"
+    issue = Issue(number=1, state="closed", title="T", body=body)
+    ctx = _make_alert_context()
+    sync = _make_sync_context(dry_run=True)
+    _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=None)
+    assert "open" == issue.state
+
+
+def test_reopen_child_real_updates_state(mocker: MockerFixture) -> None:
+    """Non-dry-run reopen sets issue.state to 'open' in memory."""
+    mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    body = render_secmeta({"type": "child"}) + "\nbody"
+    issue = Issue(number=5, state="closed", title="T", body=body)
+    ctx = _make_alert_context()
+    sync = _make_sync_context()
+    _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=None)
+    assert "open" == issue.state
+
+
 # _remove_adept_to_close_label
 
 def test_remove_adept_label_present(mocker: MockerFixture) -> None:
@@ -1025,6 +1046,26 @@ def test_sync_closes_parent_when_all_children_closed(mocker: MockerFixture) -> N
     assert result.notifications == []
     mock_edit.assert_called_once_with("org/repo", 10, "closed")
     assert parent.state == "closed"
+
+
+def test_sync_reopened_child_prevents_parent_close(sast_alert: Alert) -> None:
+    """Reopened child keeps parent open — resolved-parent check must not re-close it."""
+    rule_id = sast_alert.metadata.rule_id
+    fingerprint = sast_alert.alert_details.alert_hash
+    parent = _issue_with_secmeta(169, {
+        "type": "parent", "rule_id": rule_id, "repo": "test-org/test-repo",
+    }, state="closed")
+    child = _issue_with_secmeta(170, {
+        "type": "child", "rule_id": rule_id, "fingerprint": fingerprint, "repo": "test-org/test-repo",
+    }, state="closed")
+    issues = {169: parent, 170: child}
+
+    result = sync_alerts_and_issues({303: sast_alert}, issues, dry_run=True)
+
+    assert "open" == parent.state
+    assert "open" == child.state
+    assert len(result.notifications) == 1
+    assert result.notifications[0].state == "reopen"
 
 
 # =====================================================================

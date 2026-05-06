@@ -483,9 +483,11 @@ def _maybe_reopen_child(
     reopened = False
     if sync.dry_run:
         reopened = True
+        issue.state = "open"
         logging.info(DRY_RUN_PREFIX + "Would reopen issue #%d", issue.number)
     elif gh_issue_edit_state(ctx.repo, issue.number, "open"):
         reopened = True
+        issue.state = "open"
         logging.info(LOGGING_PREFIX + "Reopened issue #%d", issue.number)
 
     if reopened:

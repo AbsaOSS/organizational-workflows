@@ -31,7 +31,6 @@ from core.github.client import run_gh
 logger = logging.getLogger(__name__)
 
 VALID_STATES = {"open", "dismissed", "fixed", "all"}
-
 RULE_DETAIL_KEYS = [
     "Type",
     "Severity",
@@ -47,6 +46,7 @@ RULE_DETAIL_KEYS = [
     "OWASP",
     "References",
 ]
+MULTILINE_KEYS = {"references", "owasp"}
 
 
 def _snake_case(name: str) -> str:
@@ -59,12 +59,33 @@ def _help_value(rule_help: str | None, name: str) -> str | None:
     if not rule_help:
         return None
     m = re.search(rf"\*\*{re.escape(name)}:\*\*\s*([^\n\r]+)", rule_help, re.IGNORECASE)
-    return m.group(1) if m else None
+    return m.group(1).strip() if m else None
+
+
+def _help_multiline_value(rule_help: str | None, name: str) -> str | None:
+    """Extract a multi-line value from ``**Name:**`` markup in the rule help text."""
+    if not rule_help:
+        return None
+    m = re.search(
+        rf"\*\*{re.escape(name)}:\*\*[ \t]*([^\n\r]*(?:\n(?!\*\*[A-Za-z][\w\s]*?:\*\*)[^\n\r]*)*)",
+        rule_help,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return m.group(1).strip() or None
 
 
 def _parse_rule_details(rule_help: str | None) -> dict[str, str | None]:
     """Extract known rule detail fields from ``**Key:** value`` markup in rule help."""
-    return {_snake_case(key): _help_value(rule_help, key) for key in RULE_DETAIL_KEYS}
+    result: dict[str, str | None] = {}
+    for key in RULE_DETAIL_KEYS:
+        snake = _snake_case(key)
+        if snake in MULTILINE_KEYS:
+            result[snake] = _help_multiline_value(rule_help, key)
+        else:
+            result[snake] = _help_value(rule_help, key)
+    return result
 
 
 def _parse_alert_details(message_text: str) -> dict[str, str]:

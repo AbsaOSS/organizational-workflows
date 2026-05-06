@@ -48,15 +48,9 @@ def test_extra_data_from_nested() -> None:
     })
     extra = alert_extra_data(alert)
     assert isinstance(extra, dict)
-    assert extra["cve"] == "CVE-123"
+    assert extra["rule_id"] == "CVE-123"
     assert extra["confidence"] == "error"
     assert extra["category"] == "sast"
-
-
-def test_extra_data_non_cve() -> None:
-    """Non-CVE rule_id results in N/A for cve field."""
-    alert = Alert.from_dict({"metadata": {"rule_id": "RULE-1", "rule_name": "sast"}, "rule_details": {}})
-    assert alert_extra_data(alert)["cve"] == "N/A"
 
 
 # =====================================================================
@@ -78,12 +72,8 @@ def test_classify_category(raw: dict, expected: str) -> None:
 # =====================================================================
 
 
-@pytest.mark.parametrize("severity, expected", [
-    ("high", "[HIGH] Security Alert \u2013 CVE-2026-25755"),
-    ("", "Security Alert \u2013 CVE-2026-25755"),
-], ids=["with_severity", "without_severity"])
-def test_build_parent_issue_title(severity: str, expected: str) -> None:
-    assert expected == build_parent_issue_title("CVE-2026-25755", severity)
+def test_build_parent_issue_title() -> None:
+    assert "Security Alert \u2013 CVE-2026-25755" == build_parent_issue_title("CVE-2026-25755")
 
 
 # =====================================================================
@@ -101,9 +91,9 @@ def test_vuln_category_from_rule_name(vuln_alert: Alert) -> None:
     assert vals["category"] == "vulnerabilities"
 
 
-def test_avd_id_uses_vulnerability(sast_alert: Alert) -> None:
+def test_avd_id_removed_from_values(sast_alert: Alert) -> None:
     vals = build_parent_template_values(sast_alert, rule_id="req-with-very-false-aquasec-python", severity="high")
-    assert vals["avd_id"] == "req-with-very-false-aquasec-python"
+    assert "avd_id" not in vals
 
 
 @pytest.mark.parametrize("rule_details", [
@@ -130,13 +120,13 @@ def test_extra_data_references(vuln_alert: Alert) -> None:
 
 def test_all_template_keys_present(sast_alert: Alert) -> None:
     vals = build_parent_template_values(sast_alert, rule_id="test", severity="high")
-    required = {"category", "avd_id", "title", "severity", "published_date", "package_name", "fixed_version", "extraData"}
+    required = {"category", "title", "severity", "published_date", "short_description", "package_name", "fixed_version", "extraData"}
     assert required.issubset(vals.keys())
 
 
 def test_extra_data_sub_keys(sast_alert: Alert) -> None:
     extra = build_parent_template_values(sast_alert, rule_id="test", severity="high")["extraData"]
-    required_extra = {"cve", "owasp", "category", "impact", "likelihood", "confidence", "remediation", "references"}
+    required_extra = {"rule_id", "owasp", "category", "advisory_url", "impact", "likelihood", "confidence", "remediation", "references"}
     assert required_extra.issubset(extra.keys())
 
 
@@ -180,6 +170,24 @@ def test_references_not_overridden_when_present() -> None:
     assert "should-not-appear" not in refs
 
 
+def test_references_indented_bullets_normalized() -> None:
+    """Indented bullet items from AquaSec are normalized to top-level bullets."""
+    alert = Alert.from_dict({
+        "metadata": {"rule_id": "CVE-2026-XXXX"},
+        "rule_details": {
+            "references": (
+                "- https://first.example.com\n"
+                "  - https://second.example.com\n"
+                "  - https://third.example.com"
+            ),
+        },
+    })
+    refs = alert_extra_data(alert)["references"]
+    for line in refs.splitlines():
+        if line.strip():
+            assert line.startswith("- "), f"Expected top-level bullet, got: {line!r}"
+
+
 # =====================================================================
 # build_parent_issue_body
 # =====================================================================
@@ -209,17 +217,16 @@ def test_parent_body_confidence(vuln_alert: Alert) -> None:
 # =====================================================================
 
 
-@pytest.mark.parametrize("description, rule_name, rule_id, fingerprint, expected", [
-    ("A description", "sast", "rule-123", "a1b2c3d4e5f6", "[SEC][FP=a1b2c3d4] A description"),
-    (None, "sast", "rule-123", "abcdef12", "sast"),
-    (None, None, "rule-123", "abcdef12", "rule-123"),
-    (None, None, "", "abcdef12", "Security finding"),
-    ("A description", "sast", "rule-123", "", "N/A"),
-], ids=["full_format", "fallback_rule_name", "fallback_rule_id", "fallback_default", "empty_fingerprint"])
+@pytest.mark.parametrize("description, fingerprint, severity, expected", [
+    ("A description", "a1b2c3d4e5f6", "high", "[SEC:HIGH][FP=a1b2c3d4] A description"),
+    (None, "abcdef12", "medium", "[SEC:MEDIUM][FP=abcdef12] Security finding"),
+    (None, "abcdef12", "", "[SEC][FP=abcdef12] Security finding"),
+    ("A description", "", "critical", "[SEC:CRITICAL][FP=N/A] A description"),
+], ids=["full_format", "no_description_fallback", "no_severity", "empty_fingerprint"])
 def test_build_issue_title(
-    description: str | None, rule_name: str | None, rule_id: str, fingerprint: str, expected: str
+    description: str | None, fingerprint: str, severity: str, expected: str
 ) -> None:
-    assert expected in build_issue_title(description, rule_name, rule_id, fingerprint)
+    assert expected == build_issue_title(description, fingerprint, severity)
 
 
 # =====================================================================
@@ -238,7 +245,10 @@ def test_build_issue_title(
     "95",
     "False",
     "2025-09-17",
-], ids=["title", "alert_hash", "message", "repository", "scm_url", "target_line", "reachable", "first_seen"])
+    "**Severity:** high",
+    'target="_blank"',
+], ids=["title", "alert_hash", "message", "repository", "scm_url", "target_line", "reachable", "first_seen",
+        "severity", "new_window_links"])
 def test_sast_child_body_contains(sast_alert: Alert, expected: str) -> None:
     assert expected in build_child_issue_body(sast_alert)
 
@@ -253,12 +263,11 @@ def test_sast_child_body_contains(sast_alert: Alert, expected: str) -> None:
     "068f963657211cd416dac1f9b30d606c",
     "2026-02-20",
     "## General Information",
-    "## Vulnerability Description",
+    "## Description",
     "## Location",
     "## Dependency Details",
-    "## Detection Timeline",
 ], ids=["title", "installed_version", "reachable", "scm_file", "alert_hash", "first_seen",
-        "section_general", "section_vuln", "section_location", "section_dependency", "section_timeline"])
+        "section_general", "section_description", "section_location", "section_dependency"])
 def test_vuln_child_body_contains(vuln_alert: Alert, expected: str) -> None:
     assert expected in build_child_issue_body(vuln_alert)
 
@@ -267,9 +276,9 @@ def test_vuln_child_body_contains(vuln_alert: Alert, expected: str) -> None:
 
 @pytest.mark.parametrize("expected", [
     "pipelineMisconfigurations",
-    "**Installed version:**",
+    "**Reachable:**",
     "False",
-], ids=["category", "installed_version_label", "reachable"])
+], ids=["category", "reachable_label", "reachable"])
 def test_pipeline_child_body_contains(pipeline_alert: Alert, expected: str) -> None:
     assert expected in build_child_issue_body(pipeline_alert)
 
@@ -323,7 +332,7 @@ def test_message_with_heading_is_escaped() -> None:
         "rule_details": {},
     })
     body = build_child_issue_body(alert)
-    assert not any(l.strip().startswith("## Black") for l in body.split("\n")), "Message heading should be escaped"
+    assert not any(line.strip().startswith("## Black") for line in body.split("\n")), "Message heading should be escaped"
     assert r"\## Black" in body
 
 
@@ -334,5 +343,5 @@ def test_parent_remediation_heading_is_escaped() -> None:
         "rule_details": {"remediation": "## Step 1\nDo something **important**."},
     }, repo="org/repo")
     body = build_parent_issue_body(alert)
-    assert not any(l.strip() == "## Step 1" for l in body.split("\n")), "Remediation heading should be escaped"
+    assert not any(line.strip() == "## Step 1" for line in body.split("\n")), "Remediation heading should be escaped"
     assert r"\## Step 1" in body

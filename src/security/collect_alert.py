@@ -231,7 +231,7 @@ def main(argv: list[str] | None = None) -> None:
     logger.info(LOGGING_PREFIX + "Fetching repository metadata")
     repo_data = _gh_api_json(f"/repos/{repo}")
     assert isinstance(repo_data, dict)
-    logger.info(LOGGING_PREFIX + "Success fetching repository metadata")
+    logger.info(LOGGING_PREFIX + "Successfully fetched repository metadata")
 
     # Fetch code-scanning alerts filtered by state
     logger.info(LOGGING_PREFIX + "Fetching %s security alerts", state)
@@ -266,8 +266,8 @@ def main(argv: list[str] | None = None) -> None:
         f.write("\n")
 
     count = len(output["alerts"])
-    logger.info(LOGGING_PREFIX + "Successfully fetched %i %s security alert/s", count, state)
-    logger.debug("Fetched security alerts saved in: %s", out_file)
+    logger.info(LOGGING_PREFIX + "Successfully fetched %d %s security alert/s", count, state)
+    logger.debug(LOGGING_PREFIX + "Saved fetched security alerts to: %s", out_file)
 
 
 if __name__ == "__main__":

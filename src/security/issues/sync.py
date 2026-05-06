@@ -912,7 +912,7 @@ def _log_sync_summary(stats: SyncStats, *, dry_run: bool) -> None:
 
     lines = [prefix + "Sync complete:"]
     if parent_parts:
-        lines.append("  [DRY-RUN] Parent issues - " + ", ".join(parent_parts))
+        lines.append("  " + prefix + "Parent issues - " + ", ".join(parent_parts))
     if child_parts:
-        lines.append("  [DRY-RUN] Child issues  - " + ", ".join(child_parts))
+        lines.append("  " + prefix + "Child issues  - " + ", ".join(child_parts))
     logging.info("\n".join(lines))

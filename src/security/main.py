@@ -133,9 +133,9 @@ def main(argv: list[str] | None = None) -> int:
     out_file: str = args.out_file
 
     if dry_run:
-        logger.info(LOGGING_PREFIX + "Starting the DRY-RUN process for %s" % repo)
+        logger.info(LOGGING_PREFIX + "Starting the DRY-RUN process for %s", repo)
     else:
-        logger.info(LOGGING_PREFIX + "Starting process for %s" % repo)
+        logger.info(LOGGING_PREFIX + "Starting process for %s", repo)
 
     # Label check
     if not args.skip_label_check:

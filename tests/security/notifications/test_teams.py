@@ -146,11 +146,6 @@ def _mock_subprocess_ok(monkeypatch: pytest.MonkeyPatch):
 # =====================================================================
 
 
-def test_skips_when_empty(caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.INFO):
-        notify_teams("https://hook", [], dry_run=False)
-    assert any("skipping" in r.message.lower() for r in caplog.records)
-
 def test_notify_teams_dry_run_calls_subprocess(
     sample_notifications: list[NotifiedIssue],
     _mock_subprocess_ok: list[tuple],

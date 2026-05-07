@@ -32,6 +32,7 @@ from security.collect_alert import (
     _parse_rule_details,
     _snake_case,
     _help_value,
+    _help_multiline_value,
     main,
     parse_args,
 )
@@ -141,6 +142,52 @@ def test_help_value_with_extra_spacing() -> None:
 def test_help_value_stops_at_newline() -> None:
     text = "**Type:** sast\n**Severity:** HIGH"
     assert _help_value(text, "Type") == "sast"
+
+
+# _help_multiline_value
+
+
+def test_help_multiline_value_single_line() -> None:
+    text = "**References:** https://example.com"
+    assert _help_multiline_value(text, "References") == "https://example.com"
+
+
+def test_help_multiline_value_bullet_list() -> None:
+    text = (
+        "**References:**\n"
+        "- https://example.com/ref1\n"
+        "- https://example.com/ref2\n"
+        "**Type:** sast"
+    )
+    result = _help_multiline_value(text, "References")
+    assert "https://example.com/ref1" in result
+    assert "https://example.com/ref2" in result
+
+
+def test_help_multiline_value_not_found() -> None:
+    assert _help_multiline_value("no match here", "References") is None
+
+
+def test_help_multiline_value_none_input() -> None:
+    assert _help_multiline_value(None, "References") is None
+
+
+def test_help_multiline_value_empty_value() -> None:
+    text = "**References:**\n**Type:** sast"
+    assert _help_multiline_value(text, "References") is None
+
+
+def test_parse_rule_details_multiline_references() -> None:
+    rule_help = (
+        "**Type:** sast\n"
+        "**References:**\n"
+        "- https://example.com/ref1\n"
+        "- https://example.com/ref2\n"
+        "**Severity:** HIGH"
+    )
+    details = _parse_rule_details(rule_help)
+    assert "https://example.com/ref1" in details["references"]
+    assert "https://example.com/ref2" in details["references"]
 
 
 def test_parse_rule_details_extracts_fields() -> None:

@@ -27,11 +27,11 @@ from datetime import datetime, timezone
 
 from core.config import parse_runner_debug, setup_logging
 from core.github.client import run_gh
+from security.constants import LOGGING_PREFIX
 
 logger = logging.getLogger(__name__)
 
 VALID_STATES = {"open", "dismissed", "fixed", "all"}
-
 RULE_DETAIL_KEYS = [
     "Type",
     "Severity",
@@ -47,6 +47,7 @@ RULE_DETAIL_KEYS = [
     "OWASP",
     "References",
 ]
+MULTILINE_KEYS = {"references", "owasp"}
 
 
 def _snake_case(name: str) -> str:
@@ -59,12 +60,33 @@ def _help_value(rule_help: str | None, name: str) -> str | None:
     if not rule_help:
         return None
     m = re.search(rf"\*\*{re.escape(name)}:\*\*\s*([^\n\r]+)", rule_help, re.IGNORECASE)
-    return m.group(1) if m else None
+    return m.group(1).strip() if m else None
+
+
+def _help_multiline_value(rule_help: str | None, name: str) -> str | None:
+    """Extract a multi-line value from ``**Name:**`` markup in the rule help text."""
+    if not rule_help:
+        return None
+    m = re.search(
+        rf"\*\*{re.escape(name)}:\*\*[ \t]*([^\n\r]*(?:\n(?!\*\*[A-Za-z][\w\s]*?:\*\*)[^\n\r]*)*)",
+        rule_help,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return m.group(1).strip() or None
 
 
 def _parse_rule_details(rule_help: str | None) -> dict[str, str | None]:
     """Extract known rule detail fields from ``**Key:** value`` markup in rule help."""
-    return {_snake_case(key): _help_value(rule_help, key) for key in RULE_DETAIL_KEYS}
+    result: dict[str, str | None] = {}
+    for key in RULE_DETAIL_KEYS:
+        snake = _snake_case(key)
+        if snake in MULTILINE_KEYS:
+            result[snake] = _help_multiline_value(rule_help, key)
+        else:
+            result[snake] = _help_value(rule_help, key)
+    return result
 
 
 def _parse_alert_details(message_text: str) -> dict[str, str]:
@@ -206,12 +228,13 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(1)
 
     # Fetch repository metadata
-    logger.info("Fetching repository metadata for %s...", repo)
+    logger.info(LOGGING_PREFIX + "Fetching repository metadata")
     repo_data = _gh_api_json(f"/repos/{repo}")
     assert isinstance(repo_data, dict)
+    logger.info(LOGGING_PREFIX + "Successfully fetched repository metadata")
 
-    # Fetch alerts
-    logger.info("Fetching code scanning alerts (state=%s)...", state)
+    # Fetch code-scanning alerts filtered by state
+    logger.info(LOGGING_PREFIX + "Fetching %s security alerts", state)
     endpoint = f"/repos/{repo}/code-scanning/alerts?per_page=100"
     if state != "all":
         endpoint += f"&state={state}"
@@ -243,11 +266,8 @@ def main(argv: list[str] | None = None) -> None:
         f.write("\n")
 
     count = len(output["alerts"])
-    logger.info("Done.")
-    logger.info("Repository : %s", repo)
-    logger.info("State      : %s", state)
-    logger.info("Alerts     : %d", count)
-    logger.info("Output     : %s", out_file)
+    logger.info(LOGGING_PREFIX + "Successfully fetched %d %s security alert/s", count, state)
+    logger.debug(LOGGING_PREFIX + "Saved fetched security alerts to: %s", out_file)
 
 
 if __name__ == "__main__":

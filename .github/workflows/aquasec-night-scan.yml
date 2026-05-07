@@ -20,6 +20,12 @@ on:
   schedule:
     - cron: '23 2 * * *'
   workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Enable Dry Run mode
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: aquasec-night-scan-${{ github.ref }}
@@ -35,6 +41,7 @@ jobs:
   aquasec-night-scan:
     uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@40457bc605a067300785cfb89f0b71eccd97213c
     with:
+      dry-run: ${{ inputs.dry-run || false }}
       severity-priority-map: 'Critical=P0,High=P1,Medium=P2,Low=P3'
       project-number: 203
       project-org: 'absa-group'

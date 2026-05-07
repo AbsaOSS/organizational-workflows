@@ -22,6 +22,12 @@ on:
   schedule:
     - cron: '23 2 * * *'
   workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Simulate without making changes'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: aquasec-night-scan-${{ github.repository }}
@@ -37,6 +43,7 @@ jobs:
   scan:
     uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@c1fa5b54ff24fea071415da89abc4f0506344f01
     with:
+      dry-run: ${{ inputs.dry-run || false }}
       severity-priority-map: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor'
       project-number: 42
       project-org: 'my-org'

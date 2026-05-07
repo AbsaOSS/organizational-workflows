@@ -116,8 +116,8 @@ def test_preferred_order() -> None:
     rendered = render_secmeta(data)
     lines = rendered.strip().split("\n")
     # type should appear before fingerprint per preferred_order
-    type_idx = next(i for i, l in enumerate(lines) if "type=" in l)
-    fp_idx = next(i for i, l in enumerate(lines) if "fingerprint=" in l)
+    type_idx = next(i for i, line in enumerate(lines) if "type=" in line)
+    fp_idx = next(i for i, line in enumerate(lines) if "fingerprint=" in line)
     assert type_idx < fp_idx
 
 def test_secmeta_roundtrip() -> None:

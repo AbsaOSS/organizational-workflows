@@ -564,11 +564,12 @@ def _rebuild_and_apply_child_body(
                 logging.debug("DRY-RUN: Body preview begin child issue #%d", issue.number)
                 logging.debug(new_body)
                 logging.debug("DRY-RUN: Body preview end child issue #%d", issue.number)
+            sync.stats.children_body_updated += 1
         else:
-            gh_issue_edit_body(ctx.repo, issue.number, new_body)
-            issue.body = new_body
-            logging.info(LOGGING_PREFIX + "Updated child issue #%d body", issue.number)
-        sync.stats.children_body_updated += 1
+            if gh_issue_edit_body(ctx.repo, issue.number, new_body):
+                issue.body = new_body
+                logging.info(LOGGING_PREFIX + "Updated child issue #%d body", issue.number)
+                sync.stats.children_body_updated += 1
 
 
 def _sync_child_title_and_labels(
@@ -773,10 +774,11 @@ def _flush_parent_body_updates(
                     logging.debug("DRY-RUN: Body preview begin parent issue #%d", num)
                     logging.debug(issue.body)
                     logging.debug("DRY-RUN: Body preview end parent issue #%d", num)
+                stats.parents_body_updated += 1
             else:
-                gh_issue_edit_body(repo, num, issue.body)
-                logging.info(LOGGING_PREFIX + "Updated parent issue #%d body", num)
-            stats.parents_body_updated += 1
+                if gh_issue_edit_body(repo, num, issue.body):
+                    logging.info(LOGGING_PREFIX + "Updated parent issue #%d body", num)
+                    stats.parents_body_updated += 1
 
 
 def _label_adept_to_close_issues(

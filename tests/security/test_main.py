@@ -44,7 +44,6 @@ def test_parse_args_defaults() -> None:
     assert args.issue_label == "scope:security"
     assert args.dry_run is False
     assert args.verbose is False
-    assert args.force is False
     assert args.skip_label_check is False
 
 
@@ -61,7 +60,6 @@ def test_parse_args_all_flags() -> None:
         "--skip-label-check",
         "--dry-run",
         "--verbose",
-        "--force",
     ])
     assert args.repo == REPO
     assert args.state == "dismissed"
@@ -74,7 +72,6 @@ def test_parse_args_all_flags() -> None:
     assert args.skip_label_check is True
     assert args.dry_run is True
     assert args.verbose is True
-    assert args.force is True
 
 
 def test_parse_args_state_choices() -> None:
@@ -151,23 +148,14 @@ def test_labels_ok_proceeds(mocker: MockerFixture, tmp_path) -> None:
     assert rc == 0
 
 
-def test_existing_file_without_force_returns_1(mocker: MockerFixture, tmp_path) -> None:
-    mocker.patch("security.main.check_labels", return_value=[])
-    out = tmp_path / "alerts.json"
-    out.write_text("{}")
-    rc = main(["--repo", REPO, "--out", str(out)])
-    assert rc == 1
-
-
-def test_existing_file_with_force_removes_it(mocker: MockerFixture, tmp_path) -> None:
+def test_existing_file_is_silently_overwritten(mocker: MockerFixture, tmp_path) -> None:
     mocker.patch("security.main.check_labels", return_value=[])
     mocker.patch("security.main.collect_alert_main")
     mocker.patch("security.main.promote_alerts_main")
     out = tmp_path / "alerts.json"
     out.write_text("{}")
-    rc = main(["--repo", REPO, "--out", str(out), "--force"])
+    rc = main(["--repo", REPO, "--out", str(out)])
     assert rc == 0
-    assert not out.exists()
 
 
 def test_nonexistent_file_proceeds(mocker: MockerFixture, tmp_path) -> None:

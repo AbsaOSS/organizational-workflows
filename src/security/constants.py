@@ -24,4 +24,10 @@ LABEL_SEC_ADEPT_TO_CLOSE = "sec:adept-to-close"
 SECMETA_TYPE_PARENT = "parent"
 SECMETA_TYPE_CHILD = "child"
 
+SECURITY_FINDING_DEFAULT = "Security finding"
 NOT_AVAILABLE = "N/A"
+
+GITHUB_BASE_URL = "https://github.com"
+
+LOGGING_PREFIX = "Security Alerts to Issues - "
+DRY_RUN_PREFIX = "Security Alerts to Issues [DRY-RUN] - "

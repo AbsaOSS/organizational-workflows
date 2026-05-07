@@ -48,6 +48,7 @@ Patterns
 - Use private methods (`_method_name`) for internal class helpers
 - All logs must start with "<Domain> -" prefix (e.g., "Security -")
 - Never disable pylint behavior in the code
+- External links should link to a new window
 
 Testing
 - Mirror src structure: `src/security/module.py` -> `tests/security/test_module.py`
@@ -61,5 +62,6 @@ Testing
 - Use `@pytest.mark.parametrize` for data-driven tests (negative/failure scenarios with multiple similar cases)
 
 Quality gates (run after changes, fix only if below threshold)
-- Run all quality gates at once: `make qa`
+- Do all changes at once and run the gates afterward
+- Run ALWAYS all quality gates at once: `make qa`
 - Once a quality gate passes, do not re-run it in different scenarios

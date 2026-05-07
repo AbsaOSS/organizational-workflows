@@ -41,6 +41,7 @@ def setup_logging(verbose: bool = False) -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+    sys.stdout.flush()
 
     if verbose:
         logging.debug("Verbose logging enabled")

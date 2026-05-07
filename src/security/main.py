@@ -25,6 +25,7 @@ from core.config import parse_runner_debug, setup_logging
 
 from security.check_labels import check_labels
 from security.collect_alert import main as collect_alert_main
+from security.constants import LOGGING_PREFIX
 from security.promote_alerts import main as promote_alerts_main
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Verbose logs (also enabled by RUNNER_DEBUG=1)",
     )
-    p.add_argument("--force", action="store_true", help="Overwrite --out file if it exists")
     return p.parse_args(argv)
 
 
@@ -125,12 +125,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     verbose = bool(args.verbose) or parse_runner_debug()
+    dry_run = bool(args.dry_run)
     setup_logging(verbose)
+    logger.info(LOGGING_PREFIX + "Logging configuration set up")
 
     repo = _resolve_repo(args.repo)
     out_file: str = args.out_file
 
-    # ── Step 1: label check ──────────────────────────────────────────
+    if dry_run:
+        logger.info(LOGGING_PREFIX + "Starting the DRY-RUN process for %s", repo)
+    else:
+        logger.info(LOGGING_PREFIX + "Starting process for %s", repo)
+
+    # Label check
     if not args.skip_label_check:
         missing = check_labels(repo)
         if missing:
@@ -140,18 +147,12 @@ def main(argv: list[str] | None = None) -> int:
                 ", ".join(missing),
             )
             return 1
-        logger.info("All required labels present in %s", repo)
+        logger.info(LOGGING_PREFIX + "All required labels present")
 
-    # ── Step 2: handle --force / existing output file ────────────────
+    # Handle existing output file
     if os.path.exists(out_file):
-        if args.force:
-            os.remove(out_file)
-        else:
-            logger.error(
-                "Output file '%s' exists. Delete it, choose a different --out, or pass --force.",
-                out_file,
-            )
-            return 1
+        logger.debug("Output file is already present: overwriting")
+        os.remove(out_file)
 
     # ── Step 3: collect alerts ───────────────────────────────────────
     collect_argv = ["--repo", repo, "--state", args.state, "--out", out_file]
@@ -176,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
 
     promote_alerts_main(promote_argv)
 
+    logging.info(LOGGING_PREFIX + "Process finished")
     return 0
 
 

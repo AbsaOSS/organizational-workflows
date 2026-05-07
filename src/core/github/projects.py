@@ -24,6 +24,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from security.constants import DRY_RUN_PREFIX
 from .client import run_gh
 from ..priority import resolve_priority
 
@@ -56,7 +57,7 @@ def _run_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[st
         args += ["-F", f"{k}={v}"]
     res = run_gh(args)
     if res.returncode != 0:
-        logging.warning(f"GraphQL call failed: {res.stderr}")
+        logging.warning("GraphQL call failed: %s", res.stderr.strip())
         return None
     try:
         return json.loads(res.stdout)
@@ -99,7 +100,7 @@ def gh_project_get_priority_field(
     logging.debug(f"Querying ProjectV2 #{project_number} in org '{org}'")
     data = _run_graphql(query, {"org": org, "num": project_number})
     if data is None:
-        logging.warning(f"GraphQL query for project #{project_number} in org '{org}' failed.")
+        logging.warning(f"GraphQL query for project #{project_number} in org '{org}' failed")
         _project_priority_cache[cache_key] = None
         return None
 
@@ -279,8 +280,10 @@ class ProjectPrioritySync:
 
         if self.dry_run:
             logging.info(
-                f"DRY-RUN: would set Priority={priority_value!r} on issue #{issue_number} "
-                f"in project #{self.project_number}"
+                DRY_RUN_PREFIX + "Would set Priority=%s on issue #%d in project %d",
+                priority_value,
+                issue_number,
+                self.project_number,
             )
             return
 

@@ -51,7 +51,7 @@ from core.github.issues import gh_issue_list_by_label
 from core.priority import parse_severity_priority_map
 
 from security.alerts.parser import load_open_alerts_from_file
-from security.constants import LABEL_SCOPE_SECURITY
+from security.constants import LABEL_SCOPE_SECURITY, LOGGING_PREFIX
 from security.issues.sync import sync_alerts_and_issues
 from security.notifications.teams import notify_teams, notify_teams_severity_changes
 
@@ -128,11 +128,14 @@ def main(argv: list[str] | None = None) -> None:
     verbose = bool(args.verbose) or parse_runner_debug()
     setup_logging(verbose)
 
+    logging.info(LOGGING_PREFIX + "Starting promotion of alerts to GitHub issues")
+
     loaded_alerts = load_open_alerts_from_file(args.file)
     repo_full = loaded_alerts.repo_full
     open_alerts = loaded_alerts.open_by_number
 
     issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
+    logging.info(LOGGING_PREFIX + "Loaded %d existing security issues for synchronisation", len(issues))
 
     # Build severity → priority map from user input; empty by default (priority skipped).
     spm = parse_severity_priority_map(str(args.severity_priority_map or ""))
@@ -145,12 +148,14 @@ def main(argv: list[str] | None = None) -> None:
         project_number=args.project_number,
         project_org=str(args.project_org or ""),
     )
+
+    logging.info(LOGGING_PREFIX + "Completed promotion of alerts to GitHub issues")
     notifications = result.notifications
     severity_changes = result.severity_changes
 
-    webhook_url = str(args.teams_webhook_url or "")
-    if (notifications or severity_changes) and not webhook_url:
-        logging.debug("Teams webhook URL not configured - skipping notification")
+    webhook_url = args.teams_webhook_url
+    if not webhook_url:
+        logging.info(LOGGING_PREFIX + "Teams webhook URL not configured: skipping notifications")
     else:
         notify_teams(webhook_url, notifications, dry_run=dry_run)
         notify_teams_severity_changes(webhook_url, severity_changes, dry_run=dry_run)

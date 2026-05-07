@@ -20,6 +20,8 @@ import json
 import re
 from typing import Any
 
+from security.constants import NOT_AVAILABLE
+
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_\.]+)\s*\}\}")
 
 
@@ -49,3 +51,57 @@ def render_markdown_template(template: str, values: dict[str, Any]) -> str:
         return str(v)
 
     return PLACEHOLDER_RE.sub(repl, template)
+
+
+def strip_na_sections(body: str) -> str:
+    """Remove N/A fields and empty sections from a rendered Markdown body.
+
+    - Lines like ``- **Key:** N/A`` (with optional trailing whitespace/italics) are removed.
+    - Section headers (``## Heading``) with no remaining content are removed.
+    """
+    lines = body.split("\n")
+    filtered: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        # Remove bullet-list N/A fields: "- **Key:** N/A" with optional trailing content
+        if re.match(r"^\s*-\s+\*\*[^*]+:\*\*\s*N/A\s*$", line):
+            i += 1
+            # Also remove subsequent italic description lines
+            while i < len(lines) and re.match(r"^\s+\*\(.*\)\*\s*$", lines[i]):
+                i += 1
+            continue
+
+        filtered.append(line)
+        i += 1
+
+    # Second pass: remove ## headings whose section body is empty or just N/A
+    result: list[str] = []
+    i = 0
+    while i < len(filtered):
+        line = filtered[i]
+
+        if re.match(r"^##\s+", line):
+            # Collect the section body (until next ## heading or end)
+            section_header = line
+            section_body_lines: list[str] = []
+            j = i + 1
+            while j < len(filtered) and not re.match(r"^##\s+", filtered[j]):
+                section_body_lines.append(filtered[j])
+                j += 1
+
+            # Check if section body is effectively empty
+            body_text = "\n".join(section_body_lines).strip()
+            if not body_text or body_text == NOT_AVAILABLE:
+                i = j
+                continue
+
+            result.append(section_header)
+            result.extend(section_body_lines)
+            i = j
+        else:
+            result.append(line)
+            i += 1
+
+    return "\n".join(result)

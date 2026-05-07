@@ -16,7 +16,7 @@
 
 import pytest
 
-from core.helpers import sanitize_markdown
+from core.helpers import normalize_bullet_list, sanitize_markdown
 
 
 # sanitize_markdown
@@ -71,3 +71,28 @@ def test_real_aquasec_message() -> None:
     result = sanitize_markdown(msg)
     assert not result.startswith("## ")
     assert result.startswith(r"\## ")
+
+
+# normalize_bullet_list
+
+
+@pytest.mark.parametrize("text", [None, ""], ids=["none", "empty"])
+def test_normalize_bullet_list_passthrough_empty(text: str | None) -> None:
+    assert normalize_bullet_list(text) == text
+
+
+def test_normalize_bullet_list_already_flat() -> None:
+    text = "- https://example.com/a\n- https://example.com/b"
+    assert normalize_bullet_list(text) == text
+
+
+def test_normalize_bullet_list_normalizes_indented() -> None:
+    text = "- https://first.example.com\n  - https://second.example.com\n  - https://third.example.com"
+    result = normalize_bullet_list(text)
+    assert result == "- https://first.example.com\n- https://second.example.com\n- https://third.example.com"
+
+
+def test_normalize_bullet_list_preserves_non_bullet_lines() -> None:
+    text = "Some intro text\n- https://example.com\n  - https://other.com\nTrailing text"
+    result = normalize_bullet_list(text)
+    assert result == "Some intro text\n- https://example.com\n- https://other.com\nTrailing text"

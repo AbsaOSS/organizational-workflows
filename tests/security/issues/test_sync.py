@@ -236,7 +236,7 @@ def test_find_parent_not_found() -> None:
 
 
 def test_reopen_parent_none(mocker: MockerFixture) -> None:
-    """No-op when parent_issue is None — no gh call is made."""
+    """No-op when parent_issue is None - no gh call is made."""
     mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state")
     maybe_reopen_parent_issue(
         "org/repo", None, rule_id="R1", dry_run=False, stats=SyncStats(),
@@ -299,7 +299,7 @@ def test_append_notification_active() -> None:
 
 
 def test_append_notification_none() -> None:
-    """No-op when notifications is None — must not raise."""
+    """No-op when notifications is None - must not raise."""
     _append_notification(
         None, repo="org/repo", issue_number=42,
         severity="high", category="sast", state="new", tool="AquaSec",
@@ -1049,7 +1049,7 @@ def test_sync_closes_parent_when_all_children_closed(mocker: MockerFixture) -> N
 
 
 def test_sync_reopened_child_prevents_parent_close(sast_alert: Alert) -> None:
-    """Reopened child keeps parent open — resolved-parent check must not re-close it."""
+    """Reopened child keeps parent open - resolved-parent check must not re-close it."""
     rule_id = sast_alert.metadata.rule_id
     fingerprint = sast_alert.alert_details.alert_hash
     parent = _issue_with_secmeta(169, {

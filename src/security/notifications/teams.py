@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 
+from security.constants import DRY_RUN_PREFIX, LOGGING_PREFIX
 from security.issues.models import NotifiedIssue, SeverityChange, severity_direction
 
 
@@ -71,14 +72,6 @@ def _post_to_teams(
     dry_run: bool = False,
 ) -> None:
     """Write *body* to a temp file and invoke send_notifications.py."""
-    if dry_run:
-        if webhook_url:
-            logging.info(f"DRY-RUN: {label} webhook configured; no delivery will occur")
-        else:
-            logging.info(
-                f"DRY-RUN: no Teams Incoming Webhook URL configured. " f"No {label.lower()} post to Teams will be made."
-            )
-
     script_dir = os.path.dirname(os.path.abspath(__file__))
     send_script = os.path.join(os.path.dirname(script_dir), "send_notifications.py")
 
@@ -116,10 +109,10 @@ def _post_to_teams(
             logging.warning(f"{label} failed: {result.stderr}")
         else:
             if dry_run:
-                logging.info(f"DRY-RUN: send_notifications.py {label.lower()} output:")
-                logging.info(result.stdout)
+                logging.info(DRY_RUN_PREFIX + "Would send Teams notification: %s", result.stdout)
             else:
-                logging.info(f"{label} sent successfully")
+                logging.info(LOGGING_PREFIX + "Notification sent: %s", title)
+        logging.debug("Label: %s output: %s", label.lower(), result.stdout)
     finally:
         if body_file:
             try:
@@ -136,7 +129,7 @@ def notify_teams(
 ) -> None:
     """Send a Teams message about new / reopened issues via send_notifications.py."""
     if not notifications:
-        logging.info("No new or reopened issues – skipping Teams notification")
+        logging.info(LOGGING_PREFIX + "No issue activity: skipping Teams notification")
         return
 
     body = build_teams_notification_body(notifications)
@@ -158,7 +151,7 @@ def notify_teams_severity_changes(
 ) -> None:
     """Send a Teams message about parent severity changes via send_notifications.py."""
     if not changes:
-        logging.debug("No severity changes – skipping Teams severity-change notification")
+        logging.info(LOGGING_PREFIX + "No severity changes: skipping Teams severity notification")
         return
 
     body = build_severity_change_body(changes)

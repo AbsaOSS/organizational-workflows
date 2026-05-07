@@ -199,7 +199,7 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
             labels=label_names,
         )
 
-    logging.info("Loaded %d issues with label %r from repository %s", len(issues), label, repo)
+    logging.debug("Fetched %d issues with label %r from repository %s", len(issues), label, repo)
     return issues
 
 
@@ -248,7 +248,6 @@ def gh_issue_edit_title(repo: str, number: int, title: str) -> bool:
         logging.error("Failed to edit title for #%d%s: %s", number, _not_found_hint(res), res.stderr)
         return False
 
-    logging.info("Updated issue #%d title", number)
     return True
 
 
@@ -260,7 +259,6 @@ def gh_issue_edit_body(repo: str, number: int, body: str) -> bool:
         logging.error("Failed to edit body for #%d%s: %s", number, _not_found_hint(res), res.stderr)
         return False
 
-    logging.info("Updated issue #%d body", number)
     return True
 
 

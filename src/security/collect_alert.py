@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 
 from core.config import parse_runner_debug, setup_logging
 from core.github.client import run_gh
+from security.constants import LOGGING_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -227,12 +228,13 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(1)
 
     # Fetch repository metadata
-    logger.info("Fetching repository metadata for %s...", repo)
+    logger.info(LOGGING_PREFIX + "Fetching repository metadata")
     repo_data = _gh_api_json(f"/repos/{repo}")
     assert isinstance(repo_data, dict)
+    logger.info(LOGGING_PREFIX + "Successfully fetched repository metadata")
 
-    # Fetch alerts
-    logger.info("Fetching code scanning alerts (state=%s)...", state)
+    # Fetch code-scanning alerts filtered by state
+    logger.info(LOGGING_PREFIX + "Fetching %s security alerts", state)
     endpoint = f"/repos/{repo}/code-scanning/alerts?per_page=100"
     if state != "all":
         endpoint += f"&state={state}"
@@ -264,11 +266,8 @@ def main(argv: list[str] | None = None) -> None:
         f.write("\n")
 
     count = len(output["alerts"])
-    logger.info("Done.")
-    logger.info("Repository : %s", repo)
-    logger.info("State      : %s", state)
-    logger.info("Alerts     : %d", count)
-    logger.info("Output     : %s", out_file)
+    logger.info(LOGGING_PREFIX + "Successfully fetched %d %s security alert/s", count, state)
+    logger.debug(LOGGING_PREFIX + "Saved fetched security alerts to: %s", out_file)
 
 
 if __name__ == "__main__":

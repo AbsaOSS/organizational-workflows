@@ -23,6 +23,9 @@ from core.models import Issue
 
 from security.alerts.models import Alert
 
+IssueBodySnapshot = tuple[str, str]  # (repo_full, original_body) snapshot captured before parent body writes
+ParentOriginalBodies = dict[int, IssueBodySnapshot]  # Maps issue number → body snapshot for parent body updates
+
 
 @dataclass
 class IssueIndex:
@@ -77,6 +80,23 @@ def severity_direction(old: str, new: str) -> str:
 
 
 @dataclass
+class SyncStats:
+    """Counters for actions taken (or would be taken) during a sync run."""
+
+    parents_created: int = 0
+    parents_title_updated: int = 0
+    parents_body_updated: int = 0
+    parents_reopened: int = 0
+    parents_closed: int = 0
+    children_created: int = 0
+    children_reopened: int = 0
+    children_title_updated: int = 0
+    children_body_updated: int = 0
+    children_linked: int = 0
+    children_marked_for_closure: int = 0
+
+
+@dataclass
 class SyncResult:
     """Aggregated output of a full sync run."""
 
@@ -113,4 +133,7 @@ class SyncContext:
     notifications: list[NotifiedIssue] | None
     severity_priority_map: dict[str, str]
     priority_sync: ProjectPrioritySync | None
+    stats: SyncStats = field(default_factory=SyncStats)
     parent_sub_issues_cache: dict[int, set[int]] = field(default_factory=dict)
+    severity_changes: list[SeverityChange] = field(default_factory=list)
+    parent_original_bodies: ParentOriginalBodies = field(default_factory=dict)

@@ -63,5 +63,5 @@ Testing
 
 Quality gates (run after changes, fix only if below threshold)
 - Do all changes at once and run the gates afterward
-- Run all quality gates at once: `make qa`
+- Run ALWAYS all quality gates at once: `make qa`
 - Once a quality gate passes, do not re-run it in different scenarios

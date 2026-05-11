@@ -10,6 +10,10 @@ Security Automation provides **continuous, automated vulnerability management** 
 
 ## How It Works
 
+This solution is the second part of a two-step security automation pipeline. The first part is [AquaSec Night Scan](https://github.com/AbsaOSS/aquasec-scan-results/blob/master/docs/night-scan-mode.md). It fetches scan findings from AquaSec, converts them into SARIF format, and uploads them to the GitHub Security tab. This solution picks up from there: it reads those alerts and turns them into a managed GitHub Issues backlog.
+
+> **Note:** This solution currently supports the AquaSec scanner only.
+
 ```mermaid
 flowchart TD
     A["📋 Code Scanning Alerts\n(in GitHub Security tab)"]
@@ -147,9 +151,8 @@ severity=critical
 ## Getting Started
 
 Adopt the security automation by adding a short caller workflow to your repository.
-### Workflow Secrets
 
-# TODO: Not sure
+### Workflow Secrets
 
 | Secret | Required | Purpose |
 | --- | --- | --- |

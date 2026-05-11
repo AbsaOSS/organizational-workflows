@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 
-"""Shared test fixtures — real alert payloads taken from synthetic alert payloads.
+"""Shared test fixtures - real alert payloads taken from synthetic alert payloads.
 
 Each fixture returns a *mutable copy* so tests can modify it freely.
 Alerts use the nested schema (``metadata`` / ``alert_details`` / ``rule_details``)
@@ -244,17 +244,17 @@ def _enrich(raw: dict) -> Alert:
 
 @pytest.fixture()
 def sast_alert() -> Alert:
-    """SAST finding (alert 303) — ``verify=False`` in Python requests."""
+    """SAST finding (alert 303) - ``verify=False`` in Python requests."""
     return _enrich(_SAST_ALERT_303)
 
 
 @pytest.fixture()
 def vuln_alert() -> Alert:
-    """Vulnerability finding (alert 312) — jsPDF CVE with installed version."""
+    """Vulnerability finding (alert 312) - jsPDF CVE with installed version."""
     return _enrich(_VULN_ALERT_312)
 
 
 @pytest.fixture()
 def pipeline_alert() -> Alert:
-    """Pipeline misconfiguration finding (alert 317) — unpinned action."""
+    """Pipeline misconfiguration finding (alert 317) - unpinned action."""
     return _enrich(_PIPELINE_ALERT_317)

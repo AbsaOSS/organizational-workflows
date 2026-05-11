@@ -11,9 +11,9 @@
 
 ## Project Setup
 
-If you need to build the project locally, follow the steps on the dedicated README file:
-# TODO: upravit tento odkaz
-- [Security README](/src/security/README.md)
+If you need to build the project locally, follow the steps for dedicated solution:
+
+- **Security Solution:** [Running Locally README section](/src/security/README.md#running-locally)
 
 ---
 

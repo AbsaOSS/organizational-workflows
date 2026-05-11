@@ -1,184 +1,186 @@
-# Developer Guide — Security Automation
+# Developer Guide
 
-This document covers everything needed to develop, test, and maintain the
-scripts in `src/security/`.
+- [Project Setup](#project-setup)
+- [Run Pylint Check Locally \[.py\]](#run-pylint-check-locally-py)
+- [Run Black Tool Locally \[.py\]](#run-black-tool-locally-py)
+- [Run mypy Tool Locally \[.py\]](#run-mypy-tool-locally-py)
+- [Run Unit Tests Locally \[.py\]](#run-unit-tests-locally-py)
+- [Code Coverage \[.py\]](#code-coverage-py)
+- [Run All Quality Checks](#run-all-quality-checks)
+- [Releasing](#releasing)
 
-## Prerequisites
+## Project Setup
 
-| Tool | Version | Purpose |
-| --- | --- | --- |
-| Python | 3.14+ | Runtime for all Python scripts |
-| `gh` | latest | GitHub CLI (used by Python scripts) |
+If you need to build the project locally, follow the steps on the dedicated README file:
+# TODO: upravit tento odkaz
+- [Security README](/src/security/README.md)
 
-Install all dependencies:
+---
 
-```bash
-pip install -r requirements.txt
-```
+## Run Pylint Check Locally [.py]
 
-## Project layout
+This project uses [Pylint](https://pypi.org/project/pylint/) for static code analysis. Pylint analyses your code without actually running it. It checks for errors, enforces coding standards, and looks for code smells.
 
-```text
-src/security/
-├── utils/                   # Core library modules
-├── sync_security_alerts.py  # Main orchestrator (check labels → collect → promote)
-├── collect_alert.py         # Fetch & normalise code-scanning alerts
-├── promote_alerts.py        # Create / update GitHub Issues from alerts JSON
-├── send_to_teams.py         # Teams notification helper
-tests/
-├── security/
-│   ├── conftest.py          # Shared fixtures (synthetic alert payloads)
-│   ├── test_collect_alert.py
-│   ├── test_promote_alerts.py
-│   ├── test_send_to_teams.py
-│   ├── test_sync_security_alerts.py
-│   └── utils/               # Mirrors utils/ module structure
-│       ├── test_alert_parser.py
-│       ├── test_constants.py
-│       ├── test_issue_builder.py
-│       ├── test_issue_sync.py
-│       ├── test_models.py
-│       ├── test_sec_events.py
-│       ├── test_secmeta.py
-│       ├── test_teams.py
-│       └── test_templates.py
-pyproject.toml               # pytest & coverage config
-requirements.txt             # Runtime + dev dependencies
-```
+Pylint displays a global evaluation score for the code, rated out of a maximum score of 10.0. We are aiming to keep our code quality high above the score 9.0.
 
-## Running tests
+### Run Pylint
 
-All commands assume your working directory is the repository root.
-
-### Quick run
+Run Pylint on all files that are currently tracked by Git in the project.
 
 ```bash
-python3 -m pytest tests/ -v
+pylint $(git ls-files '*.py')
 ```
 
-### With code coverage
+To run Pylint on a specific file, follow the pattern `pylint <path_to_file>/<name_of_file>.py`.
+
+Example:
 
 ```bash
-python3 -m pytest tests/ -v --cov --cov-report=term-missing
+pylint src/security/promote_alerts.py
 ```
 
-This prints a per-file summary with uncovered line numbers. Configuration
-lives in `pyproject.toml` under `[tool.pytest.ini_options]` and
-`[tool.coverage.*]`.
+### Expected Output
 
-### Generating an HTML coverage report
+This is an example of the expected console output after running the tool:
+
+```
+************* Module main
+main.py:30:0: C0116: Missing function or method docstring (missing-function-docstring)
+
+------------------------------------------------------------------
+Your code has been rated at 9.41/10 (previous run: 8.82/10, +0.59)
+```
+
+---
+
+## Run Black Tool Locally [.py]
+
+This project uses [Black](https://github.com/psf/black) for code formatting. Black aims for consistency, generality, readability and reducing git diffs. The coding style used can be viewed as a strict subset of PEP 8.
+
+The root project file `pyproject.toml` defines the Black tool configuration. In this project we accept a line length of 120 characters.
+
+### Run Black
+
+Run Black on all files that are currently tracked by Git in the project.
 
 ```bash
-python3 -m pytest tests/ --cov --cov-report=html
+black $(git ls-files '*.py')
+```
+
+To run Black on a specific file, follow the pattern `black <path_to_file>/<name_of_file>.py`.
+
+Example:
+
+```bash
+black src/security/promote_alerts.py
+```
+
+### Expected Output
+
+This is an example of the expected console output after running the tool:
+
+```
+All done! ✨ 🍰 ✨
+1 file reformatted.
+```
+
+---
+
+## Run mypy Tool Locally [.py]
+
+This project uses [mypy](https://mypy.readthedocs.io/en/stable/) which is a static type checker for Python.
+
+> Type checkers help ensure that you're using variables and functions in your code correctly. With mypy, add type hints (PEP 484) to your Python programs, and mypy will warn you when you use those types incorrectly.
+
+mypy configuration is in the `pyproject.toml` file.
+
+### Run mypy
+
+Run mypy on all files in the project.
+
+```bash
+mypy .
+```
+
+To run mypy check on a specific file, follow the pattern `mypy <path_to_file>/<name_of_file>.py`.
+
+Example:
+
+```bash
+mypy src/security/promote_alerts.py
+```
+
+### Expected Output
+
+This is an example of the expected console output after running the tool:
+
+```
+Success: no issues found in 1 source file
+```
+
+---
+
+## Run Unit Tests Locally [.py]
+
+Unit tests are written using the Pytest framework.
+
+Execute all tests located in the tests directory:
+
+```bash
+pytest tests/
+```
+
+Run a single test file:
+
+```bash
+pytest tests/security/test_collect_alert.py -q
+```
+
+Run a single test function (node id):
+
+```bash
+pytest tests/security/test_collect_alert.py::test_collect_successful -q
+```
+
+---
+
+## Code Coverage [.py]
+
+This project uses [pytest-cov](https://pypi.org/project/pytest-cov/) to generate test coverage reports. The objective of the project is to achieve a minimum score of 80%.
+
+To generate the coverage report, run the following command:
+
+```bash
+pytest tests/ --cov=src --cov-fail-under=80 --cov-report=html
+```
+
+See the coverage report on the path:
+
+```bash
 open htmlcov/index.html
 ```
 
-### Running a single test file or test
+---
+
+## Run All Quality Checks
+
+Use the `Makefile` to run all quality gates at once:
+
+For **Python** related checks run:
 
 ```bash
-python3 -m pytest tests/security/utils/test_alert_parser.py -v
-python3 -m pytest tests/security/utils/test_models.py::test_severity_change_creation -v
+make py-qa
 ```
 
-## Test conventions
+This runs Black (formatting check), Pylint (static analysis), mypy (type checking), and pytest (unit tests with coverage) sequentially.
 
-- **Framework:** [pytest](https://docs.pytest.org/) — strictly plain
-  `test_` functions; **no test classes**.
-- **Fixtures** are defined in `tests/security/conftest.py` or at the top of
-  each test module (local).
-- **Test data** uses synthetic/generic identifiers (`test-org/test-repo`).
-  Do **not** embed real organisation or repository names.
-- One test function per behaviour; keep assertions focused.
-- Use `monkeypatch` (pytest built-in) for patching external calls
-  (subprocess, HTTP, environment variables).
+---
 
-## Code coverage
+## Releasing
 
-Coverage is configured in `pyproject.toml`:
+This project uses GitHub Actions for deployment draft creation. The deployment process is semi-automated by a workflow defined in `.github/workflows/release_draft.yml`.
 
-```toml
-[tool.coverage.run]
-source = ["src/shared", "src/security"]
-omit = [
-    "*/tests/*",
-    "*/__pycache__/*",
-    "*/htmlcov/*",
-]
-
-[tool.coverage.report]
-show_missing = true
-skip_empty = true
-exclude_lines = [
-    "pragma: no cover",
-    "if __name__ == .__main__.",
-    "if TYPE_CHECKING:",
-]
-```
-
-`exclude_lines` tells coverage to ignore lines matching any of these
-patterns when calculating percentages:
-
-- `pragma: no cover` — explicit opt-out marker placed in a comment.
-- `if __name__ == "__main__":` — script entry-point guard; only runs
-  when the file is executed directly, not during tests.
-- `if TYPE_CHECKING:` — import block that only runs during static
-  analysis (e.g. mypy/pyright), never at runtime.
-
-Modules like `promote_alerts.py`, `extract_team_security_stats.py`, and
-`derive_team_security_metrics.py` are integration-heavy and currently have
-low unit-test coverage. They would benefit from additional integration or
-end-to-end tests.
-
-## Adding new tests
-
-1. Create the test file under `tests/` mirroring the source path
-   (e.g. `utils/foo.py` → `tests/utils/test_foo.py`).
-2. Import shared fixtures from `conftest.py` where applicable.
-3. Write plain `test_` functions — do not wrap them in classes.
-4. Run `python3 -m pytest tests/ -v --cov` to verify coverage.
-
-## Linting and static analysis
-
-All commands assume your working directory is the repository root.
-
-### Black (formatting)
-
-Check only (CI mode):
-```bash
-python3 -m black --check src/ tests/
-```
-
-Auto-fix formatting:
-```bash
-python3 -m black src/ tests/
-```
-
-### Pylint (static analysis)
-
-The project requires a score ≥ **9.5/10** (enforced by `fail-under` in `.pylintrc`).
-
-```bash
-python3 -m pylint src/
-```
-
-### Mypy (type checking)
-
-```bash
-python3 -m mypy src/
-```
-
-### Run all checks at once
-
-```bash
-python3 -m black --check src/ tests/ && \
-python3 -m mypy src/ && \
-python3 -m pylint src/
-```
-
-## Style guide
-
-- Formatting follows [Black](https://black.readthedocs.io/) with
-  `line-length = 120` (configured in the root `pyproject.toml`).
-- Type hints are encouraged; the codebase targets Python 3.14+.
-- Use `from __future__ import annotations` where needed for forward
-  references.
+- **Trigger the workflow**: The `release_draft.yml` workflow is triggered on workflow_dispatch.
+- **Create a new draft release**: The workflow creates a new draft release in the repository.
+- **Finalize the release draft**: Edit the draft release to add a title, description, and any other necessary details.
+- **Publish the release**: Once the draft is ready, publish the release to make it publicly available.

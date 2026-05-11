@@ -1,525 +1,172 @@
-# Security Automation (Code Scanning → Issues)
+# Security Automation
 
-Turns GitHub **Code Scanning alerts** (SARIF-based, e.g. AquaSec) into a managed **GitHub Issues** backlog.
+## Overview
 
-In one sentence: SARIF uploads create alerts; these scripts sync alerts into Issues; labels + structured comments drive lifecycle; reporting is derived from Issues.
+Security Automation provides **continuous, automated vulnerability management** for your repositories. It takes GitHub Code Scanning alerts as an input and automatically converts them into a structured **GitHub Issues** with full lifecycle management. This gives your team a managed security posture without manual triage effort.
 
-## Table of contents
+> For setup instructions and technical configuration, see the [Security README](/src/security/README.md).
 
-- [What this is (and what it isn't)](#what-this-is-and-what-it-isnt)
-- [Contents](#contents)
-- [Quick start (local)](#quick-start-local)
-  - [Recommended: `sync_security_alerts.py`](#recommended-sync_security_alertspy)
-  - [Advanced: individual steps](#advanced-individual-steps)
-- [Run in GitHub Actions (minimal example)](#run-in-github-actions-minimal-example)
-- [Shared workflows](#shared-workflows)
-  - [Available reusable workflows](#available-reusable-workflows)
-  - [How to adopt a shared workflow](#how-to-adopt-a-shared-workflow)
-    - [Aquasec Night Scan](#aquasec-night-scan)
-      - [Cross-org project token](#cross-org-project-token)
-    - [Remove sec:adept-to-close on close](#remove-secadept-to-close-on-close)
-- [Labels (contract)](#labels-contract)
-- [Issue metadata (secmeta)](#issue-metadata-secmeta)
-- [Issue structure](#issue-structure)
-- [How you "say duplicate / grouped / dismissed / reopened"](#how-you-say-duplicate--grouped--dismissed--reopened)
-- [Known data manipulations](#known-data-manipulations)
-- [Collector output contract (alerts.json schema)](#collector-output-contract-alertsjson-schema)
-- [Design: fingerprints and matching](#design-fingerprints-and-matching)
-- [Current implementation status](#current-implementation-status)
-- [Troubleshooting](#troubleshooting)
-- [References](#references)
+---
 
-## What this is (and what it isn't)
+## How It Works
 
-- This is an **organizational toolkit**: copy the scripts (or vendor them) into an application repository and wire them into Actions.
-- SARIF is **write-only input**. Automation reads from GitHub's Code Scanning alerts API and from GitHub Issues.
-- Issues are the **system of record** for operational work (ownership, postponement, closure reasons, reporting).
+```mermaid
+flowchart TD
+    A["📋 Code Scanning Alerts\n(in GitHub Security tab)"]
+    B["📥 Fetch and Normalise Alerts"]
+    C["📝 Create / Update / Reopen Issues"]
+    D["🏷️ Label Resolved Findings"]
+    E["📣 Send Notifications"]
 
-## Contents
+    A --> B --> C --> D --> E
 
-| Script | Purpose | Requires |
-| --- | --- | --- |
-| `sync_security_alerts.py` | Main entrypoint: check labels, collect alerts, promote to Issues (local or Actions) | `gh`, `python3` |
-| `check_labels.py` | Verify that all labels required by the automation exist in the repository | `gh`, `python3` |
-| `collect_alert.py` | Fetch and normalise code-scanning alerts into `alerts.json` | `gh`, `python3` |
-| `promote_alerts.py` | Create/update parent+child Issues from `alerts.json` and link children under parents | `gh` |
-| `send_to_teams.py` | Send a Markdown message to a Microsoft Teams channel via Incoming Webhook | `requests` |
-| `extract_team_security_stats.py` | Snapshot security Issues for a team across repos | `PyGithub`, `GITHUB_TOKEN` |
-| `derive_team_security_metrics.py` | Compute metrics/deltas from snapshots | stdlib |
-
-All scripts live under `src/security/` in the repository root.
-
-## Quick start (local)
-
-### Prerequisites
-
-- Install and authenticate GitHub CLI: `gh auth login`
-- Python 3.14+ recommended
-- Install Python dependencies:
-
-```bash
-pip install -e '.[security]'
+    style A fill:#2e5090,color:#fff,stroke:#1e3a70
+    style B fill:#b07a1e,color:#fff,stroke:#8a5e10
+    style C fill:#2a7a6a,color:#fff,stroke:#1a5a4a
+    style D fill:#5a3d8a,color:#fff,stroke:#3a1d6a
+    style E fill:#2a7a40,color:#fff,stroke:#1a5a28
 ```
 
-### Recommended: `sync_security_alerts.py`
+1. **Fetch Alerts from Security Tab**: The automation reads existing Code Scanning alerts from the repository's Security tab. These alerts have to be previously uploaded by a SARIF-producing scanner (e.g. [AquaSec Night Scan](https://github.com/AbsaOSS/aquasec-scan-results)).
 
-This is the normal entrypoint for day-to-day use. It runs `check_labels.py`, `collect_alert.py`, and then `promote_alerts.py`.
+2. **Normalise**: Each alert is parsed and normalised into a common format, extracting severity, rule ID, affected file, and a stable fingerprint for matching.
 
-Collect + promote in one command:
+3. **Create / Update / Reopen Issues**: New findings become new GitHub Issues. Existing findings are updated with the latest occurrence data. Previously closed findings that reappear are automatically reopened. Parent issues (epics) group findings by rule and auto-close when all children are resolved.
 
-```bash
-python3 src/security/sync_security_alerts.py --repo <owner/repo>
-```
+4. **Mark Resolved Findings**: Issues for findings that are no longer detected are labelled `sec:adept-to-close`, signalling they are ready to be closed manually.
 
-Safe preview (no issue writes):
+5. **Send Notifications**: When new or reopened findings are detected a notification can be sent automatically.
 
-```bash
-python3 src/security/sync_security_alerts.py --repo <owner/repo> --dry-run
-```
+---
 
-To see full body previews in dry-run, use `--verbose` (or set `RUNNER_DEBUG=1`).
+## Key Benefits
 
-### Advanced: individual steps
+- **Zero manual triage**: New findings uploaded to the Security tab automatically become Issues with severity, context, and links to the affected code.
+- **Single source of truth**: GitHub Issues is the system of record. No need to check a separate security portal.
+- **Lifecycle automation**: Issues are reopened when findings reappear, labeled for closure when resolved, and updated if needed.
+- **Notifications**: Option to notify the team of new or reopened security findings in real-time.
+- **Priority sync**: Findings are mapped to priority levels on a ProjectV2 board, keeping planning and security aligned.
+- **Organisational scale**: Shared reusable workflows mean every repository gets the same security process with a single caller workflow.
 
-You can run the individual steps when you need finer control or want to debug the pipeline:
+---
 
-1. Collect open alerts:
+## What You See in GitHub
 
-```bash
-python3 src/security/collect_alert.py --repo <owner/repo> --state open --out alerts.json
-```
+After a successful run, findings appear as a GitHub Issues with defined body structure. Fields that are not available for a given finding are not shown for clarity.
 
-2. Promote alerts to Issues:
+### Security Issue (Child)
 
-```bash
-python3 src/security/promote_alerts.py --file alerts.json
-```
+**Title:** `[SEC:CRITICAL][FP=a1b2c3d4] requests: Improper certificate verification allows MITM attacks`
 
-## Run in GitHub Actions (minimal example)
+**Labels:** `scope:security`, `type:tech-debt`
 
-This is the simplest "after SARIF upload, sync issues" job.
-
-The expected entrypoint is `sync_security_alerts.py` (the individual scripts are still available when you need finer control).
-
-```yaml
-name: Promote code scanning alerts to issues
-
-on:
-  workflow_run:
-    workflows: ["Upload SARIF"]
-    types: [completed]
-
-permissions:
-  security-events: read
-  issues: write
-  contents: read
-
-jobs:
-  promote:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-
-      - name: Collect + promote
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python3 src/security/sync_security_alerts.py --state open --out alerts.json
-```
-
-## Shared workflows
-
-This repository provides **reusable GitHub Actions workflows** in `.github/workflows/`.
-Application repositories call them with a short caller workflow instead of duplicating the logic.
-
-The `docs/security/example_workflows/` directory contains ready-to-copy **example caller workflows** that you drop into your application repository's `.github/workflows/` directory.
-
-### Available reusable workflows
-
-| Workflow | Trigger (caller) | Purpose |
-| --- | --- | --- |
-| `aquasec-scan.yml` | `schedule` / `workflow_dispatch` | Runs AquaSec scan, uploads SARIF, then syncs alerts to Issues via `sync_security_alerts.py` |
-| `remove-adept-to-close-on-issue-close.yml` | `issues: [closed]` | Removes the `sec:adept-to-close` label from security issues when they are closed |
-
-### How to adopt a shared workflow
-
-1. Pick a workflow from the table above.
-2. Copy the matching example caller from `docs/security/example_workflows/` into your application repository at `.github/workflows/`.
-
-#### Aquasec Night Scan
-
-The caller needs the following **repository secrets** configured:
-
-| Secret | Required | Purpose |
-| --- | --- | --- |
-| `AQUA_KEY` | yes | AquaSec API key |
-| `AQUA_SECRET` | yes | AquaSec API secret |
-| `AQUA_GROUP_ID` | yes | AquaSec group identifier |
-| `AQUA_REPOSITORY_ID` | yes | AquaSec repository identifier |
-| `TEAMS_WEBHOOK_URL` | no | Teams Incoming Webhook URL for new/reopened issue alerts |
-| `GH_PROJECT_ONLY_TOKEN` | no (required for cross-org projects) | Classic PAT with `project` scope on an account that is a member of the org owning the ProjectV2 board – see [Cross-org project token](#cross-org-project-token) |
-
-Example caller (already available in [aquasec-night-scan.yml](/docs/security/aquasec-night-scan-example.yml)):
-
-```yaml
-name: Aquasec Night Scan
-
-on:
-  schedule:
-    - cron: '23 2 * * *'
-  workflow_dispatch:
-
-concurrency:
-  group: aquasec-night-scan-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-  actions: read
-  issues: write
-  security-events: write
-
-jobs:
-  scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@master
-    secrets:
-      AQUA_KEY: ${{ secrets.AQUA_KEY }}
-      AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
-      AQUA_GROUP_ID: ${{ secrets.AQUA_GROUP_ID }}
-      AQUA_REPOSITORY_ID: ${{ secrets.AQUA_REPOSITORY_ID }}
-      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-```
-
-##### Cross-org project token
-
-When `project-org` is a **different organisation** than the one that owns the calling repository, the automatic `github.token` cannot resolve the ProjectV2 board and you will see:
-
-```
-WARNING - GraphQL call failed: gh: Could not resolve to a ProjectV2 with the number <N>.
-WARNING - Could not load project #<N> metadata – priority sync disabled
-```
-
-The fix is a **Personal Access Token (classic)** with the `project` scope, created by an account that is a member of the org owning the project board.
-
-> **Why classic and not fine-grained?** Fine-grained PATs require the org admin to explicitly allow them under org settings. If that is not enabled, a classic PAT with the `project` scope is the practical alternative. Classic PATs are less granular (they apply to all orgs the account belongs to) but the `project` scope is the minimum checkbox needed and grants no code or issue access.
-
-**Step-by-step: create the token**
-
-1. Log in to the GitHub account that is a **member of the org that owns the project board** (e.g. `your-org`). Using a dedicated service/bot account is recommended over a personal account so the token does not expire when someone leaves.
-2. Go to **that account's Settings → Developer settings → Personal access tokens → Tokens (classic)**.
-3. Click **Generate new token (classic)**.
-4. Fill in the form:
-   - **Note**: something descriptive, e.g. `aquasec-alert-to-issues-priority-sync`
-   - **Expiration**: choose a date; calendar a renewal reminder
-   - **Scopes**: check **`project`** (labelled *"Full control of user projects"*) — this is the only scope needed. Do **not** check `repo`, `admin:org`, or anything else.
-5. Click **Generate token** and copy the value immediately (it is shown only once).
-
-**Step-by-step: store the token in the calling repository**
-
-1. In **your application repository** (the adopting repo, in your own org), go to **Settings → Secrets and variables → Actions**.
-2. Click **New repository secret**.
-3. Name: `GH_PROJECT_ONLY_TOKEN`, Value: paste the token from the step above.
-4. Save.
-
-The example caller workflow already passes this secret:
-
-```yaml
-secrets:
-  GH_PROJECT_ONLY_TOKEN: ${{ secrets.GH_PROJECT_ONLY_TOKEN }}
-```
-
-The reusable workflow forwards it to the Python script as the `GH_PROJECT_ONLY_TOKEN` environment variable. The script uses it **only** for ProjectV2 GraphQL calls; all other operations (issue list/create/update) continue to use the scoped `github.token`.
-
-**Minimum required scope summary**
-
-| Scope | Reason |
-| --- | --- |
-| `project` | Read/write access to org-level ProjectV2 — query metadata + set Priority field values |
-| *(everything else)* | Not needed — do not check |
-
-#### Remove sec:adept-to-close on close
-
-Example caller (already available in [remove-adept-to-close-on-issue-close.yml](/docs/security/example_workflow/remove-resolved-finding-label.yml)):
-
-```yaml
-name: Remove sec:adept-to-close on close
-
-on:
-  issues:
-    types: [closed]
-
-permissions:
-  issues: write
-
-jobs:
-  remove-label:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/remove-resolved-finding-label.yml@master
-```
-
-> **Note:** The calling repository must grant the permissions the reusable workflow needs (listed in each workflow file). For cross-organization calls the reusable workflow repository must be set to "Accessible from repositories in the organization" under **Settings → Actions → General**.
-
-## Labels (contract)
-
-The automation requires exactly these four labels to exist in the target repository (enforced by `check_labels.py`):
-
-| Label | Purpose |
-| --- | --- |
-| `scope:security` | Applied to every security Issue; used by `promote_alerts.py --issue-label` to discover existing Issues |
-| `type:tech-debt` | Marks security findings as tech-debt items |
-| `sec:adept-to-close` | Signals that a finding is ready to be closed by automation |
-| `epic` | Applied to parent (rule-level) Issues so they act as epics grouping child findings |
-
-## Issue metadata (secmeta)
-
-Each security Issue contains exactly one hidden HTML-comment `secmeta` block.
-
-Minimum recommended keys (child issue):
-
-```
+```markdown
 <!--secmeta
-schema=1
 type=child
-fingerprint=<finding_fingerprint>
-repo=org/repo
-source=code_scanning
-tool=AquaSec
-severity=high
-rule_id=...
-first_seen=YYYY-MM-DD
-last_seen=YYYY-MM-DD
-postponed_until=
-gh_alert_numbers=["123"]
-occurrence_count=1
+fingerprint=a1b2c3d4e5f6789012345678abcdef01
+repo=my-org/my-service
+rule_id=CVE-2024-99999
+severity=critical
+gh_alert_numbers=["7"]
 -->
+
+## General Information
+
+- **Severity:** critical
+- **Title:** requests: Improper certificate verification allows MITM attacks
+- **Category:** vulnerabilities
+- **Rule:** CVE-2024-99999
+- **Alert hash:** a1b2c3d4e5f6789012345678abcdef01
+- **First seen:** 2026-01-15
+
+## Description
+
+The requests library before 2.32.0 does not properly verify SSL certificates when
+the `verify` parameter is set to a path that does not exist. This allows a
+man-in-the-middle attacker to intercept HTTPS traffic. Fixed in requests 2.32.0.
+
+## Location
+
+- **Repository:** my-org/my-service
+- **File:** pyproject.toml
+- **Start Line:** 12
+- **End Line:** 12
+
+## Dependency Details
+
+- **Package name:** requests
+- **Installed version:** 2.28.1
+- **Fixed version:** 2.32.0
+- **Reachable:** True
 ```
 
-Minimum recommended keys (parent issue):
+### Rule Issue (Epic)
 
-```
+Each unique rule (e.g. a specific CVE) gets a parent issue that groups all individual findings. The parent is automatically closed when all its children are resolved.
+
+**Title:** `Security Alert – CVE-2024-99999`
+
+**Labels:** `scope:security`, `epic`
+
+```markdown
 <!--secmeta
-schema=1
 type=parent
-repo=org/repo
-source=code_scanning
-tool=AquaSec
-severity=high
-rule_id=...
-first_seen=YYYY-MM-DD
-last_seen=YYYY-MM-DD
-postponed_until=
+repo=my-org/my-service
+rule_id=CVE-2024-99999
+severity=critical
 -->
-```
 
-The `secmeta` block is automation-owned (humans express intent via labels and `[sec-event]` comments).
+## General Information
 
-## Issue structure
+- **Title:** requests: Improper certificate verification allows MITM attacks
+- **Category:** vulnerabilities
+- **Severity:** critical
+- **Published date:** 2024-11-05
+- **Short Description:** requests: Improper certificate verification allows MITM attacks
 
-### Title
+## Affected Package
 
-Recommended example (fingerprint-first):
+- **Package name:** requests
+- **Fixed version:** 2.32.0
 
-```text
-[SEC][FP=ab12cd34] Stored XSS in HTML rendering
-```
+## Classification
 
-Rules:
-
-- `FP=` is a short prefix of the canonical `finding_fingerprint` (8 chars is enough)
-- `POSTPONE=` exists only if postponed
-- Severity is expressed via labels, not the title
-
-### Structured comments (events)
-
-All lifecycle changes are logged via structured comments.
-
-Example close event:
-
-```text
-[sec-event]
-action=close
-reason=fixed
-detail=Escaped user input in renderer
-evidence=PR#123
-[/sec-event]
-```
-
-Example postpone event:
-
-```text
-[sec-event]
-action=postpone
-postponed_until=2026-03-15
-reason=vendor
-[/sec-event]
-```
-
-## How you "say duplicate / grouped / dismissed / reopened"
-
-Use Issue comments to express intent, and have automation translate that intent into labels / state changes / (optionally) GitHub alert actions.
-
-Recommended commands (example format):
-
-- `/sec duplicate-of #123` — mark as duplicate and point to canonical Issue
-- `/sec group-into #456` — group related findings under a parent Issue
-- `/sec dismiss reason=false_positive|accepted_risk|wont_fix comment="..."` — close with an auditable reason
-- `/sec reopen` — reopen a previously closed Issue
-
-Implementation note: the command parsing/side-effects depend on how `process_sec_events.py` (not yet implemented) evolves. The format above is the intended contract.
-
-## Known data manipulations
-
-As a rule, values placed into issue body templates are passed through **unchanged** from
-the collected alert payload. The following are intentional exceptions:
-
-### Date fields – time portion stripped
-
-The `iso_date()` helper is applied to datetime fields before rendering. It strips the
-time portion from ISO-8601 timestamps, keeping only the date.
-
-| Field | Template | Raw alert value | Rendered value |
-| --- | --- | --- | --- |
-| `published_date` | parent | `2026-02-25T08:25:18Z` | `2026-02-25` |
-| `scan_date` | child | `2026-02-25T19:37:05.912Z` | `2026-02-25` |
-| `first_seen` | child | `2025-09-17T12:46:48.271Z` | `2025-09-17` |
-| `secmeta.first_seen` | secmeta | `2026-02-25T08:25:18Z` | `2026-02-25` |
-| `secmeta.last_seen` | secmeta | `2026-02-25T14:11:06Z` | `2026-02-25` |
-
-Implementation: `shared/common.py → iso_date()`.
-
-### File path normalisation
-
-The `normalize_path()` helper is applied to the `file` field before it is used as a
-fingerprint input and stored in secmeta. It performs the following transformations:
-
-- Converts backslashes (`\`) to forward slashes (`/`).
-- Strips any leading `./` prefix (e.g. `./src/foo.py` → `src/foo.py`).
-- Strips any leading `/` (e.g. `/src/foo.py` → `src/foo.py`).
-- Collapses consecutive slashes to a single `/`.
-
-The normalised path is used only for matching and fingerprint computation; the original
-path string from the alert is never written back to the issue body.
-
-Implementation: `shared/common.py → normalize_path()`.
-
-## Collector output contract (alerts.json schema)
-
-`collect_alert.py` produces a JSON file with the following top-level structure:
-
-```json
-{
-  "generated_at": "<ISO-8601 UTC timestamp>",
-  "repo": { "id": ..., "name": ..., "full_name": ..., "private": ...,
-             "html_url": ..., "default_branch": ..., "owner": { ... } },
-  "query": { "state": "<open|dismissed|fixed|all>" },
-  "alerts": [ ... ]
-}
-```
-
-Each element of `alerts` is a normalised alert object with three sub-objects:
-
-### `metadata`
-
-Fixed keys extracted directly from the GitHub code-scanning alert API response.
-All keys are always present; values are `null` when the API does not provide them
-(e.g. `instance_url`, `help_uri`).
-
-Key fields: `alert_number`, `state`, `created_at`, `updated_at`, `url`, `alert_url`,
-`rule_id`, `rule_name`, `severity`, `confidence`, `tags`, `help_uri`, `tool`,
-`tool_version`, `ref`, `commit_sha`, `instance_url`, `classifications`, `file`,
-`start_line`, `end_line`.
-
-### `alert_details`
-
-Key/value pairs parsed from the free-text `message.text` field of the most-recent
-alert instance. **Only keys that actually appear in the message are included**; no
-default or placeholder values are injected for absent keys.
-
-For AquaSec scans the message embeds lines in the form `Key: Value`. The raw message
-keys (defined in `AlertMessageKey` in `utils/alert_parser.py`) are space-separated
-(e.g. `scan date`, `alert hash`); `collect_alert.py`'s `_parse_alert_details` converts
-them to snake_case via `_snake_case`. Known output keys include `artifact`, `type`,
-`vulnerability`, `severity`, `message`, `repository`, `reachable`, `scan_date`,
-`first_seen`, `scm_file`, `installed_version`, `start_line`, `end_line`, `alert_hash`.
-
-Note: `installed_version` is present only in vulnerability-type alerts (e.g.
-`CVE-*`). It is absent from SAST and pipeline misconfiguration alerts because the
-scanner does not include that field in those message types.
-
-### `rule_details`
-
-Fields extracted from `**Key:** value` markup in the rule help text, using the fixed
-set of keys listed in `RULE_DETAIL_KEYS` in `collect_alert.py`. **All keys are always
-present**; missing fields are set to `null` (not `"N/A"` or an empty string). Keys
-include: `type`, `severity`, `cwe`, `fixed_version`, `published_date`, `package_name`,
-`category`, `impact`, `confidence`, `likelihood`, `remediation`, `owasp`, `references`.
-
-## Design: fingerprints and matching
-
-### Current fingerprint source
-
-The current `promote_alerts.py` implementation expects the scanner to embed a stable fingerprint in the alert instance message text as a line in the form:
-
-```text
-Alert hash: <value>
-```
-
-That `Alert hash` value is treated as the canonical `fingerprint` and is used to match Issues.
-
-### Identifiers stored in secmeta
-
-`promote_alerts.py` stores:
-
-- `fingerprint`: canonical finding identity (from `Alert hash`)
-- `gh_alert_numbers`: list of GitHub alert numbers observed for this finding
-- `occurrence_count` and `last_occurrence_fp`: best-effort occurrence tracking over time
-
-### Occurrence fingerprint
-
-For tracking repeat sightings, `promote_alerts.py` computes an occurrence fingerprint from:
-
-```text
-commit_sha + path + start_line + end_line
-```
-
-### SARIF normalization to reduce duplicate GitHub alerts
-
-Even with your own Issue fingerprint, you want GitHub alerts to remain stable:
-
-- normalize SARIF paths to repo-relative `artifactLocation.uri`
-- keep `ruleId` stable
-- avoid unnecessary result reordering
-
-## Current implementation status
-
-As of 2026-03, `promote_alerts.py` implements the fingerprint-based sync loop described above:
-
-- Matches issues strictly by `secmeta.fingerprint` (from the alert message `Alert hash: ...`)
-- Ensures a parent issue per `rule_id` (`secmeta.type=parent`) and links child issues under the parent using GitHub sub-issues
-- Closes an open parent issue when all known child issues for the same `rule_id` are already closed
-- Writes/updates `secmeta` on child issues, including `gh_alert_numbers`, `first_seen`, `last_seen`, `last_seen_commit`, and occurrence tracking
-- Reopens a closed matching Issue when an alert is open again
-- Adds `[sec-event]` comments only for meaningful events (reopen, new occurrence)
-
-## Troubleshooting
-
-- `gh: command not found`: install GitHub CLI and ensure it's on `PATH`.
-- `gh auth status` fails: run `gh auth login` locally, or set `GH_TOKEN` in Actions.
-- Permission errors in Actions: ensure the workflow has `security-events: read` and `issues: write` permissions.
-- `Output file alerts.json exists`: `collect_alert.py` refuses to overwrite output; delete the file, pass a different `--out` path, or run via `sync_security_alerts.py --force` (which deletes the file before invoking the collector).
-- `missing 'alert hash' in alert message`: the scanner/collector needs to include an `Alert hash: ...` line in the alert instance message text.
-- `GraphQL call failed: gh: Could not resolve to a ProjectV2 with the number N` / `Could not load project #N metadata – priority sync disabled`: the token used for the GraphQL call cannot see the project. Two causes:
-  - **Same org, wrong permission**: ensure the caller workflow has `repository-projects: write` (not `read`).
-  - **Cross-org**: the calling repository is in a different org than the project board. Create a classic PAT with the `project` scope on an account that is a member of the project-owning org, and store it as `GH_PROJECT_ONLY_TOKEN` in the calling repository's secrets. See [Cross-org project token](#cross-org-project-token).
+- **Rule:** CVE-2024-99999
+- **Category:** vulnerabilities
+- **Advisory URL:** https://access.redhat.com/security/cve/CVE-2024-99999
 
 ## References
 
-- [REST API endpoints for code scanning - GitHub Docs](https://docs.github.com/en/rest/code-scanning/code-scanning)
-- [SARIF support for code scanning - GitHub Docs](https://docs.github.com/en/code-security/reference/code-scanning/sarif-support-for-code-scanning)
-- [upload-sarif: Adding fingerprints discussion](https://github.com/github/codeql-action/issues/2386)
+- https://access.redhat.com/security/cve/CVE-2024-99999
+- https://github.com/psf/requests/security/advisories/GHSA-0000-0000-0000
+- https://nvd.nist.gov/vuln/detail/CVE-2024-99999
+```
+
+---
+
+## Getting Started
+
+Adopt the security automation by adding a short caller workflow to your repository.
+### Workflow Secrets
+
+# TODO: Not sure
+
+| Secret | Required | Purpose |
+| --- | --- | --- |
+| `AQUA_KEY` | Yes | AquaSec API key |
+| `AQUA_SECRET` | Yes | AquaSec API secret |
+| `AQUA_GROUP_ID` | Yes | AquaSec group identifier |
+| `AQUA_REPOSITORY_ID` | Yes | AquaSec repository identifier |
+| `TEAMS_WEBHOOK_URL` | No | Teams webhook for real-time alerts |
+
+### Example Caller Workflow
+
+See the full example at [docs/security/aquasec-night-scan-example.yml](/docs/security/aquasec-night-scan-example.yml).
+
+---
+
+## See Also
+
+- [Security README](/src/security/README.md): setup instructions, shared workflow configuration, and technical details
+- [Example Caller Workflow](/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
+- [Repository README](/README.md): overview of all organizational workflows

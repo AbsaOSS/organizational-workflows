@@ -228,7 +228,7 @@ def main(argv: list[str] | None = None) -> None:
 
     body = _resolve_body(args)
     if not body.strip():
-        raise SystemExit("Message body is empty — nothing to send.")
+        raise SystemExit("Message body is empty - nothing to send.")
 
     webhook_url = args.webhook_url
     if not webhook_url and not args.dry_run:

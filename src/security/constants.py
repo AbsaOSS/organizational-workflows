@@ -21,6 +21,8 @@ LABEL_TYPE_TECH_DEBT = "type:tech-debt"
 LABEL_EPIC = "epic"
 LABEL_SEC_ADEPT_TO_CLOSE = "sec:adept-to-close"
 
+SECMETA_KEYS_PARENT = {"type", "repo", "rule_id", "severity"}
+SECMETA_KEYS_CHILD = {"type", "fingerprint", "repo", "rule_id", "severity", "gh_alert_numbers"}
 SECMETA_TYPE_PARENT = "parent"
 SECMETA_TYPE_CHILD = "child"
 

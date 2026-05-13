@@ -58,7 +58,7 @@ from security.issues.models import (
     SyncContext,
     SyncStats,
 )
-from security.issues.secmeta import render_secmeta
+from security.issues.secmeta import load_secmeta, render_secmeta
 
 
 # =====================================================================
@@ -335,6 +335,30 @@ def test_merge_removes_alert_hash() -> None:
     ctx = _make_alert_context(fingerprint="fp1")
     secmeta = _merge_child_secmeta(ctx=ctx, issue=child)
     assert "alert_hash" not in secmeta
+
+
+def test_merge_strips_legacy_secmeta_keys() -> None:
+    """Legacy secmeta keys are stripped during merge, keeping only canonical child keys."""
+    child = _issue_with_secmeta(1, {
+        "type": "child",
+        "fingerprint": "fp1",
+        "gh_alert_numbers": '["100"]',
+        "category": "vulnerabilities",
+        "cve": "CVE-2026-1234",
+        "first_seen": "2026-01-01",
+        "last_occurrence_fp": "abc123",
+        "last_seen": "2026-01-02",
+        "last_seen_commit": "deadbeef",
+        "occurrence_count": "5",
+        "postponed_until": "",
+        "schema": "1",
+        "source": "code_scanning",
+        "tool": "AquaSec",
+    })
+    ctx = _make_alert_context(alert_number=200, fingerprint="fp1")
+    secmeta = _merge_child_secmeta(ctx=ctx, issue=child)
+    expected_keys = {"type", "fingerprint", "repo", "rule_id", "severity", "gh_alert_numbers"}
+    assert expected_keys == set(secmeta.keys())
 
 
 # =====================================================================
@@ -763,6 +787,30 @@ def test_ensure_parent_body_deferred(sast_alert: Alert) -> None:
     )
     assert 10 in bods
     assert bods[10][1] == original_body
+
+
+def test_ensure_parent_strips_legacy_secmeta_keys(sast_alert: Alert) -> None:
+    """Legacy secmeta keys are stripped from rebuilt parent body."""
+    parent = _issue_with_secmeta(10, {
+        "type": "parent",
+        "rule_id": sast_alert.metadata.rule_id,
+        "severity": "high",
+        "first_seen": "2026-01-01",
+        "last_seen": "2026-01-02",
+        "postponed_until": "",
+        "schema": "1",
+        "source": "code_scanning",
+        "tool": "AquaSec",
+    })
+    issues = {10: parent}
+    index = build_issue_index(issues)
+    ensure_parent_issue(
+        sast_alert, issues, index, dry_run=True,
+        severity_changes=[], parent_original_bodies={}, stats=SyncStats(),
+    )
+    rebuilt_secmeta = load_secmeta(parent.body)
+    expected_keys = {"type", "repo", "rule_id", "severity"}
+    assert expected_keys == set(rebuilt_secmeta.keys())
 
 
 def test_ensure_parent_title_drift_corrected(mocker: MockerFixture, sast_alert: Alert) -> None:

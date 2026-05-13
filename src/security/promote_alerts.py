@@ -135,7 +135,7 @@ def main(argv: list[str] | None = None) -> None:
     open_alerts = loaded_alerts.open_by_number
 
     issues = gh_issue_list_by_label(repo_full, str(args.issue_label))
-    logging.info(LOGGING_PREFIX + "Loaded %d existing security issues for synchronisation", len(issues))
+    logging.info(LOGGING_PREFIX + "Loaded %d existing security issues for synchronization", len(issues))
 
     # Build severity → priority map from user input; empty by default (priority skipped).
     spm = parse_severity_priority_map(str(args.severity_priority_map or ""))

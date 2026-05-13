@@ -49,6 +49,8 @@ from security.constants import (
     LOGGING_PREFIX,
     SECMETA_TYPE_CHILD,
     SECMETA_TYPE_PARENT,
+    SECMETA_KEYS_PARENT,
+    SECMETA_KEYS_CHILD,
 )
 from .builder import (
     build_child_issue_body,
@@ -251,6 +253,7 @@ def ensure_parent_issue(
                 "rule_id": rule_id,
             }
         )
+        existing_secmeta = {k: v for k, v in existing_secmeta.items() if k in SECMETA_KEYS_PARENT}
 
         rebuilt = (
             render_secmeta(existing_secmeta)
@@ -300,9 +303,7 @@ def ensure_parent_issue(
             alert.metadata.severity,
         )
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            logging.debug("DRY-RUN: body_preview_begin")
-            logging.debug(body)
-            logging.debug("DRY-RUN: body_preview_end")
+            logging.debug("DRY-RUN: Would create parent issue for rule %s with body:\n%s", rule_id, body)
         stats.parents_created += 1
         placeholder = Issue(number=0, state="open", title=title, body=body)
         index.parent_by_rule_id[rule_id] = placeholder
@@ -395,9 +396,7 @@ def _handle_new_child_issue(
                 logging.debug("No parent issue yet for rule_id=%s – link will happen on next sync", ctx.rule_id)
         sync.stats.children_created += 1
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            logging.debug("DRY-RUN: body_preview_begin")
-            logging.debug(body)
-            logging.debug("DRY-RUN: body_preview_end")
+            logging.debug("DRY-RUN: Would create child issue for alert %d with body:\n%s", ctx.alert_number, body)
 
         _append_notification(
             sync.notifications,
@@ -545,6 +544,7 @@ def _merge_child_secmeta(
             "gh_alert_numbers": json_list(existing_alerts),
         }
     )
+    secmeta = {k: v for k, v in secmeta.items() if k in SECMETA_KEYS_CHILD}
 
     return secmeta
 
@@ -564,9 +564,7 @@ def _rebuild_and_apply_child_body(
         if sync.dry_run:
             logging.info(DRY_RUN_PREFIX + "Would update child issue #%d body", issue.number)
             if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug("DRY-RUN: Body preview begin child issue #%d", issue.number)
-                logging.debug(new_body)
-                logging.debug("DRY-RUN: Body preview end child issue #%d", issue.number)
+                logging.debug("DRY-RUN: Would update child issue #%d body to:\n%s", issue.number, new_body)
             sync.stats.children_body_updated += 1
         else:
             if gh_issue_edit_body(ctx.repo, issue.number, new_body):
@@ -774,9 +772,7 @@ def _flush_parent_body_updates(
             if dry_run:
                 logging.info(DRY_RUN_PREFIX + "Would update parent issue #%d body", num)
                 if logging.getLogger().isEnabledFor(logging.DEBUG):
-                    logging.debug("DRY-RUN: Body preview begin parent issue #%d", num)
-                    logging.debug(issue.body)
-                    logging.debug("DRY-RUN: Body preview end parent issue #%d", num)
+                    logging.debug("DRY-RUN: Would update parent issue #%d body to:\n%s", num, issue.body)
                 stats.parents_body_updated += 1
             else:
                 if gh_issue_edit_body(repo, num, issue.body):
@@ -802,7 +798,7 @@ def _label_adept_to_close_issues(
     unmatched_fps = open_issue_fps - alert_fingerprints
 
     if not unmatched_fps:
-        logging.debug("No unmatched child issues – skipping adept-to-close labelling")
+        logging.debug("No unmatched child issues – skipping adept-to-close labeling")
         return
 
     logging.info(LOGGING_PREFIX + "Detected %d child issue/s with no matching alert", len(unmatched_fps))
@@ -811,7 +807,7 @@ def _label_adept_to_close_issues(
         issue = index.by_fingerprint[fp]
         repo = load_secmeta(issue.body).get("repo", "")
         if not repo:
-            logging.debug("Skipping adept-to-close labelling for issue #%d: no repo in secmeta", issue.number)
+            logging.debug("Skipping adept-to-close labeling for issue #%d: no repo in secmeta", issue.number)
             continue
         if issue.labels and LABEL_SEC_ADEPT_TO_CLOSE in issue.labels:
             logging.debug(

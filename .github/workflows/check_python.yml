@@ -181,4 +181,4 @@ jobs:
     if: needs.detect.outputs.python_changed != 'true'
     runs-on: ubuntu-latest
     steps:
-      - run: echo "No changes in the *.py files — passing."
+      - run: echo "No changes in the *.py files - passing."

@@ -203,7 +203,7 @@ def test_notify_teams_subprocess_failure(
 
 
 def test_severity_changes_skips_when_empty() -> None:
-    """Empty list is silently accepted — no subprocess call."""
+    """Empty list is silently accepted - no subprocess call."""
     notify_teams_severity_changes("https://hook", [], dry_run=False)
 
 def test_severity_changes_dry_run(

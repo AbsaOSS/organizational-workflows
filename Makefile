@@ -1,4 +1,4 @@
-.PHONY: black pylint mypy pytest-unit qa
+.PHONY: black pylint mypy pytest-unit py-qa
 
 PYTHON   := .venv/bin/python
 PY_FILES := $(shell git ls-files '*.py')
@@ -17,4 +17,4 @@ mypy: ## Run mypy static type checker
 pytest-unit: ## Run unit tests with coverage (threshold >= 80%)
 	$(PYTHON) -m pytest tests/ --cov=src --cov-fail-under=$(MIN_COVERAGE)
 
-qa: black pylint mypy pytest-unit
+py-qa: black pylint mypy pytest-unit

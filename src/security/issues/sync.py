@@ -274,6 +274,7 @@ def ensure_parent_issue(
         expected_title = build_parent_issue_title(rule_id)
         if expected_title != (existing.title or ""):
             if dry_run:
+                existing.title = expected_title
                 logging.info(DRY_RUN_PREFIX + "Would update parent issue #%d title", existing.number)
                 logging.debug("DRY-RUN: Would update title for parent issue #%d to %s", existing.number, expected_title)
                 stats.parents_title_updated += 1
@@ -303,7 +304,9 @@ def ensure_parent_issue(
             logging.debug(body)
             logging.debug("DRY-RUN: body_preview_end")
         stats.parents_created += 1
-        return None
+        placeholder = Issue(number=0, state="open", title=title, body=body)
+        index.parent_by_rule_id[rule_id] = placeholder
+        return placeholder
 
     num = gh_issue_create(repo_full, title, body, labels)
     if num is None:

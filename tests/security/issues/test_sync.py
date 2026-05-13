@@ -236,7 +236,7 @@ def test_find_parent_not_found() -> None:
 
 
 def test_reopen_parent_none(mocker: MockerFixture) -> None:
-    """No-op when parent_issue is None — no gh call is made."""
+    """No-op when parent_issue is None - no gh call is made."""
     mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state")
     maybe_reopen_parent_issue(
         "org/repo", None, rule_id="R1", dry_run=False, stats=SyncStats(),
@@ -299,7 +299,7 @@ def test_append_notification_active() -> None:
 
 
 def test_append_notification_none() -> None:
-    """No-op when notifications is None — must not raise."""
+    """No-op when notifications is None - must not raise."""
     _append_notification(
         None, repo="org/repo", issue_number=42,
         severity="high", category="sast", state="new", tool="AquaSec",
@@ -674,14 +674,17 @@ def test_ensure_parent_creates_new(mocker: MockerFixture, sast_alert: Alert) -> 
 
 
 def test_ensure_parent_dry_run(sast_alert: Alert) -> None:
-    """Dry-run does not create an issue, returns None."""
+    """Dry-run returns a placeholder issue and registers it in the index."""
     issues: dict[int, Issue] = {}
     index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
+    stats = SyncStats()
     result = ensure_parent_issue(
         sast_alert, issues, index, dry_run=True,
-        severity_changes=[], parent_original_bodies={}, stats=SyncStats(),
+        severity_changes=[], parent_original_bodies={}, stats=stats,
     )
-    assert result is None
+    assert 0 == result.number
+    assert sast_alert.metadata.rule_id in index.parent_by_rule_id
+    assert 1 == stats.parents_created
 
 
 def test_ensure_parent_existing_returns_existing(sast_alert: Alert) -> None:
@@ -798,6 +801,22 @@ def test_ensure_parent_title_drift_dry_run(sast_alert: Alert) -> None:
         severity_changes=[], parent_original_bodies={}, stats=stats,
     )
     assert 1 == stats.parents_title_updated
+
+
+def test_ensure_parent_dry_run_create_not_inflated(sast_alert: Alert) -> None:
+    """Dry-run counts parent creation once even when same rule_id is processed twice."""
+    issues: dict[int, Issue] = {}
+    index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
+    stats = SyncStats()
+    bods: ParentOriginalBodies = {}
+    kwargs: dict = dict(
+        dry_run=True, severity_changes=[], parent_original_bodies=bods, stats=stats,
+    )
+    r1 = ensure_parent_issue(sast_alert, issues, index, **kwargs)
+    r2 = ensure_parent_issue(sast_alert, issues, index, **kwargs)
+    assert 1 == stats.parents_created
+    assert r1 is not None
+    assert r2 is not None
 
 
 # =====================================================================
@@ -1049,7 +1068,7 @@ def test_sync_closes_parent_when_all_children_closed(mocker: MockerFixture) -> N
 
 
 def test_sync_reopened_child_prevents_parent_close(sast_alert: Alert) -> None:
-    """Reopened child keeps parent open — resolved-parent check must not re-close it."""
+    """Reopened child keeps parent open - resolved-parent check must not re-close it."""
     rule_id = sast_alert.metadata.rule_id
     fingerprint = sast_alert.alert_details.alert_hash
     parent = _issue_with_secmeta(169, {

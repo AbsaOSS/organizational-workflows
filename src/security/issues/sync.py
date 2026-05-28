@@ -70,7 +70,7 @@ from .models import (
     SyncResult,
     SyncStats,
 )
-from .secmeta import json_list, load_secmeta, parse_json_list, render_secmeta
+from .secmeta import load_secmeta, render_secmeta
 from .templates import PARENT_BODY_TEMPLATE
 
 
@@ -368,7 +368,6 @@ def _handle_new_child_issue(
         "repo": ctx.repo,
         "rule_id": ctx.rule_id,
         "severity": ctx.severity,
-        "gh_alert_numbers": json_list([str(ctx.alert_number)]),
     }
 
     human_body = build_child_issue_body(ctx.alert)
@@ -526,13 +525,6 @@ def _merge_child_secmeta(
 ) -> dict[str, str]:
     """Merge incoming alert data into the child issue's secmeta."""
     secmeta = load_secmeta(issue.body) or {}
-    secmeta.pop("alert_hash", None)
-
-    existing_alerts = parse_json_list(secmeta.get("gh_alert_numbers"))
-    if not existing_alerts and secmeta.get("related_alert_ids"):
-        existing_alerts = parse_json_list(secmeta.get("related_alert_ids"))
-    if str(ctx.alert_number) not in existing_alerts:
-        existing_alerts.append(str(ctx.alert_number))
 
     secmeta.update(
         {
@@ -541,7 +533,6 @@ def _merge_child_secmeta(
             "repo": ctx.repo,
             "rule_id": ctx.rule_id or secmeta.get("rule_id", ""),
             "severity": ctx.severity,
-            "gh_alert_numbers": json_list(existing_alerts),
         }
     )
     secmeta = {k: v for k, v in secmeta.items() if k in SECMETA_KEYS_CHILD}
@@ -661,14 +652,6 @@ def ensure_issue(
 ) -> None:
     """Process a single alert: create or update its child issue and parent."""
     alert_number = alert.metadata.alert_number
-
-    alert_state = alert.metadata.state
-    if alert_state and alert_state != "open":
-        # This script is designed to process open alerts only!
-        # Input is typically produced by collect_alert.py with --state open (default).
-        logging.debug("Skip alert %d: state=%r (only 'open' processed)", alert_number, alert_state)
-        return
-
     rule_id = alert.metadata.rule_id
 
     path = normalize_path(alert.metadata.file)

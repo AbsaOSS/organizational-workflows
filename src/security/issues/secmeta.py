@@ -16,11 +16,8 @@
 
 """``secmeta`` metadata blocks – parsing, rendering, and upserting the hidden
 HTML-comment metadata block stored in issue bodies.
-
-Also hosts generic key-value and JSON-list helpers used for secmeta field values.
 """
 
-import json
 import re
 
 
@@ -84,28 +81,6 @@ def render_secmeta(secmeta: dict[str, str]) -> str:
         "repo",
         "rule_id",
         "severity",
-        "gh_alert_numbers",
     ]
     lines = render_kv_lines(secmeta, preferred_order)
     return "<!--secmeta\n" + "\n".join(lines) + "\n-->"
-
-
-def parse_json_list(value: str | None) -> list[str]:
-    """Parse a JSON array string into a list of strings."""
-    if not value:
-        return []
-    s = value.strip()
-    try:
-        parsed = json.loads(s)
-        if isinstance(parsed, list):
-            return [str(x) for x in parsed]
-    except Exception:
-        pass
-    # Comma-separated plain values (no brackets expected from json_list()).
-    parts = [p.strip().strip('"').strip("'") for p in s.split(",")]
-    return [p for p in parts if p]
-
-
-def json_list(value: list[str]) -> str:
-    """Serialise a list of strings as a compact JSON array."""
-    return json.dumps([str(x) for x in value])

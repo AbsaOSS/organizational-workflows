@@ -15,58 +15,46 @@
 # limitations under the License.
 #
 
-"""Orchestrator that runs the full Security pipeline: GH sec-Issues creation."""
+"""Orchestrator that runs the full Security pipeline.
+Pipeline: validate config -> check labels -> authenticate -> fetch -> parse -> sync -> notify.
+"""
 
 import argparse
 import logging
-import os
+import shutil
 
 from core.config import parse_runner_debug, setup_logging
 
-from security.check_labels import check_labels
-from security.collect_alert import main as collect_alert_main
+from security.alerts.aquasec_parser import AquaSecParser
 from security.constants import LOGGING_PREFIX
-from security.promote_alerts import main as promote_alerts_main
+from security.config import SecurityConfig
+from security.services.authenticator import AquaSecAuthenticator
+from security.services.issue_syncer import IssueSyncer
+from security.services.label_checker import LabelChecker
+from security.services.notification_sender import NotificationSender
+from security.services.scan_fetcher import ScanFetcher
 
 logger = logging.getLogger(__name__)
-
-VALID_STATES = {"open", "dismissed", "fixed", "all"}
-
-
-def _resolve_repo(cli_repo: str) -> str:
-    """Return *cli_repo* if given, else fall back to ``GITHUB_REPOSITORY``."""
-    repo = cli_repo or os.environ.get("GITHUB_REPOSITORY", "")
-    if not repo or "/" not in repo:
-        raise SystemExit(
-            "ERROR: repo not specified or invalid. " "Use --repo owner/repo or set GITHUB_REPOSITORY=owner/repo."
-        )
-    return repo
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments."""
     p = argparse.ArgumentParser(
         description=(
-            "Thin orchestrator that runs:\n"
-            "  1) check_labels   -> verify required labels exist\n"
-            "  2) collect_alert  -> writes alerts.json\n"
-            "  3) promote_alerts -> creates/updates Issues from alerts.json"
+            "Security pipeline orchestrator:\n"
+            "  1) Validate configuration\n"
+            "  2) Check required labels exist\n"
+            "  3) Authenticate with AquaSec API\n"
+            "  4) Fetch repository scan findings\n"
+            "  5) Parse findings\n"
+            "  6) Sync findings to GitHub Issues\n"
+            "  7) Send Teams notifications"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    p.add_argument("--repo", default="", help="GitHub repository (owner/repo)")
     p.add_argument(
-        "--state",
-        default="open",
-        choices=sorted(VALID_STATES),
-        help="Alert state filter (default: open)",
-    )
-    p.add_argument(
-        "--out",
-        default="alerts.json",
-        dest="out_file",
-        help="Output file for alerts JSON (default: alerts.json)",
+        "--repo", default="", help="GitHub repository (owner/repo). Falls back to $GITHUB_REPOSITORY env var"
     )
     p.add_argument(
         "--issue-label",
@@ -75,42 +63,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--severity-priority-map",
-        default=os.environ.get("SEVERITY_PRIORITY_MAP", ""),
+        default="",
         help=(
             "Comma-separated severity=priority pairs, e.g. "
             "'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor,Unknown=Normal'. "
-            "Only listed severities get a priority; unlisted ones are left empty. "
-            "When not set at all, priority is skipped for every severity. "
-            "Default: $SEVERITY_PRIORITY_MAP"
+            "Falls back to $SEVERITY_PRIORITY_MAP env var"
         ),
     )
     p.add_argument(
         "--project-number",
-        default=os.environ.get("PROJECT_NUMBER", ""),
-        help=(
-            "GitHub Projects V2 number (org-level) where a Priority "
-            "single-select field will be set for each promoted issue. "
-            "Required together with --severity-priority-map. "
-            "When omitted, project-level priority is skipped. "
-            "Default: $PROJECT_NUMBER"
-        ),
+        default="",
+        help="GitHub Projects V2 number (org-level) for priority sync. Falls back to $PROJECT_NUMBER env var",
     )
     p.add_argument(
         "--project-org",
-        default=os.environ.get("PROJECT_ORG", ""),
-        help=(
-            "GitHub organisation that owns the Projects V2 board. "
-            "Use when the project lives in a different org than the scanned repo. "
-            "When omitted, derived from the repo name. "
-            "Default: $PROJECT_ORG"
-        ),
+        default="",
+        help="GitHub organisation that owns the Projects V2 board. Falls back to $PROJECT_ORG env var",
     )
     p.add_argument(
         "--teams-webhook-url",
-        default=os.environ.get("TEAMS_WEBHOOK_URL", ""),
-        help="Teams Incoming Webhook URL (default: $TEAMS_WEBHOOK_URL)",
+        default="",
+        help="Teams Incoming Webhook URL. Falls back to $TEAMS_WEBHOOK_URL env var",
     )
-    p.add_argument("--skip-label-check", action="store_true", help="Skip the label existence check")
     p.add_argument("--dry-run", action="store_true", help="Do not write issues; only print intended actions")
     p.add_argument(
         "--verbose",
@@ -121,63 +95,53 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the full sync pipeline and return an exit code."""
+    """Run the full Security pipeline."""
     args = parse_args(argv)
 
-    verbose = bool(args.verbose) or parse_runner_debug()
-    dry_run = bool(args.dry_run)
-    setup_logging(verbose)
-    logger.info(LOGGING_PREFIX + "Logging configuration set up")
+    setup_logging(bool(args.verbose) or parse_runner_debug())
 
-    repo = _resolve_repo(args.repo)
-    out_file: str = args.out_file
+    # Load and validate configuration
+    config = SecurityConfig.load(args)
+    config.validate()
 
-    if dry_run:
-        logger.info(LOGGING_PREFIX + "Starting the DRY-RUN process for %s", repo)
+    repo = config.repo
+
+    if dry_run := config.dry_run:
+        logger.info("%sStarting the DRY-RUN process for %s", LOGGING_PREFIX, repo)
     else:
-        logger.info(LOGGING_PREFIX + "Starting process for %s", repo)
+        logger.info("%sStarting process for %s", LOGGING_PREFIX, repo)
 
-    # Label check
-    if not args.skip_label_check:
-        missing = check_labels(repo)
-        if missing:
-            logger.error(
-                "Required labels missing in %s: %s",
-                repo,
-                ", ".join(missing),
-            )
-            return 1
-        logger.info(LOGGING_PREFIX + "All required labels present")
+    # Check gh CLI availability
+    if shutil.which("gh") is None:
+        raise SystemExit("ERROR: gh CLI is required. Install and authenticate (gh auth login).")
 
-    # Handle existing output file
-    if os.path.exists(out_file):
-        logger.debug("Output file is already present: overwriting")
-        os.remove(out_file)
+    # Check required labels
+    if missing := LabelChecker(repo).check_labels():
+        logger.error("Required labels missing in %s: %s", repo, ", ".join(missing))
+        return 1
+    logger.info("%sAll required labels present", LOGGING_PREFIX)
 
-    # ── Step 3: collect alerts ───────────────────────────────────────
-    collect_argv = ["--repo", repo, "--state", args.state, "--out", out_file]
-    if verbose:
-        collect_argv.append("--verbose")
-    collect_alert_main(collect_argv)
+    # Authenticate with AquaSec
+    authenticator = AquaSecAuthenticator(config.aqua_key, config.aqua_secret, config.aqua_group_id)
+    bearer_token = authenticator.authenticate()
 
-    # ── Step 4: promote alerts ───────────────────────────────────────
-    promote_argv = ["--file", out_file, "--issue-label", args.issue_label]
-    if args.dry_run:
-        promote_argv.append("--dry-run")
-    if verbose:
-        promote_argv.append("--verbose")
-    if args.teams_webhook_url:
-        promote_argv.extend(["--teams-webhook-url", args.teams_webhook_url])
-    if args.severity_priority_map:
-        promote_argv.extend(["--severity-priority-map", args.severity_priority_map])
-    if args.project_number:
-        promote_argv.extend(["--project-number", str(args.project_number)])
-    if args.project_org:
-        promote_argv.extend(["--project-org", args.project_org])
+    # Fetch scan findings
+    fetcher = ScanFetcher(bearer_token, config.aqua_repository_id)
+    scan_data = fetcher.fetch_findings()
 
-    promote_alerts_main(promote_argv)
+    # Parse findings
+    parser = AquaSecParser(repo)
+    loaded_alerts = parser.parse(scan_data)
+    open_alerts = loaded_alerts.open_by_number
 
-    logging.info(LOGGING_PREFIX + "Process finished")
+    # Sync alerts to GitHub Issues
+    syncer = IssueSyncer(config)
+    result = syncer.sync(open_alerts, dry_run=dry_run)
+
+    # Send Teams notifications
+    NotificationSender(config.teams_webhook_url).notify(result, dry_run=dry_run)
+
+    logger.info("%sProcess finished", LOGGING_PREFIX)
     return 0
 
 

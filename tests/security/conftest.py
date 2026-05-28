@@ -18,7 +18,7 @@
 
 Each fixture returns a *mutable copy* so tests can modify it freely.
 Alerts use the nested schema (``metadata`` / ``alert_details`` / ``rule_details``)
-produced by ``collect_alert.py``.
+produced by ``AquaSecParser``.
 """
 
 import pytest

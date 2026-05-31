@@ -56,7 +56,7 @@ class SecurityConfig:
         if project_number_raw:
             try:
                 project_number = int(project_number_raw)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError):  # fmt: skip
                 project_number = None
 
         return cls(

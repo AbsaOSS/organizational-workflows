@@ -179,7 +179,7 @@ class NotificationSender:
         except requests.RequestException as e:
             raise SystemExit(f"ERROR: Teams webhook request failed: {e}") from e
 
-        if resp.status_code != 200 or resp.text.strip() not in ("1", ""):
+        if not resp.ok:
             raise SystemExit(f"ERROR: Teams webhook request failed.\n  Status: {resp.status_code}\n  Body: {resp.text}")
 
         logger.info("%sMessage sent to Teams successfully.", LOGGING_PREFIX)

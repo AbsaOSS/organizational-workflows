@@ -160,6 +160,7 @@ def test_notify_dry_run_passed_through(mocker, sample_notifications):
 def test_send_posts_to_webhook(mocker):
     mock_response = mocker.Mock()
     mock_response.status_code = 200
+    mock_response.ok = True
     mock_response.text = "1"
     mock_post = mocker.patch("security.services.notification_sender.requests.post", return_value=mock_response)
 
@@ -172,6 +173,7 @@ def test_send_posts_to_webhook(mocker):
 def test_send_raises_system_exit_on_non_200(mocker):
     mock_response = mocker.Mock()
     mock_response.status_code = 500
+    mock_response.ok = False
     mock_response.text = "Internal error"
     mocker.patch("security.services.notification_sender.requests.post", return_value=mock_response)
 

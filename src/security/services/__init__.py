@@ -14,4 +14,4 @@
 # limitations under the License.
 #
 
-"""Security services package – AquaSec API integration."""
+"""Security services package - AquaSec API integration."""

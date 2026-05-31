@@ -14,4 +14,3 @@
 # limitations under the License.
 #
 
-"""Tests for security services package."""

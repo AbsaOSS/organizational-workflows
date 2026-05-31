@@ -71,7 +71,6 @@ fingerprint=a1b2c3d4e5f6789012345678abcdef01
 repo=my-org/my-service
 rule_id=CVE-2024-99999
 severity=critical
-gh_alert_numbers=["7"]
 -->
 
 ## General Information

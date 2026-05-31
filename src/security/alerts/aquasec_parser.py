@@ -41,7 +41,8 @@ def _parse_item(item: dict[str, Any], repo: str) -> Alert:
     """Map a single AquaSec JSON item to an Alert dataclass."""
     extra = item.get("extraData") or {}
     severity_str = _map_severity(item.get("severity", 0))
-    references_list = extra.get("references") or []
+    references_raw = extra.get("references")
+    references_list = references_raw if isinstance(references_raw, list) else []
 
     metadata = AlertMetadata(
         alert_number=0,

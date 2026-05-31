@@ -20,7 +20,7 @@ import json
 import logging
 
 from core.github.client import run_gh
-from security.constants import REQUIRED_LABELS
+from security.constants import LOGGING_PREFIX, REQUIRED_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class LabelChecker:
         """
         result = run_gh(["label", "list", "--repo", self.repo, "--json", "name", "--limit", "500"])
         if result.returncode != 0:
-            logger.error("gh label list failed for %s:\n%s", self.repo, result.stderr)
+            logger.error("%sgh label list failed for %s:\n%s", LOGGING_PREFIX, self.repo, result.stderr)
             raise SystemExit(1)
         labels = json.loads(result.stdout)
         return [entry["name"] for entry in labels if entry.get("name")]

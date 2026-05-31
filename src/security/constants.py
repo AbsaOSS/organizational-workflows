@@ -49,4 +49,4 @@ FETCH_PAGE_SIZE = 100
 FETCH_SLEEP_SECONDS = 2
 
 # Severity mapping (AquaSec numeric → lowercase string)
-SEVERITY_MAP: dict[int, str] = {1: "critical", 2: "high", 3: "medium", 4: "low"}
+SEVERITY_MAP: dict[int, str] = {1: "low", 2: "medium", 3: "high", 4: "critical"}

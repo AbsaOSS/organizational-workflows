@@ -117,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Check required labels
     if missing := LabelChecker(repo).check_labels():
-        logger.error("Required labels missing in %s: %s", repo, ", ".join(missing))
+        logger.error("%sRequired labels missing in %s: %s", LOGGING_PREFIX, repo, ", ".join(missing))
         return 1
     logger.info("%sAll required labels present", LOGGING_PREFIX)
 

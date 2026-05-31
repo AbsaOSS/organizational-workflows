@@ -17,6 +17,7 @@
 """Tests for security.services.notification_sender module."""
 
 import pytest
+import requests
 from unittest.mock import MagicMock
 
 from security.issues.models import NotifiedIssue, SeverityChange
@@ -179,8 +180,6 @@ def test_send_raises_system_exit_on_non_200(mocker):
 
 
 def test_send_raises_system_exit_on_request_exception(mocker):
-    import requests
-
     mocker.patch(
         "security.services.notification_sender.requests.post",
         side_effect=requests.RequestException("Connection failed"),

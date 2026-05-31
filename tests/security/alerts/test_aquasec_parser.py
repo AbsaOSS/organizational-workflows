@@ -129,10 +129,10 @@ _SAST_ITEM = {
 # _map_severity
 
 @pytest.mark.parametrize("numeric,expected", [
-    (1, "critical"),
-    (2, "high"),
-    (3, "medium"),
-    (4, "low"),
+    (1, "low"),
+    (2, "medium"),
+    (3, "high"),
+    (4, "critical"),
     (99, "unknown"),
     (0, "unknown"),
 ])
@@ -163,7 +163,7 @@ def test_parse_vulnerability_item() -> None:
     assert alert.metadata.rule_id == "CVE-2026-33870"
     assert alert.metadata.rule_name == "vulnerabilities"
     assert alert.metadata.rule_description == "netty-codec-http: Request smuggling via chunked transfer"
-    assert alert.metadata.severity == "high"
+    assert alert.metadata.severity == "medium"
     assert alert.metadata.file == "shared-http-client/pom.xml"
     assert alert.metadata.start_line is None  # 0 maps to None
     assert alert.metadata.tool == "AquaSec"
@@ -190,7 +190,7 @@ def test_parse_sast_item() -> None:
     alert = _parse_item(_SAST_ITEM, "target-org/target-repo")
 
     assert alert.metadata.rule_id == "insecure-disable-cert-verification-aquasec-python"
-    assert alert.metadata.severity == "medium"
+    assert alert.metadata.severity == "high"
     assert alert.metadata.start_line == 29
     assert alert.metadata.end_line == 29
 

@@ -37,11 +37,10 @@ permissions:
   contents: read
   actions: read
   issues: write
-  security-events: write
 
 jobs:
   scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@c1fa5b54ff24fea071415da89abc4f0506344f01
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@v1.0.0 # Should be changed to release SHA
     with:
       dry-run: ${{ inputs.dry-run || false }}
       severity-priority-map: 'Critical=Blocker,High=Urgent,Medium=Normal,Low=Minor'

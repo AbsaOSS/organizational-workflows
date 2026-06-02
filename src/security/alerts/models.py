@@ -122,7 +122,7 @@ class RuleDetails:
 
 @dataclass
 class Alert:
-    """A single code-scanning alert with its metadata, details, and rule info."""
+    """A single security finding parsed from an AquaSec scan result."""
 
     metadata: AlertMetadata = field(default_factory=AlertMetadata)
     alert_details: AlertDetails = field(default_factory=AlertDetails)
@@ -134,7 +134,7 @@ class Alert:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any], *, repo: str = "") -> "Alert":
-        """Construct an Alert from the nested raw dict produced by collect_alert.py."""
+        """Construct an Alert from a nested raw dict."""
         md = d.get("metadata") or {}
         ad = d.get("alert_details") or {}
         rd = d.get("rule_details") or {}
@@ -148,7 +148,7 @@ class Alert:
 
 @dataclass
 class LoadedAlerts:
-    """Result of loading the alerts JSON produced by collect_alert.py."""
+    """Collection of parsed Alerts indexed by position."""
 
     repo_full: str
     open_by_number: dict[int, Alert]

@@ -312,8 +312,8 @@ def test_append_notification_none() -> None:
 # =====================================================================
 
 
-def test_merge_new_alert_number() -> None:
-    """New alert number is appended to gh_alert_numbers."""
+def test_merge_removes_gh_alert_numbers() -> None:
+    """Legacy gh_alert_numbers key is dropped during merge."""
     child = _issue_with_secmeta(1, {
         "type": "child",
         "fingerprint": "fp1",
@@ -321,8 +321,7 @@ def test_merge_new_alert_number() -> None:
     })
     ctx = _make_alert_context(alert_number=200, fingerprint="fp1")
     secmeta = _merge_child_secmeta(ctx=ctx, issue=child)
-    assert "200" in secmeta["gh_alert_numbers"]
-    assert "100" in secmeta["gh_alert_numbers"]
+    assert "gh_alert_numbers" not in secmeta
 
 
 def test_merge_removes_alert_hash() -> None:
@@ -357,7 +356,7 @@ def test_merge_strips_legacy_secmeta_keys() -> None:
     })
     ctx = _make_alert_context(alert_number=200, fingerprint="fp1")
     secmeta = _merge_child_secmeta(ctx=ctx, issue=child)
-    expected_keys = {"type", "fingerprint", "repo", "rule_id", "severity", "gh_alert_numbers"}
+    expected_keys = {"type", "fingerprint", "repo", "rule_id", "severity"}
     assert expected_keys == set(secmeta.keys())
 
 
@@ -1027,18 +1026,6 @@ def test_ensure_issue_dry_run(sast_alert: Alert) -> None:
     assert notifications[0].issue_number == 0
 
 
-def test_ensure_issue_skips_non_open() -> None:
-    """Alerts with state != 'open' are skipped."""
-    alert = Alert.from_dict({
-        "metadata": {"alert_number": 1, "state": "dismissed"},
-        "alert_details": {},
-        "rule_details": {},
-    })
-    issues: dict[int, Issue] = {}
-    index = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    ensure_issue(alert, _make_sync_context(issues=issues, index=index, dry_run=True))
-
-
 def test_ensure_issue_missing_alert_hash_raises() -> None:
     """Raises SystemExit when alert hash is missing."""
     alert = Alert.from_dict({
@@ -1182,8 +1169,8 @@ def test_init_priority_sync_field_lookup_fails(mocker: MockerFixture) -> None:
 
 
 @pytest.mark.parametrize("dry_run,prefix", [
-    (False, "Security Alerts to Issues - "),
-    (True, "Security Alerts to Issues [DRY-RUN] - "),
+    (False, "Security - "),
+    (True, "Security [DRY-RUN] - "),
 ])
 def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefix: str) -> None:
     """Summary emits correct prefix, grouped table, and collapses empty groups."""

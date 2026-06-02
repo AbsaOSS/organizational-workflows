@@ -21,8 +21,15 @@ LABEL_TYPE_TECH_DEBT = "type:tech-debt"
 LABEL_EPIC = "epic"
 LABEL_SEC_ADEPT_TO_CLOSE = "sec:adept-to-close"
 
+REQUIRED_LABELS: list[str] = [
+    LABEL_SCOPE_SECURITY,
+    LABEL_TYPE_TECH_DEBT,
+    LABEL_EPIC,
+    LABEL_SEC_ADEPT_TO_CLOSE,
+]
+
 SECMETA_KEYS_PARENT = {"type", "repo", "rule_id", "severity"}
-SECMETA_KEYS_CHILD = {"type", "fingerprint", "repo", "rule_id", "severity", "gh_alert_numbers"}
+SECMETA_KEYS_CHILD = {"type", "fingerprint", "repo", "rule_id", "severity"}
 SECMETA_TYPE_PARENT = "parent"
 SECMETA_TYPE_CHILD = "child"
 
@@ -31,5 +38,15 @@ NOT_AVAILABLE = "N/A"
 
 GITHUB_BASE_URL = "https://github.com"
 
-LOGGING_PREFIX = "Security Alerts to Issues - "
-DRY_RUN_PREFIX = "Security Alerts to Issues [DRY-RUN] - "
+LOGGING_PREFIX = "Security - "
+DRY_RUN_PREFIX = "Security [DRY-RUN] - "
+
+# AquaSec API
+AQUA_AUTH_URL = "https://eu-1.api.cloudsploit.com"
+AQUA_SCAN_URL = "https://eu-1.codesec.aquasec.com/api/v1/scans/results"
+HTTP_TIMEOUT = 30
+FETCH_PAGE_SIZE = 100
+FETCH_SLEEP_SECONDS = 2
+
+# Severity mapping (AquaSec numeric → lowercase string)
+SEVERITY_MAP: dict[int, str] = {1: "low", 2: "medium", 3: "high", 4: "critical"}

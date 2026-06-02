@@ -2,7 +2,7 @@
 
 ## Overview
 
-Security Automation provides **continuous, automated vulnerability management** for your repositories. It takes GitHub Code Scanning alerts as an input and automatically converts them into a structured **GitHub Issues** with full lifecycle management. This gives your team a managed security posture without manual triage effort.
+Security Automation provides **continuous, automated vulnerability management** for your repositories. It authenticates directly with the AquaSec API, fetches scan findings, and automatically converts them into structured **GitHub Issues** with full lifecycle management. This gives your team a managed security posture without manual triage effort.
 
 > For setup instructions and technical configuration, see the [Security README](/src/security/README.md).
 
@@ -10,14 +10,14 @@ Security Automation provides **continuous, automated vulnerability management** 
 
 ## How It Works
 
-This solution is the second part of a two-step security automation pipeline. The first part is [AquaSec Night Scan](https://github.com/AbsaOSS/aquasec-scan-results/blob/master/docs/night-scan-mode.md). It fetches scan findings from AquaSec, converts them into SARIF format, and uploads them to the GitHub Security tab. This solution picks up from there: it reads those alerts and turns them into a managed GitHub Issues backlog.
+This solution authenticates with the AquaSec API, fetches scan findings, and converts them into a managed GitHub Issues backlog.
 
 > **Note:** This solution currently supports the AquaSec scanner only.
 
 ```mermaid
 flowchart TD
-    A["📋 Code Scanning Alerts\n(in GitHub Security tab)"]
-    B["📥 Fetch and Normalise Alerts"]
+    A["🔑 Authenticate with AquaSec API"]
+    B["📥 Fetch and Normalise Findings"]
     C["📝 Create / Update / Reopen Issues"]
     D["🏷️ Label Resolved Findings"]
     E["📣 Send Notifications"]
@@ -31,9 +31,9 @@ flowchart TD
     style E fill:#2a7a40,color:#fff,stroke:#1a5a28
 ```
 
-1. **Fetch Alerts from Security Tab**: The automation reads existing Code Scanning alerts from the repository's Security tab. These alerts have to be previously uploaded by a SARIF-producing scanner (e.g. [AquaSec Night Scan](https://github.com/AbsaOSS/aquasec-scan-results)).
+1. **Authenticate with AquaSec**: The pipeline authenticates using HMAC-SHA256 signed credentials to obtain a bearer token from the AquaSec API.
 
-2. **Normalise**: Each alert is parsed and normalised into a common format, extracting severity, rule ID, affected file, and a stable fingerprint for matching.
+2. **Fetch and Normalise Findings**: Scan results are fetched directly from the AquaSec Code Security API (paginated), then parsed and normalised into a common format extracting severity, rule ID, affected file, and a stable fingerprint for matching.
 
 3. **Create / Update / Reopen Issues**: New findings become new GitHub Issues. Existing findings are updated with the latest occurrence data. Previously closed findings that reappear are automatically reopened. Parent issues (epics) group findings by rule and auto-close when all children are resolved.
 
@@ -45,7 +45,7 @@ flowchart TD
 
 ## Key Benefits
 
-- **Zero manual triage**: New findings uploaded to the Security tab automatically become Issues with severity, context, and links to the affected code.
+- **Zero manual triage**: New findings from AquaSec scans automatically become Issues with severity, context, and links to the affected code.
 - **Single source of truth**: GitHub Issues is the system of record. No need to check a separate security portal.
 - **Lifecycle automation**: Issues are reopened when findings reappear, labeled for closure when resolved, and updated if needed.
 - **Notifications**: Option to notify the team of new or reopened security findings in real-time.
@@ -71,7 +71,6 @@ fingerprint=a1b2c3d4e5f6789012345678abcdef01
 repo=my-org/my-service
 rule_id=CVE-2024-99999
 severity=critical
-gh_alert_numbers=["7"]
 -->
 
 ## General Information

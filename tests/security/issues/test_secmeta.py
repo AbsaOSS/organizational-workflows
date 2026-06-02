@@ -16,12 +16,8 @@
 
 """Unit tests for ``utils.secmeta``."""
 
-import pytest
-
 from security.issues.secmeta import (
-    json_list,
     load_secmeta,
-    parse_json_list,
     parse_kv_block,
     render_secmeta,
 )
@@ -136,39 +132,3 @@ def test_extra_keys_sorted() -> None:
     alpha_idx = next(i for i, l in enumerate(lines) if "alpha=" in l)
     zebra_idx = next(i for i, l in enumerate(lines) if "zebra=" in l)
     assert alpha_idx < zebra_idx
-
-
-# =====================================================================
-# parse_json_list / json_list
-# =====================================================================
-
-
-def test_json_array() -> None:
-    assert parse_json_list('["a","b","c"]') == ["a", "b", "c"]
-
-def test_comma_separated_fallback() -> None:
-    assert parse_json_list("a, b, c") == ["a", "b", "c"]
-
-def test_parse_json_list_empty() -> None:
-    assert parse_json_list("") == []
-
-def test_parse_json_list_none() -> None:
-    assert parse_json_list(None) == []
-
-def test_single_value() -> None:
-    assert parse_json_list('["only"]') == ["only"]
-
-def test_numeric_values() -> None:
-    assert parse_json_list("[1, 2, 3]") == ["1", "2", "3"]
-
-
-def test_serialize() -> None:
-    result = json_list(["a", "b"])
-    assert result == '["a", "b"]'
-
-def test_json_list_empty() -> None:
-    assert json_list([]) == "[]"
-
-def test_json_list_roundtrip() -> None:
-    original = ["303", "304", "305"]
-    assert parse_json_list(json_list(original)) == original

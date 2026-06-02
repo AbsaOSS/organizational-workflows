@@ -16,7 +16,7 @@
 
 ## Overview
 
-This solution automates the management of security findings by converting GitHub Code Scanning alerts into a structured GitHub Issues backlog.
+This solution automates the management of security findings by authenticating directly with the AquaSec API, fetching scan results, and converting them into a structured GitHub Issues backlog.
 
 Solution supports:
 
@@ -73,7 +73,7 @@ jobs:
 
 | Name                    | Description                                                                                                        | Required | Default |
 |-------------------------|--------------------------------------------------------------------------------------------------------------------|----------|---------|
-| `dry-run`               | Simulate issue management without making changes. AquaSec scan and SARIF upload run normally.                      | No       | false   |
+| `dry-run`               | Simulate issue management without making changes.                                                                  | No       | false   |
 | `verbose-logging`       | Enable verbose logging for the AquaSec scan step.                                                                  | No       | false   |
 | `severity-priority-map` | Comma-separated severity=priority pairs. Only listed severities get a priority. When not set, priority is skipped. | No       | ''      |
 | `project-number`        | GitHub ProjectV2 number (org-level) for priority sync. Required together with `severity-priority-map`.             | No       | 0       |
@@ -132,13 +132,14 @@ jobs:
 
 ## Running Locally
 
-The entry point is `src/security/main.py`. It runs the full pipeline: check labels, collect alerts, and promote to Issues.
+The entry point is `src/security/main.py`. It runs the full pipeline: authenticate with AquaSec, fetch findings, sync to Issues, and notify if set.
 
 ### Prerequisites
 
 - Python 3.14 (current required runtime)
 - Install and authenticate GitHub CLI: `gh auth login`
 - Required labels must exist in the target repository: `scope:security`, `type:tech-debt`, `sec:adept-to-close`, `epic`
+- AquaSec credentials available as environment variables: `AQUA_KEY`, `AQUA_SECRET`, `AQUA_GROUP_ID`, `AQUA_REPOSITORY_ID`
 
 ### Commands
 
@@ -153,18 +154,21 @@ pip install -r requirements.txt
 **Dry-run** (no changes are made, actions are logged):
 
 ```bash
+AQUA_KEY=... AQUA_SECRET=... AQUA_GROUP_ID=... AQUA_REPOSITORY_ID=... \
 PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run
 ```
 
 **Live run** (creates/updates real GitHub Issues):
 
 ```bash
+AQUA_KEY=... AQUA_SECRET=... AQUA_GROUP_ID=... AQUA_REPOSITORY_ID=... \
 PYTHONPATH=src python3 src/security/main.py --repo <owner/repo>
 ```
 
 **With verbose logging:**
 
 ```bash
+AQUA_KEY=... AQUA_SECRET=... AQUA_GROUP_ID=... AQUA_REPOSITORY_ID=... \
 PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run --verbose
 ```
 
@@ -175,13 +179,11 @@ PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run --verb
 | `--repo`                  | Target repository (owner/repo).                                              |
 | `--dry-run`               | Simulate without writing issues. All intended actions are logged.            |
 | `--verbose`               | Enable verbose logging.                                                      |
-| `--state`                 | Alert state filter: `open`, `dismissed`, `fixed`, `all` (default: `open`).   |
 | `--issue-label`           | Label used to discover existing security issues (default: `scope:security`). |
 | `--severity-priority-map` | Severity-to-priority mapping (default: `$SEVERITY_PRIORITY_MAP`).            |
 | `--project-number`        | ProjectV2 number for priority sync (default: `$PROJECT_NUMBER`).             |
 | `--project-org`           | Org that owns the ProjectV2 board (default: `$PROJECT_ORG`).                 |
 | `--teams-webhook-url`     | Teams webhook URL (default: `$TEAMS_WEBHOOK_URL`).                           |
-| `--skip-label-check`      | Skip the label existence verification step.                                  |
 
 ---
 

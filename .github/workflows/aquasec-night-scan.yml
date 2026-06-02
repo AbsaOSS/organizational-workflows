@@ -35,7 +35,6 @@ permissions:
   contents: read
   actions: read
   issues: write
-  security-events: write
 
 jobs:
   aquasec-night-scan:

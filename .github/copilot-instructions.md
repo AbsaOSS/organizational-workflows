@@ -20,15 +20,12 @@ src/
 │   └── rendering.py             # Generic Markdown template renderer
 │
 ├── security/                    # Security workflow domain
-│   ├── main.py                  # Pipeline orchestrator (check → collect → promote)
-│   ├── check_labels.py          # Verify required labels exist
-│   ├── collect_alert.py         # Fetch code-scanning alerts → JSON
-│   ├── promote_alerts.py        # Create/update Issues from alerts
-│   ├── send_to_teams.py         # Send Adaptive Card to Teams webhook
-│   ├── constants.py             # Labels, event types, metadata types
+│   ├── main.py                  # Pipeline orchestrator (validate → check → auth → fetch → parse → sync → notify)
+│   ├── config.py                # SecurityConfig dataclass
+│   ├── constants.py             # Labels, event types, metadata types, AquaSec API URLs
 │   ├── alerts/                  # Alert domain (parsing, models)
 │   ├── issues/                  # Issue management (sync, builder, secmeta)
-│   └── notifications/           # Teams webhook notifications
+│   └── services/                # Service classes (authenticator, scan_fetcher, label_checker, issue_syncer, notification_sender)
 │
 tests/                           # Mirrors src/ structure
 ```

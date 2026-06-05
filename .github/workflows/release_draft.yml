@@ -25,6 +25,11 @@ on:
         description: 'Name of the git tag from which to detect changes from. Default value: latest tag. Syntax: "v[0-9]+.[0-9]+.[0-9]+".'
         required: false
 
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+
 jobs:
   release-draft:
     runs-on: ubuntu-latest
@@ -67,24 +72,19 @@ jobs:
           release-notes-title: "## [Rr]elease [Nn]otes"
           tag-name: ${{ github.event.inputs.tag-name }}
           from-tag-name: ${{ github.event.inputs.from-tag-name }}
-          hierarchy: true
           chapters: |
-            - { title: No entry 🚫, label: duplicate, hidden: true, order: 99 }
-            - { title: Breaking Changes 💥, label: breaking-change, order:10 }
+            - { title: Breaking Changes 💥, label: breaking change, order:10 }
             - { title: New Features 🎉, label: enhancement, order: 20 }
             - { title: Bugfixes 🛠, label: bug, order: 30 }
             - { title: Security 🔒, label: scope:security, order: 40 }
             - { title: Infrastructure ⚙️, label: infrastructure, order: 50 }
             - { title: Documentation 📜, label: documentation, order: 60 }
-            - { title: Silent-live 🤫, catch-open-hierarchy: true, hidden: false }
+            - { title: Entries to skip 🚫, label: no RN, hidden: true, order: 99 }
+            - { title: Entries to skip 🚫, label: duplicate, hidden: true, order: 99 }
           warnings: true
           print-empty-chapters: false
-          row-format-hierarchy-issue: '{type}: {number} _{title}_ by {developers} {progress}'
           row-format-issue: '{type}: {number} _{title}_ by {developers} in {pull-requests}'
           row-format-pr: '{number} _{title}_ by {developers}'
-          service-chapter-exclude: |
-            Closed Issues without Pull Request ⚠️:
-              - [scope:security, type:tech-debt]
 
       - name: Create and push tag (standalone)
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -95,25 +95,11 @@ jobs:
             const sha = context.sha; // The SHA of the commit to tag
             const tagMessage = `${tag} released by GitHub Action`;
 
-            const tagObject = await github.rest.git.createTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag: tag,
-              message: tagMessage,
-              object: sha,
-              type: 'commit',
-              tagger: {
-                name: context.actor,
-                email: `${context.actor}@users.noreply.github.com`,
-                date: new Date().toISOString()
-              }
-            });
-
             await github.rest.git.createRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
               ref: ref,
-              sha: tagObject.data.sha
+              sha: sha
             });
 
             console.log(`Tag created: ${tag}`);

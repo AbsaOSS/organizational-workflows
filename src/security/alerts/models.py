@@ -104,8 +104,7 @@ class RuleDetails:
     references: str = ""
 
     def __post_init__(self) -> None:
-        # Normalize all empty display fields; callers never need to supply NOT_AVAILABLE defaults.
-        for _f in (
+        _display_fields = (
             "fixed_version",
             "published_date",
             "package_name",
@@ -115,9 +114,9 @@ class RuleDetails:
             "remediation",
             "owasp",
             "references",
-        ):
-            if not getattr(self, _f):
-                setattr(self, _f, NOT_AVAILABLE)
+        )
+        for _f in _display_fields:
+            setattr(self, _f, (getattr(self, _f) or "").strip() or NOT_AVAILABLE)
 
 
 @dataclass

@@ -16,7 +16,10 @@
 
 """Unit tests for ``security.alerts.models``."""
 
-from security.alerts.models import AlertMetadata
+import pytest
+
+from security.alerts.models import AlertMetadata, RuleDetails
+from security.constants import NOT_AVAILABLE
 
 
 # =====================================================================
@@ -52,3 +55,19 @@ def test_alert_metadata_strips_whitespace() -> None:
 def test_alert_metadata_state_lowercased() -> None:
     md = AlertMetadata(state="  OPEN  ")
     assert md.state == "open"
+
+
+# =====================================================================
+# RuleDetails – whitespace stripping and NOT_AVAILABLE fallback
+# =====================================================================
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("HIGH\n", "HIGH"),
+    ("  MEDIUM  ", "MEDIUM"),
+    (None, NOT_AVAILABLE),
+])
+def test_rule_details_normalises_impact_likelihood_confidence(raw: str | None, expected: str) -> None:
+    for field in ("impact", "likelihood", "confidence"):
+        rd = RuleDetails(**{field: raw})  # type: ignore[arg-type]
+        assert expected == getattr(rd, field)

@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   aquasec-night-scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@7e31c528c1e6cc4aeeb7ef1fa6d799d4aee6a0d0
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@de09728a7f56967ec013c5ab988190231ece3b71
     with:
       dry-run: ${{ inputs.dry-run || false }}
       severity-priority-map: 'Critical=P0,High=P1,Medium=P2,Low=P3'

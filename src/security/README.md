@@ -175,17 +175,17 @@ PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run --verb
 
 ### CLI Flags
 
-| Flag                      | Description                                                                  |
-|---------------------------|------------------------------------------------------------------------------|
-| `--repo`                  | Target repository (owner/repo).                                              |
-| `--dry-run`               | Simulate without writing issues. All intended actions are logged.            |
-| `--verbose`               | Enable verbose logging.                                                      |
-| `--issue-label`           | Label used to discover existing security issues (default: `scope:security`). |
-| `--severity-priority-map` | Severity-to-priority mapping (default: `$SEVERITY_PRIORITY_MAP`).            |
-| `--project-number`        | ProjectV2 number for priority sync (default: `$PROJECT_NUMBER`).             |
-| `--project-org`           | Org that owns the ProjectV2 board (default: `$PROJECT_ORG`).                 |
-| `--teams-webhook-url`     | Teams webhook URL (default: `$TEAMS_WEBHOOK_URL`).                           |
-| `--min-severity`          | Minimum severity for issue creation: `low`, `medium`, `high`, `critical`.    |
+| Flag                      | Description                                                                                |
+|---------------------------|--------------------------------------------------------------------------------------------|
+| `--repo`                  | Target repository (owner/repo).                                                            |
+| `--dry-run`               | Simulate without writing issues. All intended actions are logged.                          |
+| `--verbose`               | Enable verbose logging.                                                                    |
+| `--issue-label`           | Label used to discover existing security issues (default: `scope:security`).               |
+| `--severity-priority-map` | Severity-to-priority mapping (default: `$SEVERITY_PRIORITY_MAP`).                          |
+| `--project-number`        | ProjectV2 number for priority sync (default: `$PROJECT_NUMBER`).                           |
+| `--project-org`           | Org that owns the ProjectV2 board (default: `$PROJECT_ORG`).                               |
+| `--teams-webhook-url`     | Teams webhook URL (default: `$TEAMS_WEBHOOK_URL`).                                         |
+| `--min-severity`          | Minimum severity for issue creation: `low`, `medium`, `high`, `critical` (default: `low`). |
 
 ---
 

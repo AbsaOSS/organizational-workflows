@@ -22,7 +22,7 @@ import os
 import uuid
 from dataclasses import dataclass, field
 
-from security.constants import LABEL_SCOPE_SECURITY, LOGGING_PREFIX
+from security.constants import LABEL_SCOPE_SECURITY, LOGGING_PREFIX, MIN_SEVERITY_DEFAULT, VALID_SEVERITIES
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ class SecurityConfig:
     project_number: int | None = None
     project_org: str = ""
     teams_webhook_url: str = ""
+    min_severity: str = MIN_SEVERITY_DEFAULT
 
     @classmethod
     def load(cls, args: argparse.Namespace) -> "SecurityConfig":
@@ -58,6 +59,9 @@ class SecurityConfig:
                 project_number = int(project_number_raw)
             except (ValueError, TypeError):  # fmt: skip
                 project_number = None
+
+        raw_min_severity = args.min_severity or os.environ.get("MIN_SEVERITY", "")
+        min_severity = raw_min_severity.lower() if raw_min_severity else MIN_SEVERITY_DEFAULT
 
         return cls(
             aqua_key=os.environ.get("AQUA_KEY", ""),
@@ -72,6 +76,7 @@ class SecurityConfig:
             project_number=project_number,
             project_org=args.project_org or os.environ.get("PROJECT_ORG", ""),
             teams_webhook_url=args.teams_webhook_url or os.environ.get("TEAMS_WEBHOOK_URL", ""),
+            min_severity=min_severity,
         )
 
     def validate(self) -> None:
@@ -93,6 +98,9 @@ class SecurityConfig:
                 errors.append("AQUA_REPOSITORY_ID: invalid UUID format.")
         if not self.repo or "/" not in self.repo:
             errors.append("repo: not specified or invalid. Use --repo owner/repo.")
+
+        if self.min_severity not in VALID_SEVERITIES:
+            errors.append("Only following values are allowed for MIN_SEVERITY: {', '.join(sorted(VALID_SEVERITIES))}.")
 
         if errors:
             for err in errors:

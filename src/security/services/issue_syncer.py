@@ -60,6 +60,7 @@ class IssueSyncer:
             severity_priority_map=spm,
             project_number=config.project_number,
             project_org=config.project_org,
+            min_severity=config.min_severity,
         )
 
         logger.info("%sCompleted promotion of alerts to GitHub issues", LOGGING_PREFIX)

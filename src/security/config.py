@@ -100,7 +100,7 @@ class SecurityConfig:
             errors.append("repo: not specified or invalid. Use --repo owner/repo.")
 
         if self.min_severity not in VALID_SEVERITIES:
-            errors.append("Only following values are allowed for MIN_SEVERITY: {', '.join(sorted(VALID_SEVERITIES))}.")
+            errors.append(f"Only allowed values for MIN_SEVERITY input: {', '.join(sorted(VALID_SEVERITIES))}.")
 
         if errors:
             for err in errors:

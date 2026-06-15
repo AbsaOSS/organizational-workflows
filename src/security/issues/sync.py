@@ -51,6 +51,7 @@ from security.constants import (
     SECMETA_TYPE_PARENT,
     SECMETA_KEYS_PARENT,
     SECMETA_KEYS_CHILD,
+    MIN_SEVERITY_DEFAULT,
 )
 from .builder import (
     build_child_issue_body,
@@ -835,7 +836,7 @@ def sync_alerts_and_issues(
     severity_priority_map: dict[str, str] | None = None,
     project_number: int | None = None,
     project_org: str = "",
-    min_severity: str = "low",
+    min_severity: str = MIN_SEVERITY_DEFAULT,
 ) -> SyncResult:
     """Sync open alerts into issues."""
 

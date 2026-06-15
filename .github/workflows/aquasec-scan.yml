@@ -72,7 +72,7 @@ on:
           issues. Defaults to 'low', which creates issues for all findings.
         required: false
         type: string
-        default: ''
+        default: 'low'
 
     secrets:
       AQUA_KEY:

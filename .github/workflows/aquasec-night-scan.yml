@@ -38,10 +38,10 @@ permissions:
 
 jobs:
   aquasec-night-scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@de09728a7f56967ec013c5ab988190231ece3b71
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@d3e4ff77b60db1bcd5b485ccedf19d2216d39621
     with:
       dry-run: ${{ inputs.dry-run || false }}
-      severity-priority-map: 'Critical=P0,High=P1,Medium=P2,Low=P3'
+      min-severity: 'medium'
       project-number: 203
       project-org: 'absa-group'
     secrets:

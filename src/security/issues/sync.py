@@ -51,6 +51,7 @@ from security.constants import (
     SECMETA_TYPE_PARENT,
     SECMETA_KEYS_PARENT,
     SECMETA_KEYS_CHILD,
+    MIN_SEVERITY_DEFAULT,
 )
 from .builder import (
     build_child_issue_body,
@@ -65,6 +66,7 @@ from .models import (
     IssueIndex,
     NotifiedIssue,
     ParentOriginalBodies,
+    SEVERITY_ORDER,
     SeverityChange,
     SyncContext,
     SyncResult,
@@ -814,6 +816,18 @@ def _label_adept_to_close_issues(
         stats.children_marked_for_closure += 1
 
 
+def _meets_min_severity(severity: str, min_severity: str) -> bool:
+    """Return True if *severity* is at or above *min_severity*.
+
+    When min_severity is 'low' (the default) every finding passes, including
+    those with 'unknown' severity. For any higher threshold, 'unknown' (rank 0)
+    is always filtered out because it cannot be confirmed to meet the bar.
+    """
+    if min_severity == "low":
+        return True
+    return SEVERITY_ORDER.get(severity.lower(), 0) >= SEVERITY_ORDER[min_severity]
+
+
 def sync_alerts_and_issues(
     alerts: dict[int, Alert],
     issues: dict[int, Issue],
@@ -822,6 +836,7 @@ def sync_alerts_and_issues(
     severity_priority_map: dict[str, str] | None = None,
     project_number: int | None = None,
     project_org: str = "",
+    min_severity: str = MIN_SEVERITY_DEFAULT,
 ) -> SyncResult:
     """Sync open alerts into issues."""
 
@@ -847,6 +862,11 @@ def sync_alerts_and_issues(
     )
 
     for alert in alerts.values():
+        if not _meets_min_severity(alert.metadata.severity, min_severity):
+            # Below threshold: skip issue creation, update, and reopen for this alert.
+            # Existing open issues for this finding are intentionally left frozen — they
+            # will only be touched by adept-to-close logic if the finding later disappears.
+            continue
         ensure_issue(alert, sync)
 
     _flush_parent_body_updates(sync.parent_original_bodies, issues, dry_run=dry_run, stats=sync.stats)

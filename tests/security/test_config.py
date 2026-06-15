@@ -34,6 +34,7 @@ def _make_args(**kwargs) -> argparse.Namespace:
         "project_number": "",
         "project_org": "",
         "teams_webhook_url": "",
+        "min_severity": "",
     }
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
@@ -154,3 +155,42 @@ def test_load_handles_invalid_project_number():
     config = SecurityConfig.load(_make_args(project_number="not-a-number"))
 
     assert config.project_number is None
+
+
+def test_load_min_severity_defaults_to_low():
+    config = SecurityConfig.load(_make_args())
+
+    assert "low" == config.min_severity
+
+
+def test_load_min_severity_normalizes_to_lowercase():
+    config = SecurityConfig.load(_make_args(min_severity="HIGH"))
+
+    assert "high" == config.min_severity
+
+
+def test_load_min_severity_reads_from_env(monkeypatch):
+    monkeypatch.setenv("MIN_SEVERITY", "Critical")
+    config = SecurityConfig.load(_make_args())
+
+    assert "critical" == config.min_severity
+
+
+def test_load_min_severity_arg_takes_precedence_over_env(monkeypatch):
+    monkeypatch.setenv("MIN_SEVERITY", "low")
+    config = SecurityConfig.load(_make_args(min_severity="high"))
+
+    assert "high" == config.min_severity
+
+
+def test_validate_raises_system_exit_when_min_severity_invalid():
+    config = _make_config(min_severity="extreme")
+
+    with pytest.raises(SystemExit):
+        config.validate()
+
+
+def test_validate_passes_for_all_valid_min_severity_values():
+    for level in ("low", "medium", "high", "critical"):
+        config = _make_config(min_severity=level)
+        config.validate()

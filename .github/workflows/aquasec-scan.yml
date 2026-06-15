@@ -64,6 +64,16 @@ on:
         type: string
         default: ''
 
+      min-severity:
+        description: >
+          Minimum severity level for issue creation. Accepted values: low, medium, high, critical
+          (case-insensitive). Findings below this threshold are still fetched and still drive
+          adept-to-close lifecycle for previously created issues, but will not create or reopen
+          issues. Defaults to 'low', which creates issues for all findings.
+        required: false
+        type: string
+        default: 'low'
+
     secrets:
       AQUA_KEY:
         required: true
@@ -116,6 +126,7 @@ jobs:
           SEVERITY_PRIORITY_MAP: ${{ inputs.severity-priority-map }}
           PROJECT_NUMBER: ${{ inputs.project-number }}
           PROJECT_ORG: ${{ inputs.project-org }}
+          MIN_SEVERITY: ${{ inputs.min-severity }}
         run: |
           python3 org-workflows/src/security/main.py \
             ${{ inputs.dry-run && '--dry-run' || '' }} \

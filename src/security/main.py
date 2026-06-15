@@ -85,12 +85,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="",
         help="Teams Incoming Webhook URL. Falls back to $TEAMS_WEBHOOK_URL env var",
     )
+    p.add_argument("--min-severity", default="", help="Minimum severity level for issue creation.")
     p.add_argument("--dry-run", action="store_true", help="Do not write issues; only print intended actions")
-    p.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Verbose logs (also enabled by RUNNER_DEBUG=1)",
-    )
+    p.add_argument("--verbose", action="store_true", help="Verbose logs (also enabled by RUNNER_DEBUG=1)")
     return p.parse_args(argv)
 
 

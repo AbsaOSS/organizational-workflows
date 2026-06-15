@@ -71,13 +71,14 @@ jobs:
 
 ### Input Parameters
 
-| Name                    | Description                                                                                                        | Required | Default |
-|-------------------------|--------------------------------------------------------------------------------------------------------------------|----------|---------|
-| `dry-run`               | Simulate issue management without making changes.                                                                  | No       | false   |
-| `verbose-logging`       | Enable verbose logging for the AquaSec scan step.                                                                  | No       | false   |
-| `severity-priority-map` | Comma-separated severity=priority pairs. Only listed severities get a priority. When not set, priority is skipped. | No       | ''      |
-| `project-number`        | GitHub ProjectV2 number (org-level) for priority sync. Required together with `severity-priority-map`.             | No       | 0       |
-| `project-org`           | GitHub organisation that owns the ProjectV2 board.                                                                 | No       | ''      |
+| Name                    | Description                                                                                                          | Required | Default |
+|-------------------------|----------------------------------------------------------------------------------------------------------------------|----------|---------|
+| `dry-run`               | Simulate issue management without making changes.                                                                    | No       | false   |
+| `verbose-logging`       | Enable verbose logging for the AquaSec scan step.                                                                    | No       | false   |
+| `severity-priority-map` | Comma-separated severity=priority pairs. Only listed severities get a priority. When not set, priority is skipped.   | No       | ''      |
+| `project-number`        | GitHub ProjectV2 number (org-level) for priority sync. Required together with `severity-priority-map`.               | No       | 0       |
+| `project-org`           | GitHub organisation that owns the ProjectV2 board.                                                                   | No       | ''      |
+| `min-severity`          | Minimum severity level for issue creation. Accepted values: `low`, `medium`, `high`, `critical` (case-insensitive).  | No       | 'low'   |
 
 ### Secrets
 
@@ -174,16 +175,17 @@ PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run --verb
 
 ### CLI Flags
 
-| Flag                      | Description                                                                  |
-|---------------------------|------------------------------------------------------------------------------|
-| `--repo`                  | Target repository (owner/repo).                                              |
-| `--dry-run`               | Simulate without writing issues. All intended actions are logged.            |
-| `--verbose`               | Enable verbose logging.                                                      |
-| `--issue-label`           | Label used to discover existing security issues (default: `scope:security`). |
-| `--severity-priority-map` | Severity-to-priority mapping (default: `$SEVERITY_PRIORITY_MAP`).            |
-| `--project-number`        | ProjectV2 number for priority sync (default: `$PROJECT_NUMBER`).             |
-| `--project-org`           | Org that owns the ProjectV2 board (default: `$PROJECT_ORG`).                 |
-| `--teams-webhook-url`     | Teams webhook URL (default: `$TEAMS_WEBHOOK_URL`).                           |
+| Flag                      | Description                                                                                |
+|---------------------------|--------------------------------------------------------------------------------------------|
+| `--repo`                  | Target repository (owner/repo).                                                            |
+| `--dry-run`               | Simulate without writing issues. All intended actions are logged.                          |
+| `--verbose`               | Enable verbose logging.                                                                    |
+| `--issue-label`           | Label used to discover existing security issues (default: `scope:security`).               |
+| `--severity-priority-map` | Severity-to-priority mapping (default: `$SEVERITY_PRIORITY_MAP`).                          |
+| `--project-number`        | ProjectV2 number for priority sync (default: `$PROJECT_NUMBER`).                           |
+| `--project-org`           | Org that owns the ProjectV2 board (default: `$PROJECT_ORG`).                               |
+| `--teams-webhook-url`     | Teams webhook URL (default: `$TEAMS_WEBHOOK_URL`).                                         |
+| `--min-severity`          | Minimum severity for issue creation: `low`, `medium`, `high`, `critical` (default: `low`). |
 
 ---
 
@@ -191,6 +193,7 @@ PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run --verb
 
 - **Dry-run mode**: Safe preview of all actions without making changes.
 - **Verbose logging**: Detailed output for debugging and audit.
+- **Severity filtering**: Configurable minimum severity threshold to limit issue creation to findings at or above the chosen level.
 - **Priority mapping**: Configurable severity-to-priority mapping for ProjectV2 boards.
 - **Teams notifications**: Real-time alerts for new and reopened findings.
 - **Parent/child issue structure**: Findings grouped by rule with automatic lifecycle management.

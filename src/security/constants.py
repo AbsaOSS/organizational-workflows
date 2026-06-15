@@ -50,3 +50,6 @@ FETCH_SLEEP_SECONDS = 2
 
 # Severity mapping (AquaSec numeric → lowercase string)
 SEVERITY_MAP: dict[int, str] = {1: "low", 2: "medium", 3: "high", 4: "critical"}
+
+MIN_SEVERITY_DEFAULT = "low"
+VALID_SEVERITIES: frozenset[str] = frozenset({"low", "medium", "high", "critical"})

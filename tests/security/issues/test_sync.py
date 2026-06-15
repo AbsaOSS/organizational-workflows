@@ -36,6 +36,7 @@ from security.issues.sync import (
     _label_adept_to_close_issues,
     _log_sync_summary,
     _maybe_reopen_child,
+    _meets_min_severity,
     _merge_child_secmeta,
     _rebuild_and_apply_child_body,
     _remove_adept_to_close_label,
@@ -1192,3 +1193,133 @@ def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefi
     assert any("Parent issues" in m and "created: 2" in m and "title updated: 1" in m for m in messages)
     assert any("Child issues" in m and "created: 15" in m and "reopened: 1" in m and "title updated: 2" in m and "body updated: 3" in m for m in messages)
     assert not any("linked" in m for m in messages)
+
+
+# =====================================================================
+# _meets_min_severity
+# =====================================================================
+
+
+@pytest.mark.parametrize("severity,min_severity,expected", [
+    # min=low: everything passes, including unknown
+    ("critical", "low", True),
+    ("high",     "low", True),
+    ("medium",   "low", True),
+    ("low",      "low", True),
+    ("unknown",  "low", True),
+    # min=medium
+    ("critical", "medium", True),
+    ("high",     "medium", True),
+    ("medium",   "medium", True),
+    ("low",      "medium", False),
+    ("unknown",  "medium", False),
+    # min=high
+    ("critical", "high", True),
+    ("high",     "high", True),
+    ("medium",   "high", False),
+    ("low",      "high", False),
+    ("unknown",  "high", False),
+    # min=critical
+    ("critical", "critical", True),
+    ("high",     "critical", False),
+    ("medium",   "critical", False),
+    ("low",      "critical", False),
+    ("unknown",  "critical", False),
+])
+def test_meets_min_severity(severity: str, min_severity: str, expected: bool) -> None:
+    assert _meets_min_severity(severity, min_severity) is expected
+
+
+def test_meets_min_severity_case_insensitive() -> None:
+    assert _meets_min_severity("HIGH", "medium") is True
+    assert _meets_min_severity("LOW", "medium") is False
+
+
+# =====================================================================
+# sync_alerts_and_issues – min_severity filtering
+# =====================================================================
+
+
+def test_sync_skips_creation_for_below_threshold_alerts(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    """Alerts below min_severity do not create issues."""
+    sast_alert.metadata.severity = "low"
+    mock_ensure = mocker.patch("security.issues.sync.ensure_issue")
+
+    sync_alerts_and_issues({1: sast_alert}, {}, dry_run=True, min_severity="high")
+
+    mock_ensure.assert_not_called()
+
+
+def test_sync_creates_issue_at_exact_threshold(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    """An alert exactly at min_severity is processed."""
+    sast_alert.metadata.severity = "high"
+    mock_ensure = mocker.patch("security.issues.sync.ensure_issue")
+
+    sync_alerts_and_issues({1: sast_alert}, {}, dry_run=True, min_severity="high")
+
+    mock_ensure.assert_called_once()
+
+
+def test_sync_creates_issue_above_threshold(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    """An alert above min_severity is processed."""
+    sast_alert.metadata.severity = "critical"
+    mock_ensure = mocker.patch("security.issues.sync.ensure_issue")
+
+    sync_alerts_and_issues({1: sast_alert}, {}, dry_run=True, min_severity="high")
+
+    mock_ensure.assert_called_once()
+
+
+def test_sync_adept_to_close_still_runs_for_below_threshold_alerts(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    """Adept-to-close logic uses all alerts regardless of min_severity threshold.
+
+    An existing open issue whose alert is below the threshold must NOT be
+    incorrectly marked adept-to-close just because it was filtered from creation.
+    """
+    sast_alert.metadata.severity = "low"
+    fp = sast_alert.alert_details.alert_hash
+
+    existing_child = _issue_with_secmeta(
+        99,
+        {"type": "child", "fingerprint": fp, "repo": "test-org/test-repo", "rule_id": "r1", "severity": "low"},
+    )
+    mock_label = mocker.patch("security.issues.sync.gh_issue_add_labels")
+
+    sync_alerts_and_issues(
+        {1: sast_alert}, {99: existing_child}, dry_run=False, min_severity="high"
+    )
+
+    # The alert is still active, so adept-to-close must NOT have been applied.
+    mock_label.assert_not_called()
+
+
+def test_sync_unknown_severity_passes_at_min_low(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    """Unknown severity is created when min_severity=low (the default)."""
+    sast_alert.metadata.severity = "unknown"
+    mock_ensure = mocker.patch("security.issues.sync.ensure_issue")
+
+    sync_alerts_and_issues({1: sast_alert}, {}, dry_run=True, min_severity="low")
+
+    mock_ensure.assert_called_once()
+
+
+def test_sync_unknown_severity_filtered_above_min_low(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    """Unknown severity is skipped when min_severity is above low."""
+    sast_alert.metadata.severity = "unknown"
+    mock_ensure = mocker.patch("security.issues.sync.ensure_issue")
+
+    sync_alerts_and_issues({1: sast_alert}, {}, dry_run=True, min_severity="medium")
+
+    mock_ensure.assert_not_called()

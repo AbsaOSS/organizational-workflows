@@ -22,7 +22,7 @@ from core.github.issues import gh_issue_list_by_label
 from core.priority import parse_severity_priority_map
 
 from security.alerts.models import Alert
-from security.constants import LOGGING_PREFIX
+from security.constants import LOGGING_PREFIX, MIN_SEVERITY_DEFAULT
 from security.issues.sync import SyncResult, sync_alerts_and_issues
 from security.config import SecurityConfig
 
@@ -53,6 +53,15 @@ class IssueSyncer:
 
         spm = parse_severity_priority_map(config.severity_priority_map)
 
+        if config.min_severity != MIN_SEVERITY_DEFAULT:
+            logger.info(
+                "%sStarting promotion of alerts to GitHub issues (severity >= %s)",
+                LOGGING_PREFIX,
+                config.min_severity,
+            )
+        else:
+            logger.info("%sStarting promotion of alerts to GitHub issues", LOGGING_PREFIX)
+
         result = sync_alerts_and_issues(
             open_alerts,
             issues,
@@ -60,6 +69,7 @@ class IssueSyncer:
             severity_priority_map=spm,
             project_number=config.project_number,
             project_org=config.project_org,
+            min_severity=config.min_severity,
         )
 
         logger.info("%sCompleted promotion of alerts to GitHub issues", LOGGING_PREFIX)

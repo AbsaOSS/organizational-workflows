@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@v1.0.0 # Should be changed to release SHA
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@v1.1.0 # Should be changed to newest release SHA
     with:
       dry-run: ${{ inputs.dry-run || false }}
       min-severity: 'high' # Only high and critical severity alerts will be promoted to issues

@@ -38,7 +38,8 @@ To use this solution, make sure your environment meets the following requirement
 - AquaSec API credentials (Key and Secret)
 - AquaSec Group ID for authentication
 - AquaSec Repository ID (UUID format) for the target scan results
-- Required labels in the target repository: `scope:security`, `type:tech-debt`, `sec:adept-to-close`, `epic`
+- Required labels in the target repository: `scope:security`, `type:tech-debt`, `epic`
+- Standard labels for manual waiver tracking: `sec:suppression`, `sec:false-positive`
 
 ---
 
@@ -139,7 +140,7 @@ The entry point is `src/security/main.py`. It runs the full pipeline: authentica
 
 - Python 3.14 (current required runtime)
 - Install and authenticate GitHub CLI: `gh auth login`
-- Required labels must exist in the target repository: `scope:security`, `type:tech-debt`, `sec:adept-to-close`, `epic`
+- Required labels must exist in the target repository: `scope:security`, `type:tech-debt`, `epic`
 - AquaSec credentials available as environment variables: `AQUA_KEY`, `AQUA_SECRET`, `AQUA_GROUP_ID`, `AQUA_REPOSITORY_ID`
 
 ### Commands

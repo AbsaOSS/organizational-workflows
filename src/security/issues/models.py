@@ -93,7 +93,7 @@ class SyncStats:
     children_title_updated: int = 0
     children_body_updated: int = 0
     children_linked: int = 0
-    children_marked_for_closure: int = 0
+    children_closed: int = 0
 
 
 @dataclass

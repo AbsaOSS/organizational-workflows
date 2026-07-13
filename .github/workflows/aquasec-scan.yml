@@ -68,7 +68,7 @@ on:
         description: >
           Minimum severity level for issue creation. Accepted values: low, medium, high, critical
           (case-insensitive). Findings below this threshold are still fetched and still drive
-          adept-to-close lifecycle for previously created issues, but will not create or reopen
+          the closure lifecycle for previously created issues, but will not create or reopen
           issues. Defaults to 'low', which creates issues for all findings.
         required: false
         type: string

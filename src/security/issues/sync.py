@@ -33,7 +33,6 @@ from core.github.issues import (
     gh_issue_edit_state,
     gh_issue_edit_title,
     gh_issue_get_sub_issue_numbers,
-    gh_issue_remove_labels,
 )
 from core.github.projects import ProjectPrioritySync, gh_project_get_priority_field
 from core.models import Issue
@@ -44,7 +43,6 @@ from security.constants import (
     DRY_RUN_PREFIX,
     LABEL_EPIC,
     LABEL_SCOPE_SECURITY,
-    LABEL_SEC_ADEPT_TO_CLOSE,
     LABEL_TYPE_TECH_DEBT,
     LOGGING_PREFIX,
     SECMETA_TYPE_CHILD,
@@ -447,28 +445,6 @@ def _handle_new_child_issue(
         sync.priority_sync.enqueue(ctx.repo, num, ctx.severity, sync.severity_priority_map)
 
 
-def _remove_adept_to_close_label(repo: str, issue: Issue, *, dry_run: bool) -> None:
-    """Remove the ``sec:adept-to-close`` label from *issue* if present."""
-    if not issue.labels or LABEL_SEC_ADEPT_TO_CLOSE not in issue.labels:
-        return
-
-    if dry_run:
-        logging.info(
-            DRY_RUN_PREFIX + "Would remove label %r from issue #%d",
-            LABEL_SEC_ADEPT_TO_CLOSE,
-            issue.number,
-        )
-    else:
-        logging.info(
-            LOGGING_PREFIX + "Removed label %r from reopened issue #%d",
-            LABEL_SEC_ADEPT_TO_CLOSE,
-            issue.number,
-        )
-        gh_issue_remove_labels(repo, issue.number, [LABEL_SEC_ADEPT_TO_CLOSE])
-
-    issue.labels.remove(LABEL_SEC_ADEPT_TO_CLOSE)
-
-
 def _maybe_reopen_child(
     *,
     ctx: AlertContext,
@@ -495,7 +471,6 @@ def _maybe_reopen_child(
 
     if reopened:
         sync.stats.children_reopened += 1
-        _remove_adept_to_close_label(ctx.repo, issue, dry_run=sync.dry_run)
         maybe_reopen_parent_issue(
             ctx.repo,
             parent_issue,
@@ -765,14 +740,14 @@ def _flush_parent_body_updates(
                     stats.parents_body_updated += 1
 
 
-def _label_adept_to_close_issues(
+def _close_resolved_child_issues(
     alerts: dict[int, Alert],
     index: IssueIndex,
     *,
     dry_run: bool,
     stats: SyncStats,
 ) -> None:
-    """Detect open child issues with no matching alert and add the adept-to-close label."""
+    """Close open child issues whose alert is no longer present in the scan results."""
     alert_fingerprints: set[str] = set()
     for alert in alerts.values():
         fp = alert.alert_details.alert_hash
@@ -783,7 +758,7 @@ def _label_adept_to_close_issues(
     unmatched_fps = open_issue_fps - alert_fingerprints
 
     if not unmatched_fps:
-        logging.debug("No unmatched child issues – skipping adept-to-close labeling")
+        logging.debug("No unmatched child issues – skipping resolved-alert closure")
         return
 
     logging.info(LOGGING_PREFIX + "Detected %d child issue/s with no matching alert", len(unmatched_fps))
@@ -792,28 +767,22 @@ def _label_adept_to_close_issues(
         issue = index.by_fingerprint[fp]
         repo = load_secmeta(issue.body).get("repo", "")
         if not repo:
-            logging.debug("Skipping adept-to-close labeling for issue #%d: no repo in secmeta", issue.number)
-            continue
-        if issue.labels and LABEL_SEC_ADEPT_TO_CLOSE in issue.labels:
-            logging.debug(
-                "Label %r already on issue #%d (fingerprint=%s…) – skipping",
-                LABEL_SEC_ADEPT_TO_CLOSE,
-                issue.number,
-                fp[:12],
-            )
+            logging.debug("Skipping closure for issue #%d: no repo in secmeta", issue.number)
             continue
         if dry_run:
             logging.info(
-                DRY_RUN_PREFIX + "Would mark issue #%d for closure (no matching alert)",
+                DRY_RUN_PREFIX + "Would close issue #%d (finding no longer detected in scan)",
                 issue.number,
             )
-        else:
+            issue.state = "closed"
+            stats.children_closed += 1
+        elif gh_issue_edit_state(repo, issue.number, "closed"):
             logging.info(
-                LOGGING_PREFIX + "Marked issue #%d for closure (no matching alert)",
+                LOGGING_PREFIX + "Closed issue #%d (finding no longer detected in scan)",
                 issue.number,
             )
-            gh_issue_add_labels(repo, issue.number, [LABEL_SEC_ADEPT_TO_CLOSE])
-        stats.children_marked_for_closure += 1
+            issue.state = "closed"
+            stats.children_closed += 1
 
 
 def _meets_min_severity(severity: str, min_severity: str) -> bool:
@@ -865,7 +834,7 @@ def sync_alerts_and_issues(
         if not _meets_min_severity(alert.metadata.severity, min_severity):
             # Below threshold: skip issue creation, update, and reopen for this alert.
             # Existing open issues for this finding are intentionally left frozen — they
-            # will only be touched by adept-to-close logic if the finding later disappears.
+            # will only be closed by resolved-alert logic if the finding later disappears.
             continue
         ensure_issue(alert, sync)
 
@@ -874,7 +843,7 @@ def sync_alerts_and_issues(
     if priority_sync is not None:
         priority_sync.flush()
 
-    _label_adept_to_close_issues(alerts, index, dry_run=dry_run, stats=sync.stats)
+    _close_resolved_child_issues(alerts, index, dry_run=dry_run, stats=sync.stats)
     _close_resolved_parent_issues(issues, index, dry_run=dry_run, stats=sync.stats)
 
     _log_sync_summary(sync.stats, dry_run=dry_run)
@@ -909,8 +878,8 @@ def _log_sync_summary(stats: SyncStats, *, dry_run: bool) -> None:
         child_parts.append(f"body updated: {stats.children_body_updated}")
     if stats.children_linked:
         child_parts.append(f"linked: {stats.children_linked}")
-    if stats.children_marked_for_closure:
-        child_parts.append(f"marked for closure: {stats.children_marked_for_closure}")
+    if stats.children_closed:
+        child_parts.append(f"closed: {stats.children_closed}")
 
     if not parent_parts and not child_parts:
         logging.info(prefix + "Sync complete: no changes")

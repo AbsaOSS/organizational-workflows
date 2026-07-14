@@ -94,7 +94,7 @@ jobs:
 
       - name: Check Pylint score
         run: |
-          if (( $(echo "$PYLINT_SCORE < 9.0" | bc -l) )); then
+          if (( $(printf '%s < 9.0\n' "$PYLINT_SCORE" | bc -l) )); then
             printf 'Failure: Pylint score is below 9.0 (project score: %s).\n' "$PYLINT_SCORE"
             exit 1
           else

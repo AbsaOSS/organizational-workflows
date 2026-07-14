@@ -22,7 +22,7 @@ Solution supports:
 
 - **Automated Issue creation**: Each unique finding becomes a GitHub Issue with severity, affected file, and remediation context.
 - **Parent/child structure**: Findings are grouped under epic (parent) issues by rule, with individual occurrences as child sub-issues.
-- **Lifecycle sync**: Issues are reopened when findings reappear, marked as ready-to-close when findings disappear, and parent issues auto-close when all children are resolved.
+- **Lifecycle sync**: Issues are reopened when findings reappear, automatically closed when findings disappear, and parent issues auto-close when all children are resolved.
 - **Teams notifications**: New and reopened findings trigger a Microsoft Teams Adaptive Card notification.
 - **Priority sync**: Severity is mapped to priority on a GitHub ProjectV2 board.
 

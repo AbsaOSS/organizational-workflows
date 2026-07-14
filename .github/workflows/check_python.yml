@@ -90,15 +90,15 @@ jobs:
         id: analyze-code
         run: |
           pylint_score=$(pylint $(git ls-files '*.py')| grep 'rated at' | awk '{print $7}' | cut -d'/' -f1)
-          echo "PYLINT_SCORE=$pylint_score" >> $GITHUB_ENV
+          printf 'PYLINT_SCORE=%s\n' "$pylint_score" >> "$GITHUB_ENV"
 
       - name: Check Pylint score
         run: |
-          if (( $(echo "$PYLINT_SCORE < 9.0" | bc -l) )); then
-            echo "Failure: Pylint score is below 9.0 (project score: $PYLINT_SCORE)."
+          if (( $(printf '%s < 9.0\n' "$PYLINT_SCORE" | bc -l) )); then
+            printf 'Failure: Pylint score is below 9.0 (project score: %s).\n' "$PYLINT_SCORE"
             exit 1
           else
-            echo "Success: Pylint score is above 9.0 (project score: $PYLINT_SCORE)."
+            printf 'Success: Pylint score is above 9.0 (project score: %s).\n' "$PYLINT_SCORE"
           fi
 
   black-check:

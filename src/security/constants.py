@@ -19,13 +19,11 @@
 LABEL_SCOPE_SECURITY = "scope:security"
 LABEL_TYPE_TECH_DEBT = "type:tech-debt"
 LABEL_EPIC = "epic"
-LABEL_SEC_ADEPT_TO_CLOSE = "sec:adept-to-close"
 
 REQUIRED_LABELS: list[str] = [
     LABEL_SCOPE_SECURITY,
     LABEL_TYPE_TECH_DEBT,
     LABEL_EPIC,
-    LABEL_SEC_ADEPT_TO_CLOSE,
 ]
 
 SECMETA_KEYS_PARENT = {"type", "repo", "rule_id", "severity"}

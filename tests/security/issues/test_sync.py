@@ -27,19 +27,18 @@ from pytest_mock import MockerFixture
 from core.models import Issue
 from security.issues.sync import (
     _append_notification,
+    _close_resolved_child_issues,
     _close_resolved_parent_issues,
     _ensure_child_linked_to_parent,
     _flush_parent_body_updates,
     _handle_existing_child_issue,
     _handle_new_child_issue,
     _init_priority_sync,
-    _label_adept_to_close_issues,
     _log_sync_summary,
     _maybe_reopen_child,
     _meets_min_severity,
     _merge_child_secmeta,
     _rebuild_and_apply_child_body,
-    _remove_adept_to_close_label,
     _sync_child_title_and_labels,
     build_issue_index,
     ensure_issue,
@@ -434,43 +433,18 @@ def test_reopen_child_real_updates_state(mocker: MockerFixture) -> None:
     assert "open" == issue.state
 
 
-# _remove_adept_to_close_label
+# _maybe_reopen_child waiver labels
 
-def test_remove_adept_label_present(mocker: MockerFixture) -> None:
-    """Removes sec:adept-to-close label when present on a reopened issue."""
-    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
-    issue = Issue(number=1, state="open", title="T", body="b", labels=["scope:security", "sec:adept-to-close"])
-    _remove_adept_to_close_label("org/repo", issue, dry_run=False)
-    mock_remove.assert_called_once_with("org/repo", 1, ["sec:adept-to-close"])
-    assert "sec:adept-to-close" not in issue.labels
-
-
-def test_remove_adept_label_not_present(mocker: MockerFixture) -> None:
-    """No-op when sec:adept-to-close label is not on the issue."""
-    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
-    issue = Issue(number=1, state="open", title="T", body="b", labels=["scope:security"])
-    _remove_adept_to_close_label("org/repo", issue, dry_run=False)
-    mock_remove.assert_not_called()
-
-
-def test_remove_adept_label_none_labels() -> None:
-    """No-op when issue.labels is None."""
-    issue = Issue(number=1, state="open", title="T", body="b", labels=None)
-    _remove_adept_to_close_label("org/repo", issue, dry_run=False)
-
-
-def test_reopen_child_removes_adept_label(mocker: MockerFixture) -> None:
-    """Reopening a child issue also removes the sec:adept-to-close label."""
+def test_reopen_child_leaves_waiver_labels_untouched(mocker: MockerFixture) -> None:
+    """Reopening a child issue does not add or remove human-owned waiver labels."""
     mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
-    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
     body = render_secmeta({"type": "child", "category": "sast"}) + "\nbody"
-    issue = Issue(number=5, state="closed", title="T", body=body, labels=["scope:security", "sec:adept-to-close"])
+    issue = Issue(number=5, state="closed", title="T", body=body, labels=["scope:security", "sec:suppression"])
     ctx = _make_alert_context()
     sync = _make_sync_context()
     result = _maybe_reopen_child(ctx=ctx, sync=sync, issue=issue, parent_issue=None)
     assert result is True
-    mock_remove.assert_called_once_with("test-org/test-repo", 5, ["sec:adept-to-close"])
-    assert "sec:adept-to-close" not in issue.labels
+    assert "sec:suppression" in issue.labels
 
 
 # =====================================================================
@@ -902,70 +876,71 @@ def test_flush_missing_issue() -> None:
 
 
 # =====================================================================
-# _label_adept_to_close_issues
+# _close_resolved_child_issues
 # =====================================================================
 
 
-def test_label_orphan_no_orphans() -> None:
-    """No labelling when all children have matching alerts."""
+def test_close_resolved_child_no_orphans() -> None:
+    """No closure when all children have matching alerts."""
     child = _issue_with_secmeta(1, {"type": "child", "fingerprint": "fp1"})
     index = build_issue_index({1: child})
     alerts: dict[int, Alert] = {
         100: Alert.from_dict(
             {"metadata": {"state": "open"}, "alert_details": {"alert_hash": "fp1"}, "rule_details": {}}),
     }
-    _label_adept_to_close_issues(alerts, index, dry_run=False, stats=SyncStats())
+    _close_resolved_child_issues(alerts, index, dry_run=False, stats=SyncStats())
 
 
-def test_label_orphan_found(mocker: MockerFixture) -> None:
-    """Labels child issues that have no matching alert."""
-    mock_labels = mocker.patch("security.issues.sync.gh_issue_add_labels")
+def test_close_resolved_child_found(mocker: MockerFixture) -> None:
+    """Closes child issues that have no matching alert."""
+    mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
     child = _issue_with_secmeta(1, {
         "type": "child", "fingerprint": "fp_orphan", "repo": "org/repo",
     })
     index = build_issue_index({1: child})
-    alerts: dict[int, Alert] = {}
-    _label_adept_to_close_issues(alerts, index, dry_run=False, stats=SyncStats())
-    mock_labels.assert_called_once()
-    label_args = mock_labels.call_args[0][2]
-    assert "sec:adept-to-close" in label_args
+    stats = SyncStats()
+    _close_resolved_child_issues({}, index, dry_run=False, stats=stats)
+    mock_edit.assert_called_once_with("org/repo", 1, "closed")
+    assert 1 == stats.children_closed
+    assert "closed" == child.state
 
 
-def test_label_orphan_dry_run() -> None:
-    """Dry-run: logs but does not call gh."""
+def test_close_resolved_child_dry_run(mocker: MockerFixture) -> None:
+    """Dry-run: increments stat and marks state without calling gh."""
+    mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state")
     child = _issue_with_secmeta(1, {
         "type": "child", "fingerprint": "fp_orphan", "repo": "org/repo",
     })
     index = build_issue_index({1: child})
-    _label_adept_to_close_issues({}, index, dry_run=True, stats=SyncStats())
+    stats = SyncStats()
+    _close_resolved_child_issues({}, index, dry_run=True, stats=stats)
+    mock_edit.assert_not_called()
+    assert 1 == stats.children_closed
+    assert "closed" == child.state
 
 
-def test_label_orphan_skips_already_labelled() -> None:
-    """Skips if adept-to-close label is already present."""
-    child = _issue_with_secmeta(1, {
-        "type": "child", "fingerprint": "fp_orphan", "repo": "org/repo",
-    })
-    child.labels = ["sec:adept-to-close"]
-    index = build_issue_index({1: child})
-    _label_adept_to_close_issues({}, index, dry_run=False, stats=SyncStats())
-
-
-def test_label_orphan_skips_closed_issues() -> None:
-    """Closed child issues are not labelled as unmatched."""
+def test_close_resolved_child_skips_closed_issues() -> None:
+    """Closed child issues are not treated as unmatched."""
     child = _issue_with_secmeta(1, {
         "type": "child", "fingerprint": "fp_orphan", "repo": "org/repo",
     }, state="closed")
     index = build_issue_index({1: child})
-    _label_adept_to_close_issues({}, index, dry_run=False, stats=SyncStats())
+    stats = SyncStats()
+    _close_resolved_child_issues({}, index, dry_run=False, stats=stats)
+    assert 0 == stats.children_closed
 
 
-def test_label_orphan_no_repo_in_secmeta() -> None:
-    """Skips labelling if no repo in secmeta."""
+def test_close_resolved_child_no_repo_in_secmeta(mocker: MockerFixture) -> None:
+    """Skips closure if no repo in secmeta."""
+    mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state")
     child = _issue_with_secmeta(1, {
         "type": "child", "fingerprint": "fp_orphan",
     })
     index = build_issue_index({1: child})
-    _label_adept_to_close_issues({}, index, dry_run=False, stats=SyncStats())
+    stats = SyncStats()
+    _close_resolved_child_issues({}, index, dry_run=False, stats=stats)
+    mock_edit.assert_not_called()
+    assert 0 == stats.children_closed
 
 
 # =====================================================================
@@ -1100,6 +1075,29 @@ def test_sync_closes_parent_when_all_children_closed(mocker: MockerFixture) -> N
 
     assert result.notifications == []
     mock_edit.assert_called_once_with("org/repo", 10, "closed")
+    assert parent.state == "closed"
+
+
+def test_sync_resolved_child_cascades_parent_close_same_run(mocker: MockerFixture) -> None:
+    """An open child resolved this run closes, then its parent closes in the SAME run."""
+    edits: list[tuple[int, str]] = []
+    mocker.patch(
+        "security.issues.sync.gh_issue_edit_state",
+        side_effect=lambda repo, num, state: (edits.append((num, state)) or True),
+    )
+    parent = _issue_with_secmeta(10, {
+        "type": "parent", "rule_id": "R1", "repo": "org/repo",
+    })
+    child = _issue_with_secmeta(11, {
+        "type": "child", "rule_id": "R1", "fingerprint": "fp1", "repo": "org/repo",
+    })
+    issues = {10: parent, 11: child}
+
+    sync_alerts_and_issues({}, issues, dry_run=False)
+
+    assert (11, "closed") in edits
+    assert (10, "closed") in edits
+    assert child.state == "closed"
     assert parent.state == "closed"
 
 
@@ -1276,13 +1274,13 @@ def test_sync_creates_issue_above_threshold(
     mock_ensure.assert_called_once()
 
 
-def test_sync_adept_to_close_still_runs_for_below_threshold_alerts(
+def test_sync_resolved_close_still_runs_for_below_threshold_alerts(
     mocker: MockerFixture, sast_alert: Alert
 ) -> None:
-    """Adept-to-close logic uses all alerts regardless of min_severity threshold.
+    """Resolved-alert closure uses all alerts regardless of min_severity threshold.
 
     An existing open issue whose alert is below the threshold must NOT be
-    incorrectly marked adept-to-close just because it was filtered from creation.
+    incorrectly closed just because it was filtered from creation.
     """
     sast_alert.metadata.severity = "low"
     fp = sast_alert.alert_details.alert_hash
@@ -1291,14 +1289,14 @@ def test_sync_adept_to_close_still_runs_for_below_threshold_alerts(
         99,
         {"type": "child", "fingerprint": fp, "repo": "test-org/test-repo", "rule_id": "r1", "severity": "low"},
     )
-    mock_label = mocker.patch("security.issues.sync.gh_issue_add_labels")
+    mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state")
 
     sync_alerts_and_issues(
         {1: sast_alert}, {99: existing_child}, dry_run=False, min_severity="high"
     )
 
-    # The alert is still active, so adept-to-close must NOT have been applied.
-    mock_label.assert_not_called()
+    # The alert is still active, so the issue must NOT have been closed.
+    mock_edit.assert_not_called()
 
 
 def test_sync_unknown_severity_passes_at_min_low(

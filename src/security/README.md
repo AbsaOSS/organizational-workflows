@@ -22,7 +22,7 @@ Solution supports:
 
 - **Automated Issue creation**: Each unique finding becomes a GitHub Issue with severity, affected file, and remediation context.
 - **Parent/child structure**: Findings are grouped under epic (parent) issues by rule, with individual occurrences as child sub-issues.
-- **Lifecycle sync**: Issues are reopened when findings reappear, marked as ready-to-close when findings disappear, and parent issues auto-close when all children are resolved.
+- **Lifecycle sync**: Issues are reopened when findings reappear, automatically closed when findings disappear, and parent issues auto-close when all children are resolved.
 - **Teams notifications**: New and reopened findings trigger a Microsoft Teams Adaptive Card notification.
 - **Priority sync**: Severity is mapped to priority on a GitHub ProjectV2 board.
 
@@ -38,7 +38,8 @@ To use this solution, make sure your environment meets the following requirement
 - AquaSec API credentials (Key and Secret)
 - AquaSec Group ID for authentication
 - AquaSec Repository ID (UUID format) for the target scan results
-- Required labels in the target repository: `scope:security`, `type:tech-debt`, `sec:adept-to-close`, `epic`
+- Required labels in the target repository: `scope:security`, `type:tech-debt`, `epic`
+- Standard labels for manual waiver tracking: `sec:suppression`, `sec:false-positive`
 
 ---
 
@@ -139,7 +140,7 @@ The entry point is `src/security/main.py`. It runs the full pipeline: authentica
 
 - Python 3.14 (current required runtime)
 - Install and authenticate GitHub CLI: `gh auth login`
-- Required labels must exist in the target repository: `scope:security`, `type:tech-debt`, `sec:adept-to-close`, `epic`
+- Required labels must exist in the target repository: `scope:security`, `type:tech-debt`, `epic`
 - AquaSec credentials available as environment variables: `AQUA_KEY`, `AQUA_SECRET`, `AQUA_GROUP_ID`, `AQUA_REPOSITORY_ID`
 
 ### Commands

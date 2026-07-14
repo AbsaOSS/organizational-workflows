@@ -19,7 +19,7 @@ flowchart TD
     A["🔑 Authenticate with AquaSec API"]
     B["📥 Fetch and Normalise Findings"]
     C["📝 Create / Update / Reopen Issues"]
-    D["🏷️ Label Resolved Findings"]
+    D["✅ Close Resolved Findings"]
     E["📣 Send Notifications"]
 
     A --> B --> C --> D --> E
@@ -37,7 +37,7 @@ flowchart TD
 
 3. **Create / Update / Reopen Issues**: New findings become new GitHub Issues. Existing findings are updated with the latest occurrence data. Previously closed findings that reappear are automatically reopened. Parent issues (epics) group findings by rule and auto-close when all children are resolved.
 
-4. **Mark Resolved Findings**: Issues for findings that are no longer detected are labelled `sec:adept-to-close`, signalling they are ready to be closed manually.
+4. **Close Resolved Findings**: Issues for findings that are no longer detected in the scan are **automatically closed**. Closed issues remain searchable and traceable through their history and any waiver labels.
 
 5. **Send Notifications**: When new or reopened findings are detected a notification can be sent automatically.
 
@@ -47,10 +47,26 @@ flowchart TD
 
 - **Zero manual triage**: New findings from AquaSec scans automatically become Issues with severity, context, and links to the affected code.
 - **Single source of truth**: GitHub Issues is the system of record. No need to check a separate security portal.
-- **Lifecycle automation**: Issues are reopened when findings reappear, labeled for closure when resolved, and updated if needed.
+- **Lifecycle automation**: Issues are reopened when findings reappear, automatically closed when resolved, and updated if needed.
 - **Notifications**: Option to notify the team of new or reopened security findings in real-time.
 - **Priority sync**: Findings are mapped to priority levels on a ProjectV2 board, keeping planning and security aligned.
 - **Organisational scale**: Shared reusable workflows mean every repository gets the same security process with a single caller workflow.
+
+---
+
+## Waivers
+
+Sometimes a finding should be accepted rather than fixed. Either because it is a
+**suppression** or a **false positive**. These waivers are handled by people,
+not the pipeline. Pipeline never adds, removes, or reads these labels.
+
+To record a waiver, apply the matching label to the child issue and add a comment
+linking the related Jira ticket:
+
+| Label | Meaning |
+| --- | --- |
+| `sec:suppression` | A real finding is knowingly accepted for a period. |
+| `sec:false-positive` | A finding is confirmed not to be a real issue. |
 
 ---
 

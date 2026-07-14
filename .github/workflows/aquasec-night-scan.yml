@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   aquasec-night-scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@d3e4ff77b60db1bcd5b485ccedf19d2216d39621
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@feature/82-remove-adept-to-close-label-need
     with:
       dry-run: ${{ inputs.dry-run || false }}
       min-severity: 'medium'

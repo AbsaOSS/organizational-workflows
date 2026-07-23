@@ -17,8 +17,10 @@
 """Pure utility functions"""
 
 import hashlib
+import json
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 # Matches lines that start with 1-6 '#' followed by a space
 _HEADING_RE = re.compile(r"^(#{1,6}\s)", re.MULTILINE)
@@ -47,6 +49,12 @@ def iso_date(iso_dt: str | None) -> str:
 def sha256_hex(text: str) -> str:
     """Return the hex SHA-256 digest of *text*."""
     return hashlib.sha256(text.encode("utf-8"), usedforsecurity=False).hexdigest()
+
+
+def write_json(path: str, data: Any) -> None:
+    """Write *data* to *path* as indented JSON (UTF-8)."""
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(data, file, indent=2)
 
 
 def normalize_path(path: str | None) -> str:

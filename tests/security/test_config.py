@@ -35,6 +35,7 @@ def _make_args(**kwargs) -> argparse.Namespace:
         "project_org": "",
         "teams_webhook_url": "",
         "min_severity": "",
+        "scan_output": "",
     }
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)

@@ -24,6 +24,7 @@ import logging
 import shutil
 
 from core.config import parse_runner_debug, setup_logging
+from core.helpers import write_json
 
 from security.alerts.aquasec_parser import AquaSecParser
 from security.constants import LOGGING_PREFIX
@@ -86,6 +87,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Teams Incoming Webhook URL. Falls back to $TEAMS_WEBHOOK_URL env var",
     )
     p.add_argument("--min-severity", default="", help="Minimum severity level for issue creation.")
+    p.add_argument(
+        "--scan-output",
+        default="",
+        help="Path to write the fetched AquaSec scan JSON. When omitted, no file is written.",
+    )
     p.add_argument("--dry-run", action="store_true", help="Do not write issues; only print intended actions")
     p.add_argument("--verbose", action="store_true", help="Verbose logs (also enabled by RUNNER_DEBUG=1)")
     return p.parse_args(argv)
@@ -125,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
     # Fetch scan findings
     fetcher = ScanFetcher(bearer_token, config.aqua_repository_id)
     scan_data = fetcher.fetch_findings()
+
+    # Write the raw scan JSON for monitoring when a path is provided
+    if config.scan_output:
+        write_json(config.scan_output, scan_data)
+        logger.info("%sScan findings written to %s", LOGGING_PREFIX, config.scan_output)
 
     # Parse findings
     parser = AquaSecParser(repo)

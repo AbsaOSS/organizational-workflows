@@ -129,5 +129,12 @@ jobs:
           MIN_SEVERITY: ${{ inputs.min-severity }}
         run: |
           python3 org-workflows/src/security/main.py \
+            --scan-output aquasec_scan.json \
             ${{ inputs.dry-run && '--dry-run' || '' }} \
             ${{ inputs.verbose-logging && '--verbose' || '' }}
+
+      - name: Upload scan findings artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: aquasec-night-scan
+          path: aquasec_scan.json

@@ -14,9 +14,11 @@
 # limitations under the License.
 #
 
+import json
+
 import pytest
 
-from core.helpers import normalize_bullet_list, sanitize_markdown
+from core.helpers import normalize_bullet_list, sanitize_markdown, write_json
 
 
 # sanitize_markdown
@@ -96,3 +98,16 @@ def test_normalize_bullet_list_preserves_non_bullet_lines() -> None:
     text = "Some intro text\n- https://example.com\n  - https://other.com\nTrailing text"
     result = normalize_bullet_list(text)
     assert result == "Some intro text\n- https://example.com\n- https://other.com\nTrailing text"
+
+
+# write_json
+
+
+def test_write_json_writes_indented_content(tmp_path) -> None:
+    path = tmp_path / "aquasec_scan.json"
+    data = {"total": 2, "data": [{"a": 1}, {"b": 2}]}
+
+    write_json(str(path), data)
+
+    assert data == json.loads(path.read_text(encoding="utf-8"))
+    assert "\n  " in path.read_text(encoding="utf-8")

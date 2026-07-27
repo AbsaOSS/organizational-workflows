@@ -17,7 +17,7 @@ documentation.
 
 ## Repository Layout
 
-```
+```text
 .github/workflows/          # reusable GitHub Actions workflows (the product)
 src/
   core/                     # shared utilities (GitHub API, config, helpers)

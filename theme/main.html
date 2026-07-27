@@ -100,24 +100,35 @@
       code.parentElement.replaceWith(holder);
       graphs.push(holder);
     });
+    // Revert a single diagram holder back to a readable code block.
+    const toCodeBlock = (holder) => {
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.textContent = holder.dataset.mermaidSource || '';
+      pre.appendChild(code);
+      holder.replaceWith(pre);
+    };
+    graphs.forEach((holder) => { holder.dataset.mermaidSource = holder.textContent; });
+
     try {
       const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
       const dark = document.getElementById('docs-root').classList.contains('dark');
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
+        suppressErrorRendering: true,
         theme: dark ? 'dark' : 'default',
         flowchart: { curve: 'basis', useMaxWidth: true },
       });
-      await mermaid.run({ nodes: graphs });
-    } catch (err) {
+      // suppressErrors keeps a single bad diagram from aborting the whole run;
+      // only the holders that ended up without an SVG fall back to plain code.
+      await mermaid.run({ nodes: graphs, suppressErrors: true });
       graphs.forEach((holder) => {
-        const pre = document.createElement('pre');
-        const code = document.createElement('code');
-        code.textContent = holder.textContent;
-        pre.appendChild(code);
-        holder.replaceWith(pre);
+        if (!holder.querySelector('svg')) toCodeBlock(holder);
       });
+    } catch (err) {
+      // Import or initialize failed — nothing rendered, revert everything.
+      graphs.forEach(toCodeBlock);
     }
   }
 </script>

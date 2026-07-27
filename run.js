@@ -70,9 +70,8 @@ if (args.includes("--preview")) {
     "admin",
     "mkdocs.yml",
     "mkdocs-headless.yml",
-    "showcase.html",
     "showcase.css",
-    "main.py",
+    "scripts/pack.py",
     "marketplace.json",
   ];
 

@@ -1,0 +1,505 @@
+/*
+ * Copyright 2026 ABSA Group Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * showcase.css — Knowledge Base Docs Example landing page styles
+ * Scoped to #showcase-root to avoid clashing with MkDocs CSS.
+ */
+
+/* ── Design tokens ───────────────────────────────────────────────────────── */
+#showcase-root {
+  --kb-primary:   #77021E;
+  --kb-secondary:     #B50232;
+  --kb-accent:   #DC0037;
+  --kb-highlight:    #FF780F;
+  --kb-dark:    #131010;
+  --kb-light:    #FFFFFF;
+  --kb-soft:     #fce8ee;
+  --kb-muted:     #f5f5f5;
+  --kb-border:    #e5e5e5;
+  --radius:         6px;
+  --shadow-sm:      0 1px 4px rgba(0,0,0,0.10);
+  --shadow-md:      0 4px 16px rgba(0,0,0,0.12);
+  --font:           'Brave Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  box-sizing: border-box;
+  font-family: var(--font);
+  color: var(--kb-dark);
+  background: var(--kb-light);
+  line-height: 1.6;
+}
+
+#showcase-root *, #showcase-root *::before, #showcase-root *::after {
+  box-sizing: inherit;
+}
+
+/* ── Nav ─────────────────────────────────────────────────────────────────── */
+#showcase-root .sc-nav {
+  background: var(--kb-primary);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.30);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40px;
+  height: 64px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+#showcase-root .sc-nav__logo {
+  display: flex;
+  align-items: center;
+  color: var(--kb-light);
+  gap: 12px;
+  text-decoration: none;
+}
+
+#showcase-root .sc-nav__logo img {
+  height: 36px;
+  min-height: 36px;
+  width: auto;
+}
+
+#showcase-root .sc-nav__title {
+  color: var(--kb-light);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.9;
+}
+
+#showcase-root .sc-nav__links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#showcase-root .sc-nav__link {
+  color: rgba(255,255,255,0.80);
+  text-decoration: none;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  transition: background 0.15s, color 0.15s;
+}
+
+#showcase-root .sc-nav__link:hover {
+  background: rgba(255,255,255,0.12);
+  color: var(--kb-light);
+}
+
+#showcase-root .sc-nav__cta {
+  background: var(--kb-light);
+  color: var(--kb-primary);
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  padding: 9px 20px;
+  border-radius: var(--radius);
+  margin-left: 8px;
+  transition: opacity 0.15s;
+}
+
+#showcase-root .sc-nav__cta:hover {
+  opacity: 0.88;
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+#showcase-root .sc-hero {
+  position: relative;
+  background: var(--kb-primary);
+  overflow: hidden;
+  min-height: 480px;
+  display: flex;
+  align-items: center;
+}
+
+#showcase-root .sc-hero__bg {
+  position: absolute;
+  inset: 0;
+  background-image: url('docs/assets/images/hero.png');
+  background-size: cover;
+  background-position: center right;
+  opacity: 0.55;
+}
+
+#showcase-root .sc-hero__content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 72px 40px;
+}
+
+#showcase-root .sc-hero__eyebrow {
+  display: inline-block;
+  background: rgba(255,120,15,0.22);
+  color: var(--kb-highlight);
+  border: 1px solid rgba(255,120,15,0.4);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-bottom: 20px;
+}
+
+#showcase-root .sc-hero__title {
+  color: var(--kb-light);
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 16px;
+}
+
+#showcase-root .sc-hero__title span {
+  color: var(--kb-highlight);
+}
+
+#showcase-root .sc-hero__sub {
+  color: rgba(255,255,255,0.82);
+  font-size: 17px;
+  margin: 0 0 36px;
+  max-width: 520px;
+}
+
+#showcase-root .sc-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+#showcase-root .sc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 13px 28px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+#showcase-root .sc-btn--primary {
+  background: var(--kb-secondary);
+  color: var(--kb-light);
+  border-color: var(--kb-secondary);
+}
+
+#showcase-root .sc-btn--primary:hover {
+  background: var(--kb-accent);
+  border-color: var(--kb-accent);
+}
+
+#showcase-root .sc-btn--outline {
+  background: transparent;
+  color: var(--kb-light);
+  border-color: rgba(255,255,255,0.60);
+}
+
+#showcase-root .sc-btn--outline:hover {
+  background: rgba(255,255,255,0.10);
+  border-color: var(--kb-light);
+}
+
+/* ── Section wrapper ─────────────────────────────────────────────────────── */
+#showcase-root .sc-section {
+  padding: 72px 40px;
+  max-width: 1160px;
+  margin: 0 auto;
+}
+
+#showcase-root .sc-section--full {
+  max-width: 100%;
+  padding: 72px 0;
+}
+
+#showcase-root .sc-section__label {
+  color: var(--kb-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+#showcase-root .sc-section__title {
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0 0 12px;
+}
+
+#showcase-root .sc-section__sub {
+  color: #555;
+  font-size: 16px;
+  max-width: 600px;
+  margin: 0 0 48px;
+}
+
+/* ── Feature cards ───────────────────────────────────────────────────────── */
+#showcase-root .sc-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+#showcase-root .sc-feature-card {
+  background: var(--kb-light);
+  border: 1px solid var(--kb-border);
+  border-radius: var(--radius);
+  padding: 28px;
+  box-shadow: var(--shadow-sm);
+}
+
+#showcase-root .sc-feature-card__icon {
+  width: 44px;
+  height: 44px;
+  background: var(--kb-soft);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+#showcase-root .sc-feature-card__icon svg {
+  width: 22px;
+  height: 22px;
+  color: var(--kb-secondary);
+  stroke: var(--kb-secondary);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#showcase-root .sc-feature-card__title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+#showcase-root .sc-feature-card__text {
+  font-size: 14px;
+  color: #555;
+  margin: 0;
+}
+
+/* ── Steps ───────────────────────────────────────────────────────────────── */
+#showcase-root .sc-steps-bg {
+  background: var(--kb-muted);
+}
+
+#showcase-root .sc-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 32px;
+}
+
+#showcase-root .sc-step {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+#showcase-root .sc-step__num {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  background: var(--kb-secondary);
+  color: var(--kb-light);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+#showcase-root .sc-step__title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+#showcase-root .sc-step__text {
+  font-size: 14px;
+  color: #555;
+  margin: 0;
+}
+
+#showcase-root .sc-step code {
+  background: #e8e8e8;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+
+/* ── CTA banner ──────────────────────────────────────────────────────────── */
+#showcase-root .sc-cta {
+  background: linear-gradient(135deg, var(--kb-primary) 0%, var(--kb-secondary) 100%);
+  color: var(--kb-light);
+  text-align: center;
+  padding: 72px 40px;
+}
+
+#showcase-root .sc-cta__title {
+  font-size: clamp(22px, 3vw, 36px);
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+#showcase-root .sc-cta__sub {
+  font-size: 16px;
+  opacity: 0.85;
+  margin: 0 0 36px;
+}
+
+#showcase-root .sc-cta__actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+#showcase-root .sc-btn--light {
+  background: var(--kb-light);
+  color: var(--kb-primary);
+  border-color: var(--kb-light);
+}
+
+#showcase-root .sc-btn--light:hover {
+  opacity: 0.88;
+}
+
+#showcase-root .sc-btn--ghost {
+  background: transparent;
+  color: var(--kb-light);
+  border-color: rgba(255,255,255,0.55);
+}
+
+#showcase-root .sc-btn--ghost:hover {
+  background: rgba(255,255,255,0.10);
+  border-color: var(--kb-light);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+#showcase-root .sc-footer {
+  background: var(--kb-dark);
+  color: rgba(255,255,255,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 24px 40px;
+  font-size: 13px;
+}
+
+#showcase-root .sc-footer a {
+  color: rgba(255,255,255,0.65);
+  text-decoration: none;
+}
+
+#showcase-root .sc-footer a:hover {
+  color: var(--kb-light);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #showcase-root .sc-nav {
+    padding: 0 20px;
+  }
+  #showcase-root .sc-nav__links {
+    display: none;
+  }
+  #showcase-root .sc-hero__content {
+    padding: 56px 24px;
+  }
+  #showcase-root .sc-section {
+    padding: 56px 24px;
+  }
+  #showcase-root .sc-cta {
+    padding: 56px 24px;
+  }
+  #showcase-root .sc-footer {
+    padding: 20px 24px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ── Additions: light-surface button, anchor offsets, intra-section spacing ─ */
+
+/* Outline button is white-on-dark (hero/CTA only). This variant works on the
+   light and muted section backgrounds. */
+#showcase-root .sc-btn--secondary {
+  background: transparent;
+  color: var(--kb-primary);
+  border-color: var(--kb-primary);
+}
+
+#showcase-root .sc-btn--secondary:hover {
+  background: var(--kb-primary);
+  color: var(--kb-light);
+}
+
+/* Links inside feature cards */
+#showcase-root .sc-feature-card__text a {
+  color: var(--kb-secondary);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+#showcase-root .sc-feature-card__text a:hover {
+  text-decoration: underline;
+}
+
+/* Sections that stack more than one block (steps + cards + buttons) need
+   explicit rhythm — the base blocks carry no vertical margins of their own.
+   Margins collapse with .sc-section__sub's 48px bottom margin, so single-block
+   sections keep their original spacing. */
+#showcase-root .sc-section > * + .sc-steps,
+#showcase-root .sc-section > * + .sc-features {
+  margin-top: 48px;
+}
+
+#showcase-root .sc-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 40px;
+}
+
+/* Sticky nav is 64px tall — keep in-page anchor targets clear of it. */
+#showcase-root {
+  scroll-behavior: smooth;
+}
+
+#showcase-root [id] {
+  scroll-margin-top: 80px;
+}

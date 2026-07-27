@@ -24,3 +24,10 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Docs site build output
+dist/
+dist.tar.gz
+mkdocs-build.yml
+mkdocs-headless-build.yml
+node_modules/

@@ -1,10 +1,15 @@
+---
+title: Security Automation
+order: 2
+---
+
 # Security Automation
 
 ## Overview
 
 Security Automation provides **continuous, automated vulnerability management** for your repositories. It authenticates directly with the AquaSec API, fetches scan findings, and automatically converts them into structured **GitHub Issues** with full lifecycle management. This gives your team a managed security posture without manual triage effort.
 
-> For setup instructions and technical configuration, see the [Security README](/src/security/README.md).
+> For setup instructions and technical configuration, see the [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md).
 
 ---
 
@@ -179,12 +184,12 @@ Adopt the security automation by adding a short caller workflow to your reposito
 
 ### Example Caller Workflow
 
-See the full example at [docs/security/aquasec-night-scan-example.yml](/docs/security/aquasec-night-scan-example.yml).
+See the full example at [aquasec-night-scan-example.yml](aquasec-night-scan-example.yml).
 
 ---
 
 ## See Also
 
-- [Security README](/src/security/README.md): setup instructions, shared workflow configuration, and technical details
-- [Example Caller Workflow](/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
-- [Repository README](/README.md): overview of all organizational workflows
+- [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): setup instructions, shared workflow configuration, and technical details
+- [Example Caller Workflow](aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
+- [Overview](../index.md): all organizational workflows

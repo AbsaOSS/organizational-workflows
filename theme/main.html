@@ -1,0 +1,125 @@
+<!--
+  Copyright 2026 ABSA Group Limited
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title }} — {{ config.site_name }}</title>
+  <link rel="stylesheet" href="{{ "style.css" | url }}">
+  <style>
+    .mermaid { margin: 1.75rem 0; text-align: center; }
+    .mermaid svg { max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+<div id="docs-root"{% if config.extra.headless %} data-mp-headless="true"{% endif %}>
+  <script>if(localStorage.getItem('theme')==='dark'){document.getElementById('docs-root').classList.add('dark')}</script>
+  {%- if not config.extra.headless -%}
+  {%- if config.extra.showcase_url -%}
+    {%- set _home_href = config.extra.showcase_url -%}
+  {%- else -%}
+    {%- set _url_trimmed = (page.url | default('') | trim('/')) -%}
+    {%- set _parts = _url_trimmed.split('/') if _url_trimmed else [] -%}
+    {%- set _home_href = ('../' * (_parts | length + 1)) ~ 'index.html' -%}
+  {%- endif -%}
+  <header id="topnav">
+    <a href="{{ _home_href }}" id="topnav-logo" aria-label="Go to home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="height:28px;width:28px;" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+    </a>
+    <a href="{{ _home_href }}" id="topnav-title">
+      {{ config.site_name }}
+    </a>
+    <div id="topnav-actions">
+      <a href="{{ _home_href }}" id="topnav-home-link">Home</a>
+      <button id="theme-toggle" aria-label="Toggle theme" onclick="
+        const r=document.getElementById('docs-root');
+        r.classList.toggle('dark');
+        localStorage.setItem('theme',r.classList.contains('dark')?'dark':'light');
+      ">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+  {%- endif -%}
+  <nav id="sidebar">
+    {% for nav_item in nav %}
+      {% if nav_item.is_page %}
+        <a href="{{ nav_item.url | url }}" class="nav-link{% if nav_item.active %} active{% endif %}">{{ nav_item.title }}</a>
+      {% elif nav_item.is_section %}
+        <div class="nav-section">
+          <span class="nav-section-label">{{ nav_item.title }}</span>
+          {% for child in nav_item.children %}
+            {% if child.is_page %}
+              <a href="{{ child.url | url }}" class="nav-link{% if child.active %} active{% endif %}">{{ child.title }}</a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+  </nav>
+  <main id="content">
+    <article class="prose prose-gray dark:prose-invert max-w-none">
+      {{ page.content }}
+    </article>
+  </main>
+</div>
+
+<!--
+  Mermaid rendering: ```mermaid fenced blocks are emitted by Python-Markdown as
+  <pre><code class="language-mermaid">. Convert them to <div class="mermaid">
+  and render. If the CDN is unreachable the blocks stay readable as plain code.
+-->
+<script type="module">
+  const blocks = document.querySelectorAll('pre > code.language-mermaid');
+  if (blocks.length) {
+    const graphs = [];
+    blocks.forEach((code) => {
+      const holder = document.createElement('div');
+      holder.className = 'mermaid';
+      holder.textContent = code.textContent;
+      code.parentElement.replaceWith(holder);
+      graphs.push(holder);
+    });
+    try {
+      const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
+      const dark = document.getElementById('docs-root').classList.contains('dark');
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: dark ? 'dark' : 'default',
+        flowchart: { curve: 'basis', useMaxWidth: true },
+      });
+      await mermaid.run({ nodes: graphs });
+    } catch (err) {
+      graphs.forEach((holder) => {
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.textContent = holder.textContent;
+        pre.appendChild(code);
+        holder.replaceWith(pre);
+      });
+    }
+  }
+</script>
+</body>
+</html>

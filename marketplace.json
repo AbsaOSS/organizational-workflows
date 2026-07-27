@@ -1,0 +1,9 @@
+{
+  "marketplaceVersion": "1",
+  "name": "Organizational Workflows",
+  "slug": "organizational-workflows",
+  "description": "Reusable GitHub Actions workflows with Python automation backends. Security Automation turns AquaSec scan findings into a managed GitHub Issues backlog with full lifecycle handling.",
+  "icon": "shield-check",
+  "tags": ["security", "github-actions", "automation", "vulnerability-management"],
+  "entryPoint": "index.html"
+}

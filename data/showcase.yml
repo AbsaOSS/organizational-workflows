@@ -1,0 +1,256 @@
+# Showcase landing page — raw HTML content.
+# Rendered into dist/index.html by scripts/pack.py at build time.
+
+content: |
+  <div id="showcase-root">
+
+    <!-- ── Navigation ── -->
+    <nav class="sc-nav" aria-label="Site navigation">
+      <a href="index.html" class="sc-nav__logo" aria-label="Go to home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="height:28px;width:28px;" aria-hidden="true">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+        <span class="sc-nav__title">Organizational Workflows</span>
+      </a>
+      <div class="sc-nav__links">
+        <a href="#how-it-works" class="sc-nav__link">How it works</a>
+        <a href="#solutions" class="sc-nav__link">Solutions</a>
+        <a href="#security" class="sc-nav__link">Security</a>
+        <a href="https://github.com/AbsaOSS/organizational-workflows" class="sc-nav__link">GitHub</a>
+        <a href="docs/" class="sc-nav__cta">Read the Docs</a>
+      </div>
+    </nav>
+    <!-- ── /Navigation ── -->
+
+    <!-- ── Hero ── -->
+    <section class="sc-hero" aria-label="Hero">
+      <div class="sc-hero__bg" role="presentation"></div>
+      <div class="sc-hero__content">
+        <span class="sc-hero__eyebrow">Shared engineering automation</span>
+        <h1 class="sc-hero__title">
+          Reusable workflows for<br>
+          <span>your whole organization</span>
+        </h1>
+        <p class="sc-hero__sub">A collection of reusable GitHub Actions workflows with Python automation backends, designed to be shared across an organization. Each solution is self-contained: a reusable workflow and dedicated documentation.</p>
+        <div class="sc-hero__actions">
+          <a href="docs/" class="sc-btn sc-btn--primary">Read the Docs</a>
+          <a href="https://github.com/AbsaOSS/organizational-workflows" class="sc-btn sc-btn--outline">View on GitHub</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Features ── -->
+    <section aria-label="What this is">
+      <div class="sc-section">
+        <p class="sc-section__label">What this is</p>
+        <h2 class="sc-section__title">One shared library, adopted per repository</h2>
+        <p class="sc-section__sub">Automation lives in one place and is called from anywhere. Repositories stay clean — they reference a workflow instead of copying scripts.</p>
+
+        <div class="sc-features">
+          <div class="sc-feature-card">
+            <div class="sc-feature-card__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            </div>
+            <h3 class="sc-feature-card__title">Reusable GitHub Actions</h3>
+            <p class="sc-feature-card__text">Every solution ships as a reusable workflow. Consumers add a short caller workflow — no copied logic to maintain.</p>
+          </div>
+          <div class="sc-feature-card">
+            <div class="sc-feature-card__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l6-6-6-6"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </div>
+            <h3 class="sc-feature-card__title">Python automation backends</h3>
+            <p class="sc-feature-card__text">The heavy lifting runs in Python under <code>src/</code>, not in YAML. Real code, testable and reviewable.</p>
+          </div>
+          <div class="sc-feature-card">
+            <div class="sc-feature-card__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            </div>
+            <h3 class="sc-feature-card__title">Self-contained solutions</h3>
+            <p class="sc-feature-card__text">Each solution owns its workflow, its modules, and its documentation. Adopt one without inheriting the rest.</p>
+          </div>
+          <div class="sc-feature-card">
+            <div class="sc-feature-card__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+            </div>
+            <h3 class="sc-feature-card__title">Shared core utilities</h3>
+            <p class="sc-feature-card__text">A common <code>core/</code> layer handles GitHub API access, configuration, and helpers — consistent behaviour across solutions.</p>
+          </div>
+          <div class="sc-feature-card">
+            <div class="sc-feature-card__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </div>
+            <h3 class="sc-feature-card__title">Quality gated</h3>
+            <p class="sc-feature-card__text">Black, Pylint, mypy, and pytest with a coverage threshold run over every change before it reaches a consumer repository.</p>
+          </div>
+          <div class="sc-feature-card">
+            <div class="sc-feature-card__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </div>
+            <h3 class="sc-feature-card__title">Documented per solution</h3>
+            <p class="sc-feature-card__text">Business-level docs explain what a solution delivers; the developer guide covers setup and contribution.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Steps ── -->
+    <div class="sc-steps-bg" id="how-it-works">
+      <section aria-label="How adoption works">
+        <div class="sc-section">
+          <p class="sc-section__label">How it works</p>
+          <h2 class="sc-section__title">Three steps to adopt any solution</h2>
+          <p class="sc-section__sub">The same shape every time: pick a solution, call its workflow, supply its secrets.</p>
+
+          <div class="sc-steps">
+            <div class="sc-step">
+              <div class="sc-step__num">1</div>
+              <div>
+                <p class="sc-step__title">Pick a solution</p>
+                <p class="sc-step__text">Read its documentation to see what it delivers, what it needs, and what appears in your repository once it runs.</p>
+              </div>
+            </div>
+            <div class="sc-step">
+              <div class="sc-step__num">2</div>
+              <div>
+                <p class="sc-step__title">Add a caller workflow</p>
+                <p class="sc-step__text">Drop a short workflow into <code>.github/workflows/</code> that calls the shared reusable workflow and sets its inputs.</p>
+              </div>
+            </div>
+            <div class="sc-step">
+              <div class="sc-step__num">3</div>
+              <div>
+                <p class="sc-step__title">Supply secrets and run</p>
+                <p class="sc-step__text">Configure the required repository secrets. The workflow runs on your schedule or trigger — the Python backend does the rest.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── Solutions ── -->
+    <section aria-label="Solutions" id="solutions">
+      <div class="sc-section">
+        <p class="sc-section__label">Solutions</p>
+        <h2 class="sc-section__title">What is available today</h2>
+        <p class="sc-section__sub">The catalogue grows over time. Each entry below is production-ready and independently adoptable.</p>
+
+        <div class="sc-features">
+          <div class="sc-feature-card">
+            <div class="sc-feature-card__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <h3 class="sc-feature-card__title">Security Automation</h3>
+            <p class="sc-feature-card__text">Turns code scanning alerts into a managed GitHub Issues backlog with full lifecycle automation. <a href="docs/security/security/">Read the documentation →</a></p>
+          </div>
+          <div class="sc-feature-card">
+            <div class="sc-feature-card__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </div>
+            <h3 class="sc-feature-card__title">More to come</h3>
+            <p class="sc-feature-card__text">New solutions follow the same contract: one reusable workflow, one Python backend, one documentation page. <a href="https://github.com/AbsaOSS/organizational-workflows/blob/master/CONTRIBUTING.md">Contribute one →</a></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Security solution ── -->
+    <div class="sc-steps-bg" id="security">
+      <section aria-label="Security Automation">
+        <div class="sc-section">
+          <p class="sc-section__label">Solution spotlight</p>
+          <h2 class="sc-section__title">Security Automation</h2>
+          <p class="sc-section__sub">Continuous, automated vulnerability management. The pipeline authenticates with the AquaSec API, fetches scan findings, and converts them into GitHub Issues with full lifecycle management — a managed security posture without manual triage effort.</p>
+
+          <div class="sc-steps">
+            <div class="sc-step">
+              <div class="sc-step__num">1</div>
+              <div>
+                <p class="sc-step__title">Authenticate with AquaSec</p>
+                <p class="sc-step__text">HMAC-SHA256 signed credentials obtain a bearer token from the AquaSec API.</p>
+              </div>
+            </div>
+            <div class="sc-step">
+              <div class="sc-step__num">2</div>
+              <div>
+                <p class="sc-step__title">Fetch and normalise findings</p>
+                <p class="sc-step__text">Paginated scan results are parsed into a common format: severity, rule ID, affected file, and a stable fingerprint for matching.</p>
+              </div>
+            </div>
+            <div class="sc-step">
+              <div class="sc-step__num">3</div>
+              <div>
+                <p class="sc-step__title">Create, update, reopen</p>
+                <p class="sc-step__text">New findings become Issues. Existing ones are updated. Reappearing findings are reopened. Parent epics group findings by rule.</p>
+              </div>
+            </div>
+            <div class="sc-step">
+              <div class="sc-step__num">4</div>
+              <div>
+                <p class="sc-step__title">Close resolved findings</p>
+                <p class="sc-step__text">Issues no longer detected in the scan are closed automatically, and stay searchable through their history and waiver labels.</p>
+              </div>
+            </div>
+            <div class="sc-step">
+              <div class="sc-step__num">5</div>
+              <div>
+                <p class="sc-step__title">Send notifications</p>
+                <p class="sc-step__text">New or reopened findings can trigger a real-time notification to the team.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="sc-features">
+            <div class="sc-feature-card">
+              <div class="sc-feature-card__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              </div>
+              <h3 class="sc-feature-card__title">Zero manual triage</h3>
+              <p class="sc-feature-card__text">Findings arrive as Issues carrying severity, context, and links to the affected code.</p>
+            </div>
+            <div class="sc-feature-card">
+              <div class="sc-feature-card__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+              </div>
+              <h3 class="sc-feature-card__title">Single source of truth</h3>
+              <p class="sc-feature-card__text">GitHub Issues is the system of record. No separate security portal to check.</p>
+            </div>
+            <div class="sc-feature-card">
+              <div class="sc-feature-card__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              </div>
+              <h3 class="sc-feature-card__title">Priority sync</h3>
+              <p class="sc-feature-card__text">Findings map to priority levels on a ProjectV2 board, keeping planning and security aligned.</p>
+            </div>
+          </div>
+
+          <div class="sc-btn-row">
+            <a href="docs/security/security/" class="sc-btn sc-btn--primary">Security documentation</a>
+            <a href="docs/security/aquasec-night-scan-example.yml" class="sc-btn sc-btn--secondary">Example workflow</a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── CTA banner ── -->
+    <section class="sc-cta" aria-label="Call to action">
+      <h2 class="sc-cta__title">Bring shared automation to your repository</h2>
+      <p class="sc-cta__sub">Start with the documentation, add a caller workflow, and let the shared pipeline do the work.</p>
+      <div class="sc-cta__actions">
+        <a href="docs/" class="sc-btn sc-btn--light">Get Started</a>
+        <a href="https://github.com/AbsaOSS/organizational-workflows" class="sc-btn sc-btn--ghost">View on GitHub</a>
+      </div>
+    </section>
+
+    <!-- ── Footer ── -->
+    <footer class="sc-footer">
+      <span>Organizational Workflows &mdash; Apache License 2.0</span>
+      <span>
+        <a href="docs/">Docs</a>
+        &ensp;&middot;&ensp;
+        <a href="https://github.com/AbsaOSS/organizational-workflows">GitHub</a>
+      </span>
+    </footer>
+
+  </div><!-- /#showcase-root -->

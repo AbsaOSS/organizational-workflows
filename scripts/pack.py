@@ -37,12 +37,14 @@ import subprocess
 import sys
 import tarfile
 from pathlib import Path
+from typing import Any
 
 
 # ── Build-time cleanup ────────────────────────────────────────────────────────
 def _cleanup():
     for f in ("mkdocs-build.yml", "mkdocs-headless-build.yml"):
         Path(f).unlink(missing_ok=True)
+
 
 atexit.register(_cleanup)
 
@@ -56,7 +58,7 @@ def run(*args, **kwargs):
 
 
 def human_size(path: Path) -> str:
-    size = path.stat().st_size
+    size = float(path.stat().st_size)
     for unit in ("B", "K", "M", "G"):
         if size < 1024:
             return f"{size:.0f}{unit}"
@@ -86,18 +88,20 @@ def auto_generate_nav(docs_dir="docs"):
     for md_file in docs_path.rglob("*.md"):
         rel = md_file.relative_to(docs_path).as_posix()
         fm = parse_frontmatter(str(md_file))
-        pages.append({
-            "file": rel,
-            "title": fm.get("title", md_file.stem.replace("-", " ").title()),
-            "order": fm.get("order", 999),
-            "section": fm.get("section"),
-        })
+        pages.append(
+            {
+                "file": rel,
+                "title": fm.get("title", md_file.stem.replace("-", " ").title()),
+                "order": fm.get("order", 999),
+                "section": fm.get("section"),
+            }
+        )
 
     pages.sort(key=lambda p: p["order"])
 
-    top_level = []
-    sections = {}
-    section_min_order = {}
+    top_level: list[dict[str, Any]] = []
+    sections: dict[str, list[dict[str, Any]]] = {}
+    section_min_order: dict[str, int] = {}
 
     for page in pages:
         entry = {page["title"]: page["file"]}
@@ -123,13 +127,13 @@ def generate_build_configs():
     cfg = yaml.safe_load(Path("mkdocs.yml").read_text(encoding="utf-8"))
 
     nav = auto_generate_nav(cfg.get("docs_dir", "docs"))
-    print(f"  Auto-generated nav with {sum(len(v) if isinstance(v, dict) and isinstance(list(v.values())[0], list) else 1 for v in nav)} page(s)")
+    print(
+        f"  Auto-generated nav with {sum(len(v) if isinstance(v, dict) and isinstance(list(v.values())[0], list) else 1 for v in nav)} page(s)"
+    )
 
     cfg["nav"] = nav
 
-    Path("mkdocs-build.yml").write_text(
-        yaml.dump(cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8"
-    )
+    Path("mkdocs-build.yml").write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8")
 
     Path("mkdocs-headless-build.yml").write_text(
         "INHERIT: mkdocs-build.yml\n\nextra:\n  headless: true\n", encoding="utf-8"
@@ -172,7 +176,9 @@ def render_showcase(headless=False):
     if headless:
         content = re.sub(
             r"<!-- ── Navigation ── -->\s*<nav[^>]*>.*?</nav>\s*<!-- ── /Navigation ── -->",
-            "", content, flags=re.DOTALL
+            "",
+            content,
+            flags=re.DOTALL,
         )
 
     html = SHOWCASE_WRAPPER.format(content=content)
@@ -202,11 +208,7 @@ def generate_marketplace_json():
                     if isinstance(value, str):
                         fm = parse_frontmatter(f"docs/{value}")
                         rel = Path(value).with_suffix("")
-                        out = (
-                            "docs/index.html"
-                            if rel.name == "index"
-                            else f"docs/{rel.as_posix()}/index.html"
-                        )
+                        out = "docs/index.html" if rel.name == "index" else f"docs/{rel.as_posix()}/index.html"
                         entry = {
                             "title": fm.get("title", label),
                             "path": out,
@@ -225,9 +227,7 @@ def generate_marketplace_json():
 
     manifest = json.loads(Path("marketplace.json").read_text(encoding="utf-8"))
     manifest["pages"] = pages
-    Path("dist/marketplace.json").write_text(
-        json.dumps(manifest, indent=2), encoding="utf-8"
-    )
+    Path("dist/marketplace.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"  {len(pages)} page(s) written to dist/marketplace.json")
 
 

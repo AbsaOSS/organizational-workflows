@@ -65,12 +65,9 @@ if (args.includes("--preview")) {
   // loop). mkdocs-build*.yml are transient and live at the repo root, unwatched.
   const watchTargets = [
     "docs",
-    "data",
     "theme",
     "admin",
     "mkdocs.yml",
-    "mkdocs-headless.yml",
-    "showcase.css",
     "scripts/pack.py",
     "marketplace.json",
   ];

@@ -18,14 +18,14 @@
 """pack.py — build the docs site and package the release artifact.
 
 Usage:
-  python scripts/pack.py             # build + package dist.tar.gz
-  python scripts/pack.py --serve     # generate config + live-reload dev server
-  python scripts/pack.py --no-package  # build only, skip packaging
+  python scripts/pack.py              # build + package dist.tar.gz
+  python scripts/pack.py --serve      # live-reload dev server
+  python scripts/pack.py --no-package # build only, skip packaging
 
 Output: dist.tar.gz  (contains dist/ + marketplace.json)
 
 Prerequisites: pip install -r requirements-docs.txt
-               Set SKIP_PIP_INSTALL=1 to bypass (e.g. pre-installed environments)
+               Set SKIP_PIP_INSTALL=1 to bypass
 """
 
 import atexit
@@ -39,28 +39,13 @@ import tarfile
 from pathlib import Path
 
 
-# ── Build-time cleanup ────────────────────────────────────────────────────────
-def _cleanup():
-    Path("mkdocs-build.yml").unlink(missing_ok=True)
+atexit.register(lambda: Path("mkdocs-build.yml").unlink(missing_ok=True))
 
 
-atexit.register(_cleanup)
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def run(*args, **kwargs):
-    result = subprocess.run(args, **kwargs)
+def run(*args):
+    result = subprocess.run(args)
     if result.returncode != 0:
         sys.exit(result.returncode)
-
-
-def human_size(path: Path) -> str:
-    size = float(path.stat().st_size)
-    for unit in ("B", "K", "M", "G"):
-        if size < 1024:
-            return f"{size:.0f}{unit}"
-        size /= 1024
-    return f"{size:.0f}T"
 
 
 def parse_frontmatter(md_path: str) -> dict:
@@ -76,14 +61,11 @@ def parse_frontmatter(md_path: str) -> dict:
     return meta
 
 
-# ── Auto-generate nav from frontmatter ───────────────────────────────────────
 def auto_generate_nav(docs_dir: str = "docs") -> list:
-    """Scan docs/ for .md files, read frontmatter, build nav sorted by order."""
-    docs_path = Path(docs_dir)
+    """Scan docs/ for .md files, read frontmatter, return nav sorted by order."""
     pages = []
-
-    for md_file in docs_path.rglob("*.md"):
-        rel = md_file.relative_to(docs_path).as_posix()
+    for md_file in Path(docs_dir).rglob("*.md"):
+        rel = md_file.relative_to(docs_dir).as_posix()
         fm = parse_frontmatter(str(md_file))
         pages.append({
             "file": rel,
@@ -96,127 +78,89 @@ def auto_generate_nav(docs_dir: str = "docs") -> list:
 
     top_level: list = []
     sections: dict = {}
-    section_min_order: dict = {}
+    section_order: dict = {}
 
     for page in pages:
         entry = {page["title"]: page["file"]}
         sect = page["section"]
         if sect:
             sections.setdefault(sect, []).append(entry)
-            section_min_order[sect] = min(section_min_order.get(sect, 999), page["order"])
+            section_order[sect] = min(section_order.get(sect, 999), page["order"])
         else:
             top_level.append(entry)
 
     nav = list(top_level)
-    for sect_name in sorted(sections, key=lambda s: section_min_order[s]):
-        nav.append({sect_name: sections[sect_name]})
-
+    for sect in sorted(sections, key=lambda s: section_order[s]):
+        nav.append({sect: sections[sect]})
     return nav
 
 
-# ── Generate build config ─────────────────────────────────────────────────────
 def generate_build_config():
     import yaml
-
     cfg = yaml.safe_load(Path("mkdocs.yml").read_text(encoding="utf-8"))
-    nav = auto_generate_nav(cfg.get("docs_dir", "docs"))
-    print(f"  Auto-generated nav with {len(nav)} page(s)")
-    cfg["nav"] = nav
+    cfg["nav"] = auto_generate_nav(cfg.get("docs_dir", "docs"))
     Path("mkdocs-build.yml").write_text(
         yaml.dump(cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8"
     )
 
 
-# ── Generate marketplace.json ─────────────────────────────────────────────────
 def generate_marketplace_json():
     import yaml
+    nav = yaml.safe_load(Path("mkdocs-build.yml").read_text(encoding="utf-8")).get("nav", [])
+    pages: list = []
+    counter = [1]
 
-    cfg = yaml.safe_load(Path("mkdocs-build.yml").read_text(encoding="utf-8"))
-    nav = cfg.get("nav", [])
-    pages = []
-    order_counter = [1]
-
-    def add_entries(items, section=None):
+    def collect(items, section=None):
         for item in items:
             if isinstance(item, dict):
                 for label, value in item.items():
                     if isinstance(value, str):
                         fm = parse_frontmatter(f"docs/{value}")
-                        rel = Path(value).with_suffix("")
-                        out = f"docs/{rel.as_posix()}/index.html"
-                        entry = {
-                            "title": fm.get("title", label),
-                            "path": out,
-                            "order": fm.get("order", order_counter[0]),
-                        }
-                        if section:
-                            entry["section"] = section
-                        elif fm.get("section"):
-                            entry["section"] = fm["section"]
+                        out = f"docs/{Path(value).with_suffix('').as_posix()}/index.html"
+                        entry = {"title": fm.get("title", label), "path": out, "order": fm.get("order", counter[0])}
+                        if section or fm.get("section"):
+                            entry["section"] = section or fm["section"]
                         pages.append(entry)
-                        order_counter[0] += 1
+                        counter[0] += 1
                     elif isinstance(value, list):
-                        add_entries(value, section=label)
+                        collect(value, section=label)
 
-    add_entries(nav)
+    collect(nav)
     manifest = json.loads(Path("marketplace.json").read_text(encoding="utf-8"))
     manifest["pages"] = pages
     Path("dist/marketplace.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"  {len(pages)} page(s) written to dist/marketplace.json")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    serve = False
-    no_package = False
-    for arg in sys.argv[1:]:
-        if arg == "--serve":
-            serve = True
-        elif arg == "--no-package":
-            no_package = True
-        else:
-            print(f"Unknown argument: {arg}")
-            sys.exit(1)
+    serve = "--serve" in sys.argv
+    no_package = "--no-package" in sys.argv
+    unknown = [a for a in sys.argv[1:] if a not in ("--serve", "--no-package")]
+    if unknown:
+        print(f"Unknown argument(s): {' '.join(unknown)}")
+        sys.exit(1)
 
     if os.environ.get("SKIP_PIP_INSTALL", "0") != "1":
-        print("▶ Installing Python dependencies...")
         run(sys.executable, "-m", "pip", "install", "-r", "requirements-docs.txt", "-q", "--break-system-packages")
 
+    generate_build_config()
+
     if serve:
-        print("▶ Generating build config for dev server...")
-        generate_build_config()
-        print("▶ Starting dev server (mkdocs serve)...")
         run(sys.executable, "-m", "mkdocs", "serve", "-f", "mkdocs-build.yml")
         return
 
-    print("▶ Cleaning dist/...")
     shutil.rmtree("dist", ignore_errors=True)
-
-    print("▶ Generating build config...")
-    generate_build_config()
-
-    print("▶ Building docs...")
     run(sys.executable, "-m", "mkdocs", "build", "-f", "mkdocs-build.yml")
-
-    if not Path("dist/docs").exists():
-        print("❌ dist/docs missing — build failed")
-        sys.exit(1)
-
-    print("▶ Generating dist/marketplace.json...")
     generate_marketplace_json()
 
     if no_package:
         print("✅ dist/ ready")
         return
 
-    print("▶ Packaging...")
     with tarfile.open("dist.tar.gz", "w:gz") as tar:
         tar.add("dist")
         tar.add("marketplace.json")
 
-    size = human_size(Path("dist.tar.gz"))
-    print(f"✅ dist.tar.gz ready ({size})")
-    print("   dist/docs/ → documentation")
+    print(f"✅ dist.tar.gz ready ({Path('dist.tar.gz').stat().st_size // 1024}K)")
 
 
 if __name__ == "__main__":

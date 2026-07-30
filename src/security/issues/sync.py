@@ -381,7 +381,6 @@ def _handle_new_child_issue(
                 ctx.alert_number,
                 ctx.rule_id,
                 ctx.severity,
-                parent_issue.number,
             )
             sync.stats.children_linked += 1
         else:

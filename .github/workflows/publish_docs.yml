@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       release-tag:
-        description: 'Release tag to attach the docs bundle to. Default value: latest release.'
+        description: 'Release tag to attach the docs bundle to. Leave empty to use the latest release.'
         required: false
 
 jobs:
@@ -40,8 +40,12 @@ jobs:
       - name: Render and publish single-page docs
         uses: AbsaOSS/knowledge-base/actions/publish-single-page-docs@679ec075cab1e1cdfb1140eedad7f2f80a5b683a
         with:
-          # Empty on the release trigger, where the event tag is used instead.
-          # Empty on both - the action resolves the repository's latest release.
+          # Which release the docs bundle is attached to, by trigger:
+          #   release: published  - inputs.release-tag is empty, so the tag of the
+          #                         release that fired the event is used.
+          #   workflow_dispatch   - the tag typed into the Run workflow form, or,
+          #                         when left empty, both sides resolve to empty
+          #                         and the action falls back to the latest release.
           release-tag: ${{ inputs.release-tag || github.event.release.tag_name }}
           docs: |
             - md: docs/security/security.md
@@ -49,4 +53,4 @@ jobs:
               description: Turns AquaSec scan findings into a managed GitHub Issues backlog with full lifecycle automation.
               slug: org-workflows-security
               icon: shield
-              tags: [security, automation]
+              tags: [security, automation, aquasec, workflows]

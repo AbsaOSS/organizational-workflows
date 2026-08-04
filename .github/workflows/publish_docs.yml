@@ -44,12 +44,6 @@ jobs:
           # Empty on both - the action resolves the repository's latest release.
           release-tag: ${{ inputs.release-tag || github.event.release.tag_name }}
           docs: |
-            - md: docs/index.md
-              title: Organizational Workflows
-              description: Reusable GitHub Actions workflows with Python automation backends, shared across the organization.
-              slug: org-workflows
-              icon: collection
-              tags: [workflows, automation]
             - md: docs/security/security.md
               title: Security Automation
               description: Turns AquaSec scan findings into a managed GitHub Issues backlog with full lifecycle automation.

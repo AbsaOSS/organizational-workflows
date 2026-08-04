@@ -187,5 +187,4 @@ See the full example at [aquasec-night-scan-example.yml](https://github.com/Absa
 
 - [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): setup instructions, shared workflow configuration, and technical details
 - [Example Caller Workflow](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
-- [Overview](/knowledge-base/org-workflows/): all organizational workflows
 - [Repository README](https://github.com/AbsaOSS/organizational-workflows/blob/master/README.md): overview of all organizational workflows

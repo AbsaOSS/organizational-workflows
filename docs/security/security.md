@@ -43,6 +43,12 @@ flowchart TD
 
 ---
 
+## Scan Artifact
+
+When the scan step completes successfully, the fetched AquaSec findings are uploaded as a workflow artifact named `aquasec-night-scan`, containing a single `aquasec_scan.json` file with all findings across every severity. It provides a full snapshot of the repository's current security state for monitoring purposes.
+
+---
+
 ## Key Benefits
 
 - **Zero manual triage**: New findings from AquaSec scans automatically become Issues with severity, context, and links to the affected code.

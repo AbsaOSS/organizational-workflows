@@ -47,6 +47,7 @@ class SecurityConfig:
     project_org: str = ""
     teams_webhook_url: str = ""
     min_severity: str = MIN_SEVERITY_DEFAULT
+    scan_output: str = ""
 
     @classmethod
     def load(cls, args: argparse.Namespace) -> "SecurityConfig":
@@ -77,6 +78,7 @@ class SecurityConfig:
             project_org=args.project_org or os.environ.get("PROJECT_ORG", ""),
             teams_webhook_url=args.teams_webhook_url or os.environ.get("TEAMS_WEBHOOK_URL", ""),
             min_severity=min_severity,
+            scan_output=args.scan_output,
         )
 
     def validate(self) -> None:

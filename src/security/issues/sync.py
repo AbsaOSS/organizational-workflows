@@ -377,11 +377,10 @@ def _handle_new_child_issue(
     if sync.dry_run:
         if parent_issue is not None:
             logging.info(
-                DRY_RUN_PREFIX + "Would create child issue for alert %d (rule: %s, severity: %s) linked to parent #%d",
+                DRY_RUN_PREFIX + "Would create child issue for alert %d (rule: %s, severity: %s)",
                 ctx.alert_number,
                 ctx.rule_id,
                 ctx.severity,
-                parent_issue.number,
             )
             sync.stats.children_linked += 1
         else:

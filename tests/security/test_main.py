@@ -67,6 +67,7 @@ def test_parse_args_defaults():
     assert args.issue_label == "scope:security"
     assert args.dry_run is False
     assert args.verbose is False
+    assert args.scan_output == ""
 
 
 def test_parse_args_all_flags():
@@ -77,6 +78,7 @@ def test_parse_args_all_flags():
         "--project-number", "42",
         "--project-org", "other-org",
         "--teams-webhook-url", "https://example.com/webhook",
+        "--scan-output", "aquasec_scan.json",
         "--dry-run",
         "--verbose",
     ])
@@ -86,6 +88,7 @@ def test_parse_args_all_flags():
     assert args.project_number == "42"
     assert args.project_org == "other-org"
     assert args.teams_webhook_url == "https://example.com/webhook"
+    assert args.scan_output == "aquasec_scan.json"
     assert args.dry_run is True
     assert args.verbose is True
 
@@ -126,6 +129,28 @@ def test_pipeline_calls_notify(mocker):
     mocks = _mock_pipeline(mocker)
     main(["--repo", REPO])
     mocks["notifier"].assert_called_once()
+
+
+# main - scan output
+
+
+def test_scan_output_writes_scan_data(mocker):
+    mocks = _mock_pipeline(mocker)
+    mocks["fetcher"].return_value.fetch_findings.return_value = {"total": 1, "data": [{"a": 1}]}
+    mock_write = mocker.patch("security.main.write_json")
+
+    main(["--repo", REPO, "--scan-output", "aquasec_scan.json"])
+
+    mock_write.assert_called_once_with("aquasec_scan.json", {"total": 1, "data": [{"a": 1}]})
+
+
+def test_scan_output_skipped_when_not_provided(mocker):
+    _mock_pipeline(mocker)
+    mock_write = mocker.patch("security.main.write_json")
+
+    main(["--repo", REPO])
+
+    mock_write.assert_not_called()
 
 
 def test_pipeline_call_order(mocker):

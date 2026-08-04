@@ -4,7 +4,7 @@
 
 Security Automation provides **continuous, automated vulnerability management** for your repositories. It authenticates directly with the AquaSec API, fetches scan findings, and automatically converts them into structured **GitHub Issues** with full lifecycle management. This gives your team a managed security posture without manual triage effort.
 
-> For setup instructions and technical configuration, see the [Security README](/src/security/README.md).
+> For setup instructions and technical configuration, see the [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md).
 
 ---
 
@@ -50,7 +50,7 @@ flowchart TD
 - **Lifecycle automation**: Issues are reopened when findings reappear, automatically closed when resolved, and updated if needed.
 - **Notifications**: Option to notify the team of new or reopened security findings in real-time.
 - **Priority sync**: Findings are mapped to priority levels on a ProjectV2 board, keeping planning and security aligned.
-- **Organisational scale**: Shared reusable workflows mean every repository gets the same security process with a single caller workflow.
+- **Organizational scale**: Shared reusable workflows mean every repository gets the same security process with a single caller workflow.
 
 ---
 
@@ -179,12 +179,12 @@ Adopt the security automation by adding a short caller workflow to your reposito
 
 ### Example Caller Workflow
 
-See the full example at [docs/security/aquasec-night-scan-example.yml](/docs/security/aquasec-night-scan-example.yml).
+See the full example at [aquasec-night-scan-example.yml](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml).
 
 ---
 
 ## See Also
 
-- [Security README](/src/security/README.md): setup instructions, shared workflow configuration, and technical details
-- [Example Caller Workflow](/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
-- [Repository README](/README.md): overview of all organizational workflows
+- [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): setup instructions, shared workflow configuration, and technical details
+- [Example Caller Workflow](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
+- [Repository README](https://github.com/AbsaOSS/organizational-workflows/blob/master/README.md): overview of all organizational workflows

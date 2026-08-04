@@ -50,7 +50,7 @@ flowchart TD
 - **Lifecycle automation**: Issues are reopened when findings reappear, automatically closed when resolved, and updated if needed.
 - **Notifications**: Option to notify the team of new or reopened security findings in real-time.
 - **Priority sync**: Findings are mapped to priority levels on a ProjectV2 board, keeping planning and security aligned.
-- **Organisational scale**: Shared reusable workflows mean every repository gets the same security process with a single caller workflow.
+- **Organizational scale**: Shared reusable workflows mean every repository gets the same security process with a single caller workflow.
 
 ---
 

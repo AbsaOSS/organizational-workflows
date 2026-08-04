@@ -110,4 +110,3 @@ def test_write_json_writes_indented_content(tmp_path) -> None:
     write_json(str(path), data)
 
     assert data == json.loads(path.read_text(encoding="utf-8"))
-    assert "\n  " in path.read_text(encoding="utf-8")

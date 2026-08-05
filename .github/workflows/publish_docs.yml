@@ -48,6 +48,6 @@ jobs:
             - md: docs/security/security.md
               title: Security Automation
               description: Turns AquaSec scan findings into a managed GitHub Issues backlog with full lifecycle automation.
-              slug: org-workflows-security
+              slug: security-automation
               icon: shield
               tags: [security, automation, aquasec, workflows]

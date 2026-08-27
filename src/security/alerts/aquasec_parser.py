@@ -17,12 +17,27 @@
 """Parse AquaSec Night Scan JSON output into Alert dataclasses."""
 
 import logging
+import re
 from typing import Any
 
 from security.alerts.models import Alert, AlertDetails, AlertMetadata, LoadedAlerts, RuleDetails
-from security.constants import LOGGING_PREFIX, SEVERITY_MAP
+from security.constants import DEFAULT_SCM_REF, LOGGING_PREFIX, SEVERITY_MAP
 
 logger = logging.getLogger(__name__)
+
+_COMMIT_BLOB_RE = re.compile(r"(/blob/)[0-9a-fA-F]{7,40}(/)")
+
+
+def _stabilize_scm_url(url: str, branch: str) -> str:
+    """Rewrite a commit-SHA-pinned ``/blob/<sha>/`` segment to a stable branch ref.
+
+    AquaSec pins ``scm_file`` to the scanned HEAD commit, so the URL changes on
+    every push even when the finding itself is unchanged.
+    """
+    if not url:
+        return ""
+    ref = branch.strip() or DEFAULT_SCM_REF
+    return _COMMIT_BLOB_RE.sub(lambda m: f"{m.group(1)}{ref}{m.group(2)}", url)
 
 
 def _map_severity(numeric_severity: int) -> str:
@@ -79,7 +94,7 @@ def _parse_item(item: dict[str, Any], repo: str) -> Alert:
         reachable=str(item.get("reachable", False)),
         scan_date=item.get("scan_date", ""),
         first_seen=item.get("first_seen", ""),
-        scm_file=item.get("scm_file", ""),
+        scm_file=_stabilize_scm_url(item.get("scm_file", ""), item.get("branch", "")),
         installed_version=item.get("installed_version", ""),
         start_line=str(item.get("target_start_line", "") or ""),
         end_line=str(item.get("target_end_line", "") or ""),

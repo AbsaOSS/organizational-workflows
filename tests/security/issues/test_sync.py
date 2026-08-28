@@ -38,6 +38,8 @@ from security.issues.sync import (
     _maybe_reopen_child,
     _meets_min_severity,
     _merge_child_secmeta,
+    _migrate_all_security_issue_labels,
+    _migrate_issue_labels,
     _rebuild_and_apply_child_body,
     _sync_child_title_and_labels,
     build_issue_index,
@@ -486,6 +488,95 @@ def test_rebuild_body_dry_run(sast_alert: Alert) -> None:
 
 
 # =====================================================================
+# _migrate_issue_labels
+# MIGRATION-PHASE-2-REMOVE: tests for the migration-only label helper.
+# =====================================================================
+
+
+def test_migrate_labels_adds_and_removes_tech_debt(mocker: MockerFixture) -> None:
+    """Stamps only the missing labels and strips type:tech-debt when present."""
+    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
+    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
+    issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security", "type:tech-debt"])
+    assert _migrate_issue_labels("org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False) is True
+    mock_add.assert_called_once_with("org/repo", 7, ["type:aquasec"])
+    mock_remove.assert_called_once_with("org/repo", 7, ["type:tech-debt"])
+    assert ["scope:security", "type:aquasec"] == issue.labels
+
+
+def test_migrate_labels_already_migrated_makes_no_calls(mocker: MockerFixture) -> None:
+    """An already-migrated issue costs zero API calls so the sweep converges."""
+    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
+    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
+    issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security", "type:aquasec"])
+    assert _migrate_issue_labels("org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False) is False
+    mock_add.assert_not_called()
+    mock_remove.assert_not_called()
+
+
+def test_migrate_labels_skips_removal_when_absent(mocker: MockerFixture) -> None:
+    """No removal call when the issue has no type:tech-debt label."""
+    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
+    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
+    issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security"])
+    _migrate_issue_labels("org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False)
+    mock_add.assert_called_once_with("org/repo", 7, ["type:aquasec"])
+    mock_remove.assert_not_called()
+
+
+def test_migrate_labels_keeps_tech_debt_without_scope_security(mocker: MockerFixture) -> None:
+    """Defensive: never strip type:tech-debt from an issue lacking scope:security."""
+    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
+    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
+    issue = Issue(number=7, state="open", title="t", body="b", labels=["type:tech-debt"])
+    _migrate_issue_labels("org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False)
+    mock_add.assert_called_once()
+    mock_remove.assert_not_called()
+    assert "type:tech-debt" in issue.labels
+
+
+def test_migrate_labels_dry_run_no_calls(mocker: MockerFixture) -> None:
+    """Dry-run performs no GitHub calls."""
+    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
+    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
+    issue = Issue(number=7, state="open", title="t", body="b", labels=["type:tech-debt"])
+    _migrate_issue_labels("org/repo", issue, ["scope:security", "type:aquasec"], dry_run=True)
+    mock_add.assert_not_called()
+    mock_remove.assert_not_called()
+
+
+# =====================================================================
+# _migrate_all_security_issue_labels
+# MIGRATION-PHASE-2-REMOVE: tests for the migration-only sweep.
+# =====================================================================
+
+
+def _secmeta_body(secmeta_type: str) -> str:
+    return f"<!--secmeta\ntype={secmeta_type}\nrepo=org/repo\nrule_id=X\nseverity=high\n-->\n\nbody"
+
+
+def test_sweep_migrates_open_and_closed_aquasec_issues(mocker: MockerFixture) -> None:
+    """Sweep migrates parent + child issues regardless of state."""
+    mock_migrate = mocker.patch("security.issues.sync._migrate_issue_labels")
+    issues = {
+        1: Issue(number=1, state="open", title="child", body=_secmeta_body("child"), labels=["scope:security"]),
+        2: Issue(number=2, state="closed", title="parent", body=_secmeta_body("parent"), labels=["scope:security"]),
+    }
+    _migrate_all_security_issue_labels("org/repo", issues, dry_run=False)
+    assert mock_migrate.call_count == 2
+
+
+def test_sweep_ignores_non_aquasec_issues(mocker: MockerFixture) -> None:
+    """Issues without a parent/child secmeta block are never touched."""
+    mock_migrate = mocker.patch("security.issues.sync._migrate_issue_labels")
+    issues = {
+        1: Issue(number=1, state="open", title="manual", body="no secmeta here", labels=["scope:security"]),
+    }
+    _migrate_all_security_issue_labels("org/repo", issues, dry_run=False)
+    mock_migrate.assert_not_called()
+
+
+# =====================================================================
 # _sync_child_title_and_labels
 # =====================================================================
 
@@ -790,6 +881,8 @@ def test_ensure_parent_strips_legacy_secmeta_keys(sast_alert: Alert) -> None:
 def test_ensure_parent_title_drift_corrected(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Title is updated when it drifts from the expected format."""
     mock_title = mocker.patch("security.issues.sync.gh_issue_edit_title", return_value=True)
+    mocker.patch("security.issues.sync.gh_issue_add_labels")
+    mocker.patch("security.issues.sync.gh_issue_remove_labels")
     parent = _issue_with_secmeta(10, {
         "type": "parent",
         "rule_id": sast_alert.metadata.rule_id,
@@ -1101,8 +1194,9 @@ def test_sync_resolved_child_cascades_parent_close_same_run(mocker: MockerFixtur
     assert parent.state == "closed"
 
 
-def test_sync_reopened_child_prevents_parent_close(sast_alert: Alert) -> None:
+def test_sync_reopened_child_prevents_parent_close(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Reopened child keeps parent open - resolved-parent check must not re-close it."""
+    mocker.patch("security.issues.sync.gh_issue_get_sub_issue_numbers", return_value=set())
     rule_id = sast_alert.metadata.rule_id
     fingerprint = sast_alert.alert_details.alert_hash
     parent = _issue_with_secmeta(169, {

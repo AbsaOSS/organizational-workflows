@@ -278,6 +278,47 @@ def gh_issue_add_labels(repo: str, number: int, labels: list[str]) -> None:
         logging.warning("Failed to add labels to #%d%s: %s", number, _not_found_hint(res), res.stderr)
 
 
+def gh_issue_remove_labels(repo: str, number: int, labels: list[str]) -> None:
+    """Remove *labels* from issue *number* (idempotent).
+
+    MIGRATION-PHASE-2-REMOVE: helper only used by the label migration.
+    """
+    if not labels:
+        return
+
+    args: list[str] = ["issue", "edit", str(number), "--repo", repo]
+
+    for label in labels:
+        args += ["--remove-label", label]
+
+    res = run_gh(args)
+    if res.returncode != 0:
+        # Label may already be absent; don't fail the whole run.
+        logging.warning("Failed to remove labels from #%d%s: %s", number, _not_found_hint(res), res.stderr)
+
+
+def gh_label_create(repo: str, name: str, *, color: str = "", description: str = "") -> bool:
+    """Create or update label *name* in *repo* (idempotent via ``--force``).
+
+    MIGRATION-PHASE-2-REMOVE: helper only used by the label auto-create.
+    """
+    if not name:
+        return False
+
+    args: list[str] = ["label", "create", name, "--repo", repo, "--force"]
+    if color:
+        args += ["--color", color]
+    if description:
+        args += ["--description", description]
+
+    res = run_gh(args)
+    if res.returncode != 0:
+        logging.warning("Failed to create label %r in %s: %s", name, repo, res.stderr)
+        return False
+
+    return True
+
+
 def gh_issue_comment(repo: str, number: int, body: str) -> bool:
     """Post a comment with *body* on issue *number*.
 

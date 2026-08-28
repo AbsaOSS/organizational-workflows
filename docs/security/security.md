@@ -78,7 +78,7 @@ After a successful run, findings appear as a GitHub Issues with defined body str
 
 **Title:** `[SEC:CRITICAL][FP=a1b2c3d4] requests: Improper certificate verification allows MITM attacks`
 
-**Labels:** `scope:security`, `type:tech-debt`
+**Labels:** `scope:security`, `type:aquasec`
 
 ```markdown
 <!--secmeta
@@ -125,7 +125,7 @@ Each unique rule (e.g. a specific CVE) gets a parent issue that groups all indiv
 
 **Title:** `Security Alert – CVE-2024-99999`
 
-**Labels:** `scope:security`, `epic`
+**Labels:** `scope:security`, `type:aquasec`, `epic`
 
 ```markdown
 <!--secmeta

@@ -507,7 +507,7 @@ def _handle_new_child_issue(
 
     if sync.dry_run:
         logging.info(
-            DRY_RUN_PREFIX + "Would create child issue for alert %s (rule: %s, severity: %s)",
+            DRY_RUN_PREFIX + "Would create child issue for alert FP=%s (rule: %s, severity: %s)",
             ctx.fingerprint[:8],
             ctx.rule_id,
             ctx.severity,
@@ -518,7 +518,7 @@ def _handle_new_child_issue(
         bump_severity(sync.stats.children_created_by_severity, ctx.severity)
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             logging.debug(
-                DRY_RUN_PREFIX + "Would create child issue for alert %s with body:\n%s", ctx.fingerprint[:8], body
+                DRY_RUN_PREFIX + "Would create child issue for alert FP=%s with body:\n%s", ctx.fingerprint[:8], body
             )
 
         _append_notification(
@@ -538,7 +538,7 @@ def _handle_new_child_issue(
     if num is None:
         return
 
-    logging.info(LOGGING_PREFIX + "Created child issue #%d for alert %s", num, ctx.fingerprint[:8])
+    logging.info(LOGGING_PREFIX + "Created child issue #%d for alert FP=%s", num, ctx.fingerprint[:8])
     sync.stats.children_created += 1
     bump_severity(sync.stats.children_created_by_severity, ctx.severity)
     created = Issue(number=num, state="open", title=title, body=body)
@@ -566,11 +566,11 @@ def _handle_new_child_issue(
         )
         if gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num):
             logging.debug(
-                "Added link child issue #%d to parent #%d (alert %s)", num, parent_issue.number, ctx.fingerprint[:8]
+                "Added link child issue #%d to parent #%d (alert FP=%s)", num, parent_issue.number, ctx.fingerprint[:8]
             )
         else:
             logging.warning(
-                "Failed to link child issue #%d to parent #%d (alert %s)",
+                "Failed to link child issue #%d to parent #%d (alert FP=%s)",
                 num,
                 parent_issue.number,
                 ctx.fingerprint[:8],
@@ -728,7 +728,7 @@ def _ensure_child_linked_to_parent(
 
     if sync.dry_run:
         logging.info(
-            DRY_RUN_PREFIX + "Would relink child issue #%d to parent #%d (alert %s)",
+            DRY_RUN_PREFIX + "Would relink child issue #%d to parent #%d (alert FP=%s)",
             issue.number,
             parent_issue.number,
             ctx.fingerprint[:8],
@@ -739,7 +739,7 @@ def _ensure_child_linked_to_parent(
 
     if gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, issue.number):
         logging.info(
-            LOGGING_PREFIX + "Relinked child issue #%d to parent #%d (alert %s)",
+            LOGGING_PREFIX + "Relinked child issue #%d to parent #%d (alert FP=%s)",
             issue.number,
             parent_issue.number,
             ctx.fingerprint[:8],
@@ -748,7 +748,7 @@ def _ensure_child_linked_to_parent(
         sync.stats.children_relinked += 1
     else:
         logging.warning(
-            "Failed to relink child issue #%d to parent #%d (alert %s)",
+            "Failed to relink child issue #%d to parent #%d (alert FP=%s)",
             issue.number,
             parent_issue.number,
             ctx.fingerprint[:8],
@@ -1021,6 +1021,4 @@ def _log_sync_summary(stats: SyncStats, label_summary: LabelMigrationSummary, *,
     """Log the completed sync run's summary, reusing the shared pure renderer."""
     prefix = DRY_RUN_PREFIX if dry_run else LOGGING_PREFIX
     lines = render_sync_summary(stats, label_summary)
-    if not lines:
-        return
-    logging.info("\n".join([prefix + lines[0], *lines[1:]]))
+    logging.info("\n".join(prefix + line for line in lines))

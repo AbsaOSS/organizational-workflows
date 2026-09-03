@@ -1393,14 +1393,13 @@ def test_init_priority_sync_field_lookup_fails(mocker: MockerFixture) -> None:
     (True, "Security [DRY-RUN] - "),
 ])
 def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefix: str) -> None:
-    """Summary emits exactly one log record, prefixed only once, with the grouped table and label section."""
+    """Summary emits exactly one log record with the right prefix on every line, grouped table, and label section."""
     # Empty stats and no label activity → single "no changes" record with the right prefix
     with caplog.at_level(logging.INFO):
         _log_sync_summary(SyncStats(), LabelMigrationSummary(), dry_run=dry_run)
     assert len(caplog.records) == 1
     message = caplog.records[0].message
     assert message.startswith(prefix)
-    assert message.count(prefix) == 1
     assert "no changes" in message
     # MIGRATION-PHASE-2-REMOVE
     assert "no repository label action needed" not in message
@@ -1420,8 +1419,9 @@ def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefi
         _log_sync_summary(stats, label_summary, dry_run=dry_run)
     assert len(caplog.records) == 1
     message = caplog.records[0].message
-    assert message.startswith(prefix + "Sync complete:")
-    assert message.count(prefix) == 1
+    lines = message.split("\n")
+    assert all(line.startswith(prefix) for line in lines)
+    assert prefix + "Sync complete:" == lines[0]
     assert "Parent issues" in message and "created: 2 (high: 2)" in message and "title updated: 1" in message
     assert "Child issues" in message and "created: 15 (high: 15)" in message and "reopened: 1" in message
     assert "title updated: 2" in message and "body updated: 3" in message and "relinked: 1" in message

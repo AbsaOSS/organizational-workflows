@@ -81,11 +81,13 @@ def test_render_issue_section_empty_and_filtered() -> None:
 
 
 def test_render_label_section_zero_and_migrated() -> None:
-    """No migration activity renders a one-line explicit no-op; activity renders counts."""
+    """No migration activity renders a one-line explicit no-op; activity renders 3 count lines."""
     assert ["Labels: no repository label action needed"] == _render_label_section(LabelMigrationSummary())
     assert [
         "Labels:",
-        "  migrated: 3 issue(s) (added: 4, removed: 1)",
+        "  issue(s) migrated: 3",
+        "  type:aquasec added: 4",
+        "  type:tech-debt removed: 1",
     ] == _render_label_section(LabelMigrationSummary(issues_migrated=3, labels_added=4, labels_removed=1))
 
 
@@ -95,11 +97,28 @@ def test_render_label_section_zero_and_migrated() -> None:
 
 
 def test_render_sync_summary_no_changes() -> None:
-    """Empty stats and an empty label summary render the no-changes line plus the label no-op line."""
+    """Empty stats and an empty label summary render only the no-changes line: the redundant
+    label no-op line is suppressed when there's no other activity to contrast it with.
+
+    MIGRATION-PHASE-2-REMOVE: delete the suppression check below.
+    """
     lines = render_sync_summary(SyncStats(), LabelMigrationSummary())
-    assert "Sync complete: no changes" == lines[0]
-    # MIGRATION-PHASE-2-REMOVE: delete this assertion once the label migration sweep is retired.
-    assert "Labels: no repository label action needed" == lines[1]
+    assert ["Sync complete: no changes"] == lines
+
+
+def test_render_sync_summary_no_issue_activity_with_label_activity() -> None:
+    """Label migration activity alone still renders its real section, even with no issue changes.
+
+    MIGRATION-PHASE-2-REMOVE: delete this test once the label migration sweep is retired.
+    """
+    lines = render_sync_summary(SyncStats(), LabelMigrationSummary(issues_migrated=2, labels_added=2, labels_removed=1))
+    assert lines == [
+        "Sync complete: no changes",
+        "Labels:",
+        "  issue(s) migrated: 2",
+        "  type:aquasec added: 2",
+        "  type:tech-debt removed: 1",
+    ]
 
 
 def test_render_sync_summary_full_activity() -> None:
@@ -125,6 +144,8 @@ def test_render_sync_summary_full_activity() -> None:
         "  reopened: 1 (critical: 1)",
         "  relinked: 1",
         "Labels:",
-        # MIGRATION-PHASE-2-REMOVE: delete this line once the label migration sweep is retired.
-        "  migrated: 4 issue(s) (added: 5, removed: 2)",
+        # MIGRATION-PHASE-2-REMOVE: delete these 3 line once the label migration sweep is retired.
+        "  issue(s) migrated: 4",
+        "  type:aquasec added: 5",
+        "  type:tech-debt removed: 2",
     ]

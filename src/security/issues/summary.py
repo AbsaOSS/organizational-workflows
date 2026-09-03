@@ -8,6 +8,7 @@ rendering logic.
 
 from dataclasses import dataclass
 
+from ..constants import LABEL_TYPE_AQUASEC, LABEL_TYPE_TECH_DEBT
 from .models import SEVERITY_ORDER, SyncStats
 
 _SEVERITY_DISPLAY_ORDER = sorted(SEVERITY_ORDER, key=lambda severity: SEVERITY_ORDER[severity], reverse=True)
@@ -59,8 +60,9 @@ def _render_label_section(label_summary: LabelMigrationSummary) -> list[str]:
 
     return [
         "Labels:",
-        f"  migrated: {label_summary.issues_migrated} issue(s) "
-        f"(added: {label_summary.labels_added}, removed: {label_summary.labels_removed})",
+        f"  issue(s) migrated: {label_summary.issues_migrated}",
+        f"  {LABEL_TYPE_AQUASEC} added: {label_summary.labels_added}",
+        f"  {LABEL_TYPE_TECH_DEBT} removed: {label_summary.labels_removed}",
     ]
 
 
@@ -103,5 +105,8 @@ def render_sync_summary(stats: SyncStats, label_summary: LabelMigrationSummary) 
     else:
         lines = ["Sync complete: no changes"]
 
-    lines += _render_label_section(label_summary)
+    # MIGRATION-PHASE-2-REMOVE: suppress the label no-op placeholder line
+    if label_summary.issues_migrated or parent_lines or child_lines:
+        lines += _render_label_section(label_summary)
+
     return lines

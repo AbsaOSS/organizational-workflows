@@ -29,6 +29,7 @@ from core.helpers import write_json
 
 from security.alerts.aquasec_parser import AquaSecParser
 from security.constants import (
+    DRY_RUN_PREFIX,
     LABEL_TYPE_AQUASEC,
     LABEL_TYPE_AQUASEC_COLOR,
     LABEL_TYPE_AQUASEC_DESCRIPTION,
@@ -127,7 +128,9 @@ def main(argv: list[str] | None = None) -> int:
     # MIGRATION-PHASE-2-REMOVE: auto-create of the type:aquasec label.
     # Auto-create the type:aquasec label so target repos need no manual setup
     # before the tech-debt -> aquasec switch.
-    if gh_label_create(
+    if dry_run:
+        logger.info("%sWould ensure label '%s' exists in the repository", DRY_RUN_PREFIX, LABEL_TYPE_AQUASEC)
+    elif gh_label_create(
         repo,
         LABEL_TYPE_AQUASEC,
         color=LABEL_TYPE_AQUASEC_COLOR,

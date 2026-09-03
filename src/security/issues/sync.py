@@ -135,12 +135,22 @@ def _migrate_issue_labels(
     if not missing and not stale:
         return False
 
+    parts = []
+    if missing:
+        parts.append(f"add: {', '.join(missing)}")
+    if stale:
+        parts.append(f"remove: {LABEL_TYPE_TECH_DEBT}")
+    detail = ", ".join(parts)
+
     if dry_run:
+        logging.info(DRY_RUN_PREFIX + "Would migrate labels on issue #%d (%s)", issue.number, detail)
         if label_summary is not None:
             label_summary.issues_migrated += 1
             label_summary.labels_added += len(missing)
             label_summary.labels_removed += 1 if stale else 0
         return True
+
+    logging.info(LOGGING_PREFIX + "Migrating labels on issue #%d (%s)", issue.number, detail)
 
     if missing:
         gh_issue_add_labels(repo, issue.number, missing)
@@ -1011,4 +1021,6 @@ def _log_sync_summary(stats: SyncStats, label_summary: LabelMigrationSummary, *,
     """Log the completed sync run's summary, reusing the shared pure renderer."""
     prefix = DRY_RUN_PREFIX if dry_run else LOGGING_PREFIX
     lines = render_sync_summary(stats, label_summary)
-    logging.info("\n".join(prefix + line for line in lines))
+    if not lines:
+        return
+    logging.info("\n".join([prefix + lines[0], *lines[1:]]))

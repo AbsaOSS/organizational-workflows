@@ -516,15 +516,18 @@ def test_rebuild_body_dry_run(sast_alert: Alert) -> None:
 # =====================================================================
 
 
-def test_migrate_labels_adds_and_removes_tech_debt(mocker: MockerFixture) -> None:
+def test_migrate_labels_adds_and_removes_tech_debt(
+    mocker: MockerFixture, caplog: pytest.LogCaptureFixture,
+) -> None:
     """Stamps only the missing labels, strips type:tech-debt, and accumulates the summary."""
     mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
     mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
     issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security", "type:tech-debt"])
     label_summary = LabelMigrationSummary()
-    result = _migrate_issue_labels(
-        "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False, label_summary=label_summary,
-    )
+    with caplog.at_level("INFO"):
+        result = _migrate_issue_labels(
+            "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False, label_summary=label_summary,
+        )
     assert result is True
     mock_add.assert_called_once_with("org/repo", 7, ["type:aquasec"])
     mock_remove.assert_called_once_with("org/repo", 7, ["type:tech-debt"])
@@ -532,37 +535,49 @@ def test_migrate_labels_adds_and_removes_tech_debt(mocker: MockerFixture) -> Non
     assert 1 == label_summary.issues_migrated
     assert 1 == label_summary.labels_added
     assert 1 == label_summary.labels_removed
+    # MIGRATION-PHASE-2-REMOVE
+    assert "Migrating labels on issue #7 (add: type:aquasec, remove: type:tech-debt)" in caplog.text
 
 
-def test_migrate_labels_already_migrated_makes_no_calls(mocker: MockerFixture) -> None:
+def test_migrate_labels_already_migrated_makes_no_calls(
+    mocker: MockerFixture, caplog: pytest.LogCaptureFixture,
+) -> None:
     """An already-migrated issue costs zero API calls and does not touch the summary."""
     mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
     mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
     issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security", "type:aquasec"])
     label_summary = LabelMigrationSummary()
-    result = _migrate_issue_labels(
-        "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False, label_summary=label_summary,
-    )
+    with caplog.at_level("INFO"):
+        result = _migrate_issue_labels(
+            "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False, label_summary=label_summary,
+        )
     assert result is False
     mock_add.assert_not_called()
     mock_remove.assert_not_called()
     assert 0 == label_summary.issues_migrated
+    # MIGRATION-PHASE-2-REMOVE
+    assert "Migrating labels" not in caplog.text
 
 
-def test_migrate_labels_skips_removal_when_absent(mocker: MockerFixture) -> None:
+def test_migrate_labels_skips_removal_when_absent(
+    mocker: MockerFixture, caplog: pytest.LogCaptureFixture,
+) -> None:
     """No removal call when the issue has no type:tech-debt label; summary reflects only the add."""
     mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
     mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
     issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security"])
     label_summary = LabelMigrationSummary()
-    _migrate_issue_labels(
-        "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False, label_summary=label_summary,
-    )
+    with caplog.at_level("INFO"):
+        _migrate_issue_labels(
+            "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False, label_summary=label_summary,
+        )
     mock_add.assert_called_once_with("org/repo", 7, ["type:aquasec"])
     mock_remove.assert_not_called()
     assert 1 == label_summary.issues_migrated
     assert 1 == label_summary.labels_added
     assert 0 == label_summary.labels_removed
+    # MIGRATION-PHASE-2-REMOVE
+    assert "Migrating labels on issue #7 (add: type:aquasec)" in caplog.text
 
 
 def test_migrate_labels_keeps_tech_debt_without_scope_security(mocker: MockerFixture) -> None:
@@ -576,20 +591,24 @@ def test_migrate_labels_keeps_tech_debt_without_scope_security(mocker: MockerFix
     assert "type:tech-debt" in issue.labels
 
 
-def test_migrate_labels_dry_run_no_calls(mocker: MockerFixture) -> None:
+def test_migrate_labels_dry_run_no_calls(mocker: MockerFixture, caplog: pytest.LogCaptureFixture) -> None:
     """Dry-run performs no GitHub calls but still accumulates the summary."""
     mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
     mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
     issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security", "type:tech-debt"])
     label_summary = LabelMigrationSummary()
-    _migrate_issue_labels(
-        "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=True, label_summary=label_summary,
-    )
+    with caplog.at_level("INFO"):
+        _migrate_issue_labels(
+            "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=True, label_summary=label_summary,
+        )
     mock_add.assert_not_called()
     mock_remove.assert_not_called()
     assert 1 == label_summary.issues_migrated
     assert 1 == label_summary.labels_added
     assert 1 == label_summary.labels_removed
+    # MIGRATION-PHASE-2-REMOVE: delete this assertion once the label migration sweep
+    # is retired.
+    assert "Would migrate labels on issue #7 (add: type:aquasec, remove: type:tech-debt)" in caplog.text
 
 
 # =====================================================================
@@ -1374,16 +1393,17 @@ def test_init_priority_sync_field_lookup_fails(mocker: MockerFixture) -> None:
     (True, "Security [DRY-RUN] - "),
 ])
 def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefix: str) -> None:
-    """Summary emits exactly one log record with the right prefix, grouped table, and label section."""
+    """Summary emits exactly one log record, prefixed only once, with the grouped table and label section."""
     # Empty stats and no label activity → single "no changes" record with the right prefix
     with caplog.at_level(logging.INFO):
         _log_sync_summary(SyncStats(), LabelMigrationSummary(), dry_run=dry_run)
     assert len(caplog.records) == 1
     message = caplog.records[0].message
-    assert prefix in message
+    assert message.startswith(prefix)
+    assert message.count(prefix) == 1
     assert "no changes" in message
-    # MIGRATION-PHASE-2-REMOVE: delete this assertion once the label migration sweep is retired.
-    assert "no repository label action needed" in message
+    # MIGRATION-PHASE-2-REMOVE
+    assert "no repository label action needed" not in message
     caplog.clear()
 
     # Full stats + label activity → grouped table with severity breakdowns; zero groups omitted
@@ -1400,12 +1420,15 @@ def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefi
         _log_sync_summary(stats, label_summary, dry_run=dry_run)
     assert len(caplog.records) == 1
     message = caplog.records[0].message
-    assert prefix in message and "Sync complete:" in message
+    assert message.startswith(prefix + "Sync complete:")
+    assert message.count(prefix) == 1
     assert "Parent issues" in message and "created: 2 (high: 2)" in message and "title updated: 1" in message
     assert "Child issues" in message and "created: 15 (high: 15)" in message and "reopened: 1" in message
     assert "title updated: 2" in message and "body updated: 3" in message and "relinked: 1" in message
     # MIGRATION-PHASE-2-REMOVE: delete this assertion once the label migration sweep is retired.
-    assert "migrated: 4 issue(s) (added: 5, removed: 2)" in message
+    assert "issue(s) migrated: 4" in message
+    assert "type:aquasec added: 5" in message
+    assert "type:tech-debt removed: 2" in message
 
 
 # =====================================================================

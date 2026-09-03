@@ -127,12 +127,13 @@ def main(argv: list[str] | None = None) -> int:
     # MIGRATION-PHASE-2-REMOVE: auto-create of the type:aquasec label.
     # Auto-create the type:aquasec label so target repos need no manual setup
     # before the tech-debt -> aquasec switch.
-    gh_label_create(
+    if gh_label_create(
         repo,
         LABEL_TYPE_AQUASEC,
         color=LABEL_TYPE_AQUASEC_COLOR,
         description=LABEL_TYPE_AQUASEC_DESCRIPTION,
-    )
+    ):
+        logger.info("%sEnsured label '%s' exists in the repository", LOGGING_PREFIX, LABEL_TYPE_AQUASEC)
 
     # Check required labels
     if missing := LabelChecker(repo).check_labels():

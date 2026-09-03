@@ -71,8 +71,10 @@ from .models import (
     SyncContext,
     SyncResult,
     SyncStats,
+    bump_severity,
 )
 from .secmeta import load_secmeta, render_secmeta
+from .summary import LabelMigrationSummary, render_sync_summary
 from .templates import PARENT_BODY_TEMPLATE
 
 
@@ -99,7 +101,14 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
     )
 
 
-def _migrate_issue_labels(repo: str, issue: Issue, add_labels: list[str], *, dry_run: bool) -> bool:
+def _migrate_issue_labels(
+    repo: str,
+    issue: Issue,
+    add_labels: list[str],
+    *,
+    dry_run: bool,
+    label_summary: LabelMigrationSummary | None = None,
+) -> bool:
     """Stamp *add_labels* onto *issue* and strip the deprecated tech-debt label.
 
     MIGRATION-PHASE-2-REMOVE: tech-debt label removal branch.
@@ -112,6 +121,10 @@ def _migrate_issue_labels(repo: str, issue: Issue, add_labels: list[str], *, dry
     ``type:tech-debt`` is never touched on issues used for other purposes. This
     only un-assigns the label from the aquasec generated issues.
 
+    When *label_summary* is provided, the counts of added/removed labels (and
+    the migrated-issue tally) are accumulated onto it so the caller can report
+    them in the sync summary.
+
     Returns:
         True when the issue needed migrating (or would in a dry run).
     """
@@ -123,6 +136,10 @@ def _migrate_issue_labels(repo: str, issue: Issue, add_labels: list[str], *, dry
         return False
 
     if dry_run:
+        if label_summary is not None:
+            label_summary.issues_migrated += 1
+            label_summary.labels_added += len(missing)
+            label_summary.labels_removed += 1 if stale else 0
         return True
 
     if missing:
@@ -134,10 +151,14 @@ def _migrate_issue_labels(repo: str, issue: Issue, add_labels: list[str], *, dry
         labels = [label for label in labels if label != LABEL_TYPE_TECH_DEBT]
 
     issue.labels = labels
+    if label_summary is not None:
+        label_summary.issues_migrated += 1
+        label_summary.labels_added += len(missing)
+        label_summary.labels_removed += 1 if stale else 0
     return True
 
 
-def _migrate_all_security_issue_labels(repo: str, issues: dict[int, Issue], *, dry_run: bool) -> None:
+def _migrate_all_security_issue_labels(repo: str, issues: dict[int, Issue], *, dry_run: bool) -> LabelMigrationSummary:
     """One-pass label migration over every AquaSec-generated issue.
 
     MIGRATION-PHASE-2-REMOVE: full-population label migration sweep.
@@ -147,21 +168,32 @@ def _migrate_all_security_issue_labels(repo: str, issues: dict[int, Issue], *, d
     current alert. Issues are identified as AquaSec-owned by the presence of a
     parent/child ``secmeta`` block, so unrelated ``scope:security`` issues are
     never touched.
+
+    Returns:
+        A summary of how many issues were migrated and how many labels were
+        added/removed, for inclusion in the sync summary.
     """
-    migrated = 0
+    label_summary = LabelMigrationSummary()
     for issue in issues.values():
         secmeta_type = load_secmeta(issue.body).get("type", "").strip().lower()
         if secmeta_type in (SECMETA_TYPE_PARENT, SECMETA_TYPE_CHILD):
-            if _migrate_issue_labels(repo, issue, [LABEL_SCOPE_SECURITY, LABEL_TYPE_AQUASEC], dry_run=dry_run):
-                migrated += 1
+            _migrate_issue_labels(
+                repo,
+                issue,
+                [LABEL_SCOPE_SECURITY, LABEL_TYPE_AQUASEC],
+                dry_run=dry_run,
+                label_summary=label_summary,
+            )
 
-    if not migrated:
-        return
+    if not label_summary.issues_migrated:
+        return label_summary
 
     if dry_run:
-        logging.info(DRY_RUN_PREFIX + "Would migrate labels on %d security issue(s)", migrated)
+        logging.info(DRY_RUN_PREFIX + "Would migrate labels on %d security issue(s)", label_summary.issues_migrated)
     else:
-        logging.info(LOGGING_PREFIX + "Migrated labels on %d security issue(s)", migrated)
+        logging.info(LOGGING_PREFIX + "Migrated labels on %d security issue(s)", label_summary.issues_migrated)
+
+    return label_summary
 
 
 def find_issue_in_index(
@@ -185,6 +217,7 @@ def maybe_reopen_parent_issue(
     rule_id: str,
     dry_run: bool,
     stats: SyncStats,
+    severity: str | None = None,
 ) -> None:
     """Reopen *parent_issue* (if closed)."""
     if parent_issue is None:
@@ -192,6 +225,8 @@ def maybe_reopen_parent_issue(
 
     if parent_issue.state.lower() != "closed":
         return
+
+    parent_severity = severity or load_secmeta(parent_issue.body).get("severity")
 
     if dry_run:
         logging.info(
@@ -201,11 +236,13 @@ def maybe_reopen_parent_issue(
         )
         parent_issue.state = "open"
         stats.parents_reopened += 1
+        bump_severity(stats.parents_reopened_by_severity, parent_severity)
         return
 
     if gh_issue_edit_state(repo, parent_issue.number, "open"):
         parent_issue.state = "open"
         stats.parents_reopened += 1
+        bump_severity(stats.parents_reopened_by_severity, parent_severity)
 
 
 def _close_resolved_parent_issues(
@@ -248,12 +285,15 @@ def _close_resolved_parent_issues(
             logging.debug("Skip closing parent issue #%d: no repo in secmeta", parent_issue.number)
             continue
 
+        parent_severity = parent_secmeta.get("severity")
+
         if dry_run:
             logging.info(
                 DRY_RUN_PREFIX + "Would close parent issue #%d (all children resolved)",
                 parent_issue.number,
             )
             stats.parents_closed += 1
+            bump_severity(stats.parents_closed_by_severity, parent_severity)
             continue
 
         if gh_issue_edit_state(repo, parent_issue.number, "closed"):
@@ -263,6 +303,7 @@ def _close_resolved_parent_issues(
             )
             parent_issue.state = "closed"
             stats.parents_closed += 1
+            bump_severity(stats.parents_closed_by_severity, parent_severity)
 
 
 def ensure_parent_issue(
@@ -353,14 +394,18 @@ def ensure_parent_issue(
             if dry_run:
                 existing.title = expected_title
                 logging.info(DRY_RUN_PREFIX + "Would update parent issue #%d title", existing.number)
-                logging.debug("DRY-RUN: Would update title for parent issue #%d to %s", existing.number, expected_title)
+                logging.debug(
+                    DRY_RUN_PREFIX + "Would update title for parent issue #%d to %s", existing.number, expected_title
+                )
                 stats.parents_title_updated += 1
+                bump_severity(stats.parents_title_updated_by_severity, severity_stored)
             else:
                 if gh_issue_edit_title(repo_full, existing.number, expected_title):
                     existing.title = expected_title
                     logging.info(LOGGING_PREFIX + "Updated parent issue #%d title", existing.number)
                     logging.debug("New updated title for parent issue #%d: %s", existing.number, expected_title)
                     stats.parents_title_updated += 1
+                    bump_severity(stats.parents_title_updated_by_severity, severity_stored)
 
         if priority_sync is not None:
             priority_sync.enqueue(repo_full, existing.number, severity_stored, severity_priority_map or {})
@@ -377,8 +422,9 @@ def ensure_parent_issue(
             alert.metadata.severity,
         )
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            logging.debug("DRY-RUN: Would create parent issue for rule %s with body:\n%s", rule_id, body)
+            logging.debug(DRY_RUN_PREFIX + "Would create parent issue for rule %s with body:\n%s", rule_id, body)
         stats.parents_created += 1
+        bump_severity(stats.parents_created_by_severity, alert.metadata.severity)
         placeholder = Issue(number=0, state="open", title=title, body=body)
         index.parent_by_rule_id[rule_id] = placeholder
         return placeholder
@@ -392,6 +438,7 @@ def ensure_parent_issue(
     index.parent_by_rule_id[rule_id] = created
     logging.info(LOGGING_PREFIX + "Created parent issue #%d for rule %s", num, rule_id)
     stats.parents_created += 1
+    bump_severity(stats.parents_created_by_severity, alert.metadata.severity)
 
     if priority_sync is not None:
         priority_sync.enqueue(
@@ -449,26 +496,20 @@ def _handle_new_child_issue(
     title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
 
     if sync.dry_run:
-        if parent_issue is not None:
-            logging.info(
-                DRY_RUN_PREFIX + "Would create child issue for alert %d (rule: %s, severity: %s)",
-                ctx.alert_number,
-                ctx.rule_id,
-                ctx.severity,
-            )
-            sync.stats.children_linked += 1
-        else:
-            logging.info(
-                DRY_RUN_PREFIX + "Would create child issue for alert %d (rule: %s, severity: %s)",
-                ctx.alert_number,
-                ctx.rule_id,
-                ctx.severity,
-            )
-            if ctx.rule_id:
-                logging.debug("No parent issue yet for rule_id=%s – link will happen on next sync", ctx.rule_id)
+        logging.info(
+            DRY_RUN_PREFIX + "Would create child issue for alert %s (rule: %s, severity: %s)",
+            ctx.fingerprint[:8],
+            ctx.rule_id,
+            ctx.severity,
+        )
+        if parent_issue is None and ctx.rule_id:
+            logging.debug("No parent issue yet for rule_id=%s. Link will happen on next sync", ctx.rule_id)
         sync.stats.children_created += 1
+        bump_severity(sync.stats.children_created_by_severity, ctx.severity)
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            logging.debug("DRY-RUN: Would create child issue for alert %d with body:\n%s", ctx.alert_number, body)
+            logging.debug(
+                DRY_RUN_PREFIX + "Would create child issue for alert %s with body:\n%s", ctx.fingerprint[:8], body
+            )
 
         _append_notification(
             sync.notifications,
@@ -487,8 +528,9 @@ def _handle_new_child_issue(
     if num is None:
         return
 
-    logging.info(LOGGING_PREFIX + "Created child issue #%d for alert %d", num, ctx.alert_number)
+    logging.info(LOGGING_PREFIX + "Created child issue #%d for alert %s", num, ctx.fingerprint[:8])
     sync.stats.children_created += 1
+    bump_severity(sync.stats.children_created_by_severity, ctx.severity)
     created = Issue(number=num, state="open", title=title, body=body)
     sync.issues[num] = created
     sync.index.by_fingerprint[ctx.fingerprint] = created
@@ -510,9 +552,19 @@ def _handle_new_child_issue(
             rule_id=ctx.rule_id,
             dry_run=sync.dry_run,
             stats=sync.stats,
+            severity=ctx.severity,
         )
-        logging.debug("Add sub-issue link parent=#%d child=#%d (alert %d)", parent_issue.number, num, ctx.alert_number)
-        gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num)
+        if gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num):
+            logging.debug(
+                "Added link child issue #%d to parent #%d (alert %s)", num, parent_issue.number, ctx.fingerprint[:8]
+            )
+        else:
+            logging.warning(
+                "Failed to link child issue #%d to parent #%d (alert %s)",
+                num,
+                parent_issue.number,
+                ctx.fingerprint[:8],
+            )
 
     if sync.priority_sync is not None:
         sync.priority_sync.enqueue(ctx.repo, num, ctx.severity, sync.severity_priority_map)
@@ -544,12 +596,14 @@ def _maybe_reopen_child(
 
     if reopened:
         sync.stats.children_reopened += 1
+        bump_severity(sync.stats.children_reopened_by_severity, ctx.severity)
         maybe_reopen_parent_issue(
             ctx.repo,
             parent_issue,
             rule_id=ctx.rule_id,
             dry_run=sync.dry_run,
             stats=sync.stats,
+            severity=ctx.severity,
         )
         existing_secmeta = load_secmeta(issue.body)
         reopen_category = (existing_secmeta.get("category") or "").strip() or classify_category(ctx.alert)
@@ -605,13 +659,15 @@ def _rebuild_and_apply_child_body(
         if sync.dry_run:
             logging.info(DRY_RUN_PREFIX + "Would update child issue #%d body", issue.number)
             if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug("DRY-RUN: Would update child issue #%d body to:\n%s", issue.number, new_body)
+                logging.debug(DRY_RUN_PREFIX + "Would update child issue #%d body to:\n%s", issue.number, new_body)
             sync.stats.children_body_updated += 1
+            bump_severity(sync.stats.children_body_updated_by_severity, ctx.severity)
         else:
             if gh_issue_edit_body(ctx.repo, issue.number, new_body):
                 issue.body = new_body
                 logging.info(LOGGING_PREFIX + "Updated child issue #%d body", issue.number)
                 sync.stats.children_body_updated += 1
+                bump_severity(sync.stats.children_body_updated_by_severity, ctx.severity)
 
 
 def _sync_child_title_and_labels(
@@ -625,14 +681,16 @@ def _sync_child_title_and_labels(
     if expected_title != (issue.title or ""):
         if sync.dry_run:
             logging.info(DRY_RUN_PREFIX + "Would update child issue #%d title", issue.number)
-            logging.debug("DRY-RUN: Would update title for child issue #%d to %s", issue.number, expected_title)
+            logging.debug(DRY_RUN_PREFIX + "Would update title for child issue #%d to %s", issue.number, expected_title)
             sync.stats.children_title_updated += 1
+            bump_severity(sync.stats.children_title_updated_by_severity, ctx.severity)
         else:
             if gh_issue_edit_title(ctx.repo, issue.number, expected_title):
                 issue.title = expected_title
                 logging.info(LOGGING_PREFIX + "Updated child issue #%d title", issue.number)
                 logging.debug("New updated title for child issue #%d: %s", issue.number, expected_title)
                 sync.stats.children_title_updated += 1
+                bump_severity(sync.stats.children_title_updated_by_severity, ctx.severity)
 
     # MIGRATION-PHASE-2-REVERT: replace with the permanent call below, do not delete.
     #   if not sync.dry_run:
@@ -660,22 +718,31 @@ def _ensure_child_linked_to_parent(
 
     if sync.dry_run:
         logging.info(
-            DRY_RUN_PREFIX + "Would link child issue #%d to parent #%d",
+            DRY_RUN_PREFIX + "Would relink child issue #%d to parent #%d (alert %s)",
             issue.number,
             parent_issue.number,
+            ctx.fingerprint[:8],
         )
         cache[parent_issue.number].add(issue.number)
-        sync.stats.children_linked += 1
+        sync.stats.children_relinked += 1
         return
 
-    logging.info(
-        LOGGING_PREFIX + "Linked child issue #%d to parent #%d",
-        issue.number,
-        parent_issue.number,
-    )
     if gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, issue.number):
+        logging.info(
+            LOGGING_PREFIX + "Relinked child issue #%d to parent #%d (alert %s)",
+            issue.number,
+            parent_issue.number,
+            ctx.fingerprint[:8],
+        )
         cache[parent_issue.number].add(issue.number)
-        sync.stats.children_linked += 1
+        sync.stats.children_relinked += 1
+    else:
+        logging.warning(
+            "Failed to relink child issue #%d to parent #%d (alert %s)",
+            issue.number,
+            parent_issue.number,
+            ctx.fingerprint[:8],
+        )
 
 
 def _handle_existing_child_issue(
@@ -804,15 +871,18 @@ def _flush_parent_body_updates(
         if issue is None:
             continue
         if issue.body != original_body:
+            severity = load_secmeta(issue.body).get("severity")
             if dry_run:
                 logging.info(DRY_RUN_PREFIX + "Would update parent issue #%d body", num)
                 if logging.getLogger().isEnabledFor(logging.DEBUG):
-                    logging.debug("DRY-RUN: Would update parent issue #%d body to:\n%s", num, issue.body)
+                    logging.debug(DRY_RUN_PREFIX + "Would update parent issue #%d body to:\n%s", num, issue.body)
                 stats.parents_body_updated += 1
+                bump_severity(stats.parents_body_updated_by_severity, severity)
             else:
                 if gh_issue_edit_body(repo, num, issue.body):
                     logging.info(LOGGING_PREFIX + "Updated parent issue #%d body", num)
                     stats.parents_body_updated += 1
+                    bump_severity(stats.parents_body_updated_by_severity, severity)
 
 
 def _close_resolved_child_issues(
@@ -840,10 +910,12 @@ def _close_resolved_child_issues(
 
     for fp in unmatched_fps:
         issue = index.by_fingerprint[fp]
-        repo = load_secmeta(issue.body).get("repo", "")
+        secmeta = load_secmeta(issue.body)
+        repo = secmeta.get("repo", "")
         if not repo:
             logging.debug("Skipping closure for issue #%d: no repo in secmeta", issue.number)
             continue
+        severity = secmeta.get("severity")
         if dry_run:
             logging.info(
                 DRY_RUN_PREFIX + "Would close issue #%d (finding no longer detected in scan)",
@@ -851,6 +923,7 @@ def _close_resolved_child_issues(
             )
             issue.state = "closed"
             stats.children_closed += 1
+            bump_severity(stats.children_closed_by_severity, severity)
         elif gh_issue_edit_state(repo, issue.number, "closed"):
             logging.info(
                 LOGGING_PREFIX + "Closed issue #%d (finding no longer detected in scan)",
@@ -858,6 +931,7 @@ def _close_resolved_child_issues(
             )
             issue.state = "closed"
             stats.children_closed += 1
+            bump_severity(stats.children_closed_by_severity, severity)
 
 
 def _meets_min_severity(severity: str, min_severity: str) -> bool:
@@ -891,8 +965,9 @@ def sync_alerts_and_issues(
     spm = severity_priority_map or {}
 
     # MIGRATION-PHASE-2-REMOVE: up-front label migration sweep call.
+    label_summary = LabelMigrationSummary()
     if repo:
-        _migrate_all_security_issue_labels(repo, issues, dry_run=dry_run)
+        label_summary = _migrate_all_security_issue_labels(repo, issues, dry_run=dry_run)
 
     priority_sync = _init_priority_sync(
         alerts,
@@ -927,48 +1002,13 @@ def sync_alerts_and_issues(
     _close_resolved_child_issues(alerts, index, dry_run=dry_run, stats=sync.stats)
     _close_resolved_parent_issues(issues, index, dry_run=dry_run, stats=sync.stats)
 
-    _log_sync_summary(sync.stats, dry_run=dry_run)
+    _log_sync_summary(sync.stats, label_summary, dry_run=dry_run)
 
     return SyncResult(notifications=notifications, severity_changes=sync.severity_changes)
 
 
-def _log_sync_summary(stats: SyncStats, *, dry_run: bool) -> None:
-    """Log a compact multi-line summary of the completed sync run."""
+def _log_sync_summary(stats: SyncStats, label_summary: LabelMigrationSummary, *, dry_run: bool) -> None:
+    """Log the completed sync run's summary, reusing the shared pure renderer."""
     prefix = DRY_RUN_PREFIX if dry_run else LOGGING_PREFIX
-
-    parent_parts: list[str] = []
-    if stats.parents_created:
-        parent_parts.append(f"created: {stats.parents_created}")
-    if stats.parents_title_updated:
-        parent_parts.append(f"title updated: {stats.parents_title_updated}")
-    if stats.parents_body_updated:
-        parent_parts.append(f"body updated: {stats.parents_body_updated}")
-    if stats.parents_reopened:
-        parent_parts.append(f"reopened: {stats.parents_reopened}")
-    if stats.parents_closed:
-        parent_parts.append(f"closed: {stats.parents_closed}")
-
-    child_parts: list[str] = []
-    if stats.children_created:
-        child_parts.append(f"created: {stats.children_created}")
-    if stats.children_reopened:
-        child_parts.append(f"reopened: {stats.children_reopened}")
-    if stats.children_title_updated:
-        child_parts.append(f"title updated: {stats.children_title_updated}")
-    if stats.children_body_updated:
-        child_parts.append(f"body updated: {stats.children_body_updated}")
-    if stats.children_linked:
-        child_parts.append(f"linked: {stats.children_linked}")
-    if stats.children_closed:
-        child_parts.append(f"closed: {stats.children_closed}")
-
-    if not parent_parts and not child_parts:
-        logging.info(prefix + "Sync complete: no changes")
-        return
-
-    lines = [prefix + "Sync complete:"]
-    if parent_parts:
-        lines.append("  " + prefix + "Parent issues - " + ", ".join(parent_parts))
-    if child_parts:
-        lines.append("  " + prefix + "Child issues  - " + ", ".join(child_parts))
-    logging.info("\n".join(lines))
+    lines = render_sync_summary(stats, label_summary)
+    logging.info("\n".join(prefix + line for line in lines))

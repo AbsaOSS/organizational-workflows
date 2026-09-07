@@ -169,6 +169,28 @@ def test_pipeline_calls_notify(mocker):
     mocks["notifier"].assert_called_once()
 
 
+def test_failed_notification_does_not_fail_the_run(mocker, monkeypatch):
+    """Issues are already synced by then, so a failed card must not redden the run."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    mocks = _mock_pipeline(mocker)
+    mocks["notifier"].return_value = False
+    warn = mocker.patch("security.main.emit_workflow_warning")
+
+    assert main(["--repo", REPO]) == 0
+    warn.assert_called_once()
+
+
+def test_failed_notification_skips_annotation_outside_actions(mocker, monkeypatch):
+    """A local run must not print stray workflow commands."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    mocks = _mock_pipeline(mocker)
+    mocks["notifier"].return_value = False
+    warn = mocker.patch("security.main.emit_workflow_warning")
+
+    assert main(["--repo", REPO]) == 0
+    warn.assert_not_called()
+
+
 # main - scan output
 
 

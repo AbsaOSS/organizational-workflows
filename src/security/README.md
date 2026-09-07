@@ -23,7 +23,7 @@ Solution supports:
 - **Automated Issue creation**: Each unique finding becomes a GitHub Issue with severity, affected file, and remediation context.
 - **Parent/child structure**: Findings are grouped under epic (parent) issues by rule, with individual occurrences as child sub-issues.
 - **Lifecycle sync**: Issues are reopened when findings reappear, automatically closed when findings disappear, and parent issues auto-close when all children are resolved.
-- **Teams notifications**: New and reopened findings trigger a Microsoft Teams Adaptive Card notification.
+- **Teams notifications**: A single Microsoft Teams Adaptive Card summarizing opened, reopened and closed child issues plus the repository's current open-finding posture.
 - **Priority sync**: Severity is mapped to priority on a GitHub ProjectV2 board.
 
 > For a business-level overview of what this solution does and why, see the [Security Automation docs](/docs/security/security.md).
@@ -83,13 +83,13 @@ jobs:
 
 ### Secrets
 
-| Name                 | Required | Description                                            |
-|----------------------|----------|--------------------------------------------------------|
-| `AQUA_KEY`           | Yes      | AquaSec API Key credential                             |
-| `AQUA_SECRET`        | Yes      | AquaSec API Secret credential                          |
-| `AQUA_GROUP_ID`      | Yes      | AquaSec Group ID for authentication                    |
-| `AQUA_REPOSITORY_ID` | Yes      | AquaSec Repository ID (UUID format)                    |
-| `TEAMS_WEBHOOK_URL`  | No       | Microsoft Teams Incoming Webhook URL for notifications |
+| Name                 | Required | Description                          |
+|----------------------|----------|--------------------------------------|
+| `AQUA_KEY`           | Yes      | AquaSec API Key credential           |
+| `AQUA_SECRET`        | Yes      | AquaSec API Secret credential        |
+| `AQUA_GROUP_ID`      | Yes      | AquaSec Group ID for authentication  |
+| `AQUA_REPOSITORY_ID` | Yes      | AquaSec Repository ID (UUID format)  |
+| `TEAMS_WEBHOOK_URL`  | No       | Microsoft Teams Incoming Webhook URL |
 
 ### Credentials Configuration
 
@@ -196,7 +196,7 @@ PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run --verb
 - **Verbose logging**: Detailed output for debugging and audit.
 - **Severity filtering**: Configurable minimum severity threshold to limit issue creation to findings at or above the chosen level.
 - **Priority mapping**: Configurable severity-to-priority mapping for ProjectV2 boards.
-- **Teams notifications**: Real-time alerts for new and reopened findings.
+- **Teams notifications**: One card, sent only when a child issue is opened, reopened or closed.
 - **Parent/child issue structure**: Findings grouped by rule with automatic lifecycle management.
 - **Fingerprint-based matching**: Stable identification of findings across runs.
 

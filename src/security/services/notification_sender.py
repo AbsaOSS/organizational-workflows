@@ -182,7 +182,7 @@ class NotificationSender:
         if not resp.ok:
             raise SystemExit(f"ERROR: Teams webhook request failed.\n  Status: {resp.status_code}\n  Body: {resp.text}")
 
-        logger.info("%sMessage sent to Teams successfully.", LOGGING_PREFIX)
+        logger.info("%sMessage sent to Teams successfully", LOGGING_PREFIX)
 
     def send_dry_run(self, body: str, *, title: str | None = None, subtitle: str | None = None) -> None:
         """Log the payload that would be sent without actually sending."""

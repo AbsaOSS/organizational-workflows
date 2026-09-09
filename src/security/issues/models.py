@@ -92,8 +92,25 @@ class SyncStats:
     children_reopened: int = 0
     children_title_updated: int = 0
     children_body_updated: int = 0
-    children_linked: int = 0
+    children_relinked: int = 0
     children_closed: int = 0
+
+    parents_created_by_severity: dict[str, int] = field(default_factory=dict)
+    parents_title_updated_by_severity: dict[str, int] = field(default_factory=dict)
+    parents_body_updated_by_severity: dict[str, int] = field(default_factory=dict)
+    parents_reopened_by_severity: dict[str, int] = field(default_factory=dict)
+    parents_closed_by_severity: dict[str, int] = field(default_factory=dict)
+    children_created_by_severity: dict[str, int] = field(default_factory=dict)
+    children_reopened_by_severity: dict[str, int] = field(default_factory=dict)
+    children_title_updated_by_severity: dict[str, int] = field(default_factory=dict)
+    children_body_updated_by_severity: dict[str, int] = field(default_factory=dict)
+    children_closed_by_severity: dict[str, int] = field(default_factory=dict)
+
+
+def bump_severity(counter: dict[str, int], severity: str | None) -> None:
+    """Increment *counter* for the given *severity*, normalizing blanks to ``unknown``."""
+    key = (severity or "").strip().lower() or "unknown"
+    counter[key] = counter.get(key, 0) + 1
 
 
 @dataclass

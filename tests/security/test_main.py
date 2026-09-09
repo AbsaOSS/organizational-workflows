@@ -119,6 +119,42 @@ def test_missing_labels_returns_1(mocker):
     assert main(["--repo", REPO]) == 1
 
 
+# main - label auto-create (MIGRATION-PHASE-2-REMOVE)
+
+
+def test_label_create_skipped_and_would_ensure_logged_in_dry_run(mocker, monkeypatch, caplog):
+    """Dry-run must not mutate the repo: no real gh_label_create call."""
+    mock_create = mocker.patch("security.main.gh_label_create")
+    _mock_pipeline(mocker)
+
+    with caplog.at_level("INFO"):
+        assert main(["--repo", REPO, "--dry-run"]) == 0
+
+    mock_create.assert_not_called()
+    assert any("Would ensure label" in record.message for record in caplog.records)
+
+
+def test_label_create_called_and_ensured_logged_in_live_run(mocker, caplog):
+    mock_create = mocker.patch("security.main.gh_label_create", return_value=True)
+    _mock_pipeline(mocker)
+
+    with caplog.at_level("INFO"):
+        assert main(["--repo", REPO]) == 0
+
+    mock_create.assert_called_once()
+    assert any("Ensured label" in record.message for record in caplog.records)
+
+
+def test_no_ensured_label_log_on_create_failure(mocker, caplog):
+    mocker.patch("security.main.gh_label_create", return_value=False)
+    _mock_pipeline(mocker)
+
+    with caplog.at_level("INFO"):
+        assert main(["--repo", REPO]) == 0
+
+    assert not any("Ensured label" in record.message for record in caplog.records)
+
+
 # main - pipeline success
 
 

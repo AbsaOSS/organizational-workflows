@@ -32,7 +32,7 @@ def config():
         aqua_group_id="g",
         aqua_repository_id="00000000-0000-0000-0000-000000000000",
         repo="org/repo",
-        issue_label="scope:security",
+        security_label="scope:security",
         severity_priority_map="Critical=P0",
         project_number=42,
         project_org="org",

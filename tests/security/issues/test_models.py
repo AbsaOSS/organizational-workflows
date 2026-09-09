@@ -16,6 +16,8 @@
 
 """Unit tests for ``security.issues.models``."""
 
+import pytest
+
 from security.issues.models import (
     AlertContext,
     IssueIndex,
@@ -24,6 +26,7 @@ from security.issues.models import (
     SeverityChange,
     SyncContext,
     SyncResult,
+    bump_severity,
     severity_direction,
 )
 
@@ -125,3 +128,31 @@ def test_sync_context_creation() -> None:
         notifications=[], severity_priority_map={}, priority_sync=None,
     )
     assert sc.dry_run is True
+
+
+# =====================================================================
+# bump_severity
+# =====================================================================
+
+
+def test_bump_severity_increments_new_and_existing_key() -> None:
+    """First bump of a severity creates the key at 1; a second bump increments it."""
+    counter: dict[str, int] = {}
+    bump_severity(counter, "high")
+    assert {"high": 1} == counter
+    bump_severity(counter, "high")
+    assert {"high": 2} == counter
+
+
+@pytest.mark.parametrize("severity,expected_key", [
+    (None, "unknown"),
+    ("", "unknown"),
+    ("   ", "unknown"),
+    ("HIGH", "high"),
+    ("  High  ", "high"),
+])
+def test_bump_severity_normalizes_blank_and_case(severity: str | None, expected_key: str) -> None:
+    """Blank/None severities collapse to 'unknown'; casing/whitespace is normalized."""
+    counter: dict[str, int] = {}
+    bump_severity(counter, severity)
+    assert {expected_key: 1} == counter

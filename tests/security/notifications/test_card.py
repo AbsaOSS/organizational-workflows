@@ -112,9 +112,9 @@ def test_card_header_names_repository_and_is_coloured(links: NotificationLinks) 
     assert "Container" == header["type"]
     assert "accent" == header["style"]
     assert header["bleed"] is True
-    assert "#6264A7" == header["backgroundColor"]
+    assert "#7B83EB" == header["backgroundColor"]
     assert REPO == header["items"][1]["text"]
-    assert all(item["color"] == "light" for item in header["items"])
+    assert all(item["color"] == "dark" for item in header["items"])
 
 
 def test_card_counts_each_state(links: NotificationLinks) -> None:
@@ -170,10 +170,14 @@ def test_card_posture_keeps_zero_counts_within_threshold(links: NotificationLink
     """Zero counts are shown so a clean severity reads as explicitly clear."""
     card = _build(links, posture={"high": 22, "low": 9}, min_severity="medium")
     heading_index = next(i for i, e in enumerate(card["body"]) if e.get("text", "").startswith("Open security issues"))
-    columns = card["body"][heading_index + 1]["columns"]
+    heading = card["body"][heading_index]
+    label_columns = card["body"][heading_index + 1]["columns"]
+    value_columns = card["body"][heading_index + 2]["columns"]
 
-    assert ["Critical", "High", "Medium"] == [column["items"][1]["text"] for column in columns]
-    assert ["0", "22", "0"] == [column["items"][0]["text"] for column in columns]  # 'low' is below the threshold
+    assert heading["isSubtle"] is True  # secondary info, not the run's own counters
+    assert ["🔴 Critical", "🟠 High", "🟡 Medium"] == [column["items"][0]["text"] for column in label_columns]
+    assert ["0", "22", "0"] == [column["items"][0]["text"] for column in value_columns]  # 'low' is below the threshold
+    assert all("size" not in column["items"][0] for column in value_columns)  # subtler than the main counters
 
 
 def test_card_omits_posture_section_when_no_severity_qualifies(links: NotificationLinks, mocker: MockerFixture) -> None:
@@ -186,26 +190,36 @@ def test_card_omits_posture_section_when_no_severity_qualifies(links: Notificati
 # build_security_card - actions
 
 
+def _action_set(card: dict[str, Any]) -> dict[str, Any] | None:
+    """Find the card's centered button row, if any."""
+    for element in card["body"]:
+        if element["type"] == "ActionSet":
+            return element
+    return None
+
+
 def test_card_actions_link_run_repo_and_console(links: NotificationLinks) -> None:
-    action_set = next(e for e in _build(links)["body"] if e["type"] == "ActionSet")
-    actions = action_set["actions"]
-    assert "Center" == action_set["horizontalAlignment"]
-    assert ["View workflow run", "Repository issues", "AquaSec console"] == [a["title"] for a in actions]
-    assert all(action["type"] == "Action.OpenUrl" for action in actions)
-    assert actions[2]["url"].startswith("https://eu-1.cloud.aquasec.com/")
+    action_set = _action_set(_build(links))
+    assert action_set is not None
+    assert action_set["horizontalAlignment"] == "Center"
+    buttons = action_set["actions"]
+    assert ["View workflow run", "Repository issues", "AquaSec console"] == [b["title"] for b in buttons]
+    assert all(button["type"] == "Action.OpenUrl" for button in buttons)
+    assert buttons[2]["url"].startswith("https://eu-1.cloud.aquasec.com/")
 
 
 def test_card_omits_run_button_outside_actions() -> None:
     """Running locally has no run URL, so that button is dropped rather than rendered broken."""
     local = NotificationLinks(repo=REPO, repo_url=f"https://github.com/{REPO}/issues", run_url="")
-    action_set = next(e for e in _build(local)["body"] if e["type"] == "ActionSet")
-    assert "View workflow run" not in [action["title"] for action in action_set["actions"]]
+    action_set = _action_set(_build(local))
+    assert action_set is not None
+    assert "View workflow run" not in [button["title"] for button in action_set["actions"]]
 
 
 def test_card_omits_action_set_when_no_links_available() -> None:
-    """No buttons means no empty ActionSet either."""
+    """No buttons means no empty action row either."""
     empty = NotificationLinks(repo=REPO, repo_url="", run_url="", aqua_url="")
-    assert not any(e["type"] == "ActionSet" for e in _build(empty)["body"])
+    assert _action_set(_build(empty)) is None
 
 
 # build_message_payload

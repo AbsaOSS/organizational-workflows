@@ -81,8 +81,7 @@ def test_notify_logs_summary_and_payload(
     NotificationSender(config).notify(result, dry_run=False)
 
     info = [r.message for r in caplog.records if r.levelno == logging.INFO]
-    assert any(f"Teams notification for {REPO}: 1 issue change(s)" in m for m in info)
-    assert any("Notification sent to Teams successfully" in m for m in info)
+    assert any("Teams notification sent: 1 issue change(s)" in m for m in info)
     assert any("Teams notification payload:" in r.message for r in caplog.records if r.levelno == logging.DEBUG)
 
 
@@ -192,14 +191,12 @@ def test_send_reports_failure_when_success_status_carries_an_error_body(
 
 @pytest.mark.parametrize("body", ["1", "", "   "])
 def test_send_accepts_documented_success_bodies(
-    config: object, result: SyncResult, post: MockerFixture, body: str, caplog: pytest.LogCaptureFixture
+    config: object, result: SyncResult, post: MockerFixture, body: str
 ) -> None:
     """A successful post returns either ``1`` or an empty body."""
-    caplog.set_level(logging.INFO)
     post.return_value.text = body
 
     assert NotificationSender(config).notify(result, dry_run=False) is True
-    assert "Notification sent to Teams successfully" in caplog.text
 
 
 def test_send_reports_failure_when_body_is_unrecognized(

@@ -169,5 +169,4 @@ class NotificationSender:
             )
             return False
 
-        logger.info("%sNotification sent to Teams successfully", LOGGING_PREFIX)
         return True

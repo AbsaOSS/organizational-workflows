@@ -77,10 +77,10 @@ def _header(repo: str) -> dict[str, Any]:
         "type": "Container",
         "style": "accent",
         "bleed": True,
-        "backgroundColor": "#6264A7",
+        "backgroundColor": "#7B83EB",
         "items": [
-            _text_block("AquaSec Security Scan", weight="Bolder", size="Large", color="light"),
-            _text_block(repo or "unknown repository", isSubtle=True, spacing="None", color="light"),
+            _text_block("AquaSec Security Scan", weight="Bolder", size="Large", color="dark"),
+            _text_block(repo or "unknown repository", isSubtle=True, spacing="None", color="dark"),
         ],
     }
 
@@ -150,27 +150,59 @@ def _posture_severities(min_severity: str) -> list[str]:
     ]
 
 
+def _posture_label_column(severity: str) -> dict[str, Any]:
+    """Build one label cell of the posture grid's header row."""
+    return {
+        "type": "Column",
+        "width": "stretch",
+        "items": [_text_block(f"{_severity_emoji(severity)} {severity.capitalize()}", horizontalAlignment="Center")],
+    }
+
+
+def _posture_value_column(value: int) -> dict[str, Any]:
+    """Build one value cell of the posture grid's count row."""
+    return {
+        "type": "Column",
+        "width": "stretch",
+        "items": [_text_block(str(value), horizontalAlignment="Center")],
+    }
+
+
 def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[str, Any]]:
     """Build the footer summarizing currently-open child issues by severity.
 
+    This is secondary, at-a-glance context rather than the main content of the run (that's
+    ``_change_counters`` and ``_issue_sections`` above), so it's rendered smaller and subtler:
+    a plain heading and default-size counts, not the bold/``ExtraLarge`` styling used for the
+    run's own opened/reopened/closed numbers.
+
     Zero counts are kept so a clean severity reads as explicitly clear rather than missing.
+    Rendered as a two-row grid (severities, then counts) using the same ``ColumnSet`` technique
+    as the rest of the card, rather than the ``Table`` element, which is unverified for the
+    legacy Teams webhook rendering path.
     """
     severities = _posture_severities(min_severity)
     if not severities:
         return []
 
     return [
-        _text_block(f"Open security issues (severity >= {min_severity})", weight="Bolder", spacing="Medium"),
+        _text_block(f"Open security issues (severity >= {min_severity})", isSubtle=True, spacing="Medium"),
+        {"type": "ColumnSet", "spacing": "Small", "columns": [_posture_label_column(s) for s in severities]},
         {
             "type": "ColumnSet",
-            "spacing": "Small",
-            "columns": [_stat_column(severity.capitalize(), posture.get(severity, 0)) for severity in severities],
+            "spacing": "None",
+            "columns": [_posture_value_column(posture.get(s, 0)) for s in severities],
         },
     ]
 
 
 def _actions(links: NotificationLinks) -> list[dict[str, Any]]:
-    """Build the card's footer buttons as a centered ``ActionSet``, skipping unavailable links."""
+    """Build the card's footer buttons as one centered, side-by-side row.
+
+    A single ``ActionSet`` keeps the buttons next to each other at their natural width (unlike
+    the top-level card ``actions`` array, whose stretch/orientation is host-controlled, not
+    card-controlled); only the row as a whole is centered via ``horizontalAlignment``.
+    """
     candidates = (
         ("View workflow run", links.run_url),
         ("Repository issues", links.repo_url),
@@ -179,7 +211,8 @@ def _actions(links: NotificationLinks) -> list[dict[str, Any]]:
     buttons = [{"type": "Action.OpenUrl", "title": title, "url": url} for title, url in candidates if url]
     if not buttons:
         return []
-    return [{"type": "ActionSet", "horizontalAlignment": "Center", "actions": buttons}]
+
+    return [{"type": "ActionSet", "horizontalAlignment": "Center", "spacing": "Medium", "actions": buttons}]
 
 
 def build_security_card(

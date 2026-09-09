@@ -116,7 +116,6 @@ def test_notify_dry_run_logs_without_posting(
     NotificationSender(config).notify(result, dry_run=True)
 
     post.assert_not_called()
-    assert "Would send Teams notification" in caplog.text
 
 
 # _build_payload

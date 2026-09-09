@@ -77,15 +77,16 @@ def _header(repo: str) -> dict[str, Any]:
         "type": "Container",
         "style": "accent",
         "bleed": True,
+        "backgroundColor": "#6264A7",
         "items": [
-            _text_block("AquaSec Security Scan", weight="Bolder", size="Large"),
-            _text_block(repo or "unknown repository", isSubtle=True, spacing="None"),
+            _text_block("AquaSec Security Scan", weight="Bolder", size="Large", color="light"),
+            _text_block(repo or "unknown repository", isSubtle=True, spacing="None", color="light"),
         ],
     }
 
 
-def _counter_column(label: str, value: int) -> dict[str, Any]:
-    """Build one column of the run's change counters."""
+def _stat_column(label: str, value: int) -> dict[str, Any]:
+    """Build one column of a centered, full-width stat row (counters or posture)."""
     return {
         "type": "Column",
         "width": "stretch",
@@ -108,7 +109,7 @@ def _change_counters(issue_changes: list[IssueChange]) -> list[dict[str, Any]]:
         {
             "type": "ColumnSet",
             "spacing": "Small",
-            "columns": [_counter_column(label, counts[state]) for state, label in _STATE_SECTIONS],
+            "columns": [_stat_column(label, counts[state]) for state, label in _STATE_SECTIONS],
         },
     ]
 
@@ -141,11 +142,12 @@ def _issue_sections(issue_changes: list[IssueChange], *, cap: int) -> list[dict[
 
 def _posture_severities(min_severity: str) -> list[str]:
     """Return the severities worth reporting, mirroring issue-creation filtering."""
-    if min_severity == "low":
-        return list(_SEVERITY_DISPLAY_ORDER)
-
-    threshold = SEVERITY_ORDER.get(min_severity, 0)
-    return [severity for severity in _SEVERITY_DISPLAY_ORDER if SEVERITY_ORDER[severity] >= threshold]
+    threshold = SEVERITY_ORDER.get(min_severity, SEVERITY_ORDER["low"])
+    return [
+        severity
+        for severity in _SEVERITY_DISPLAY_ORDER
+        if severity != "unknown" and SEVERITY_ORDER[severity] >= threshold
+    ]
 
 
 def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[str, Any]]:
@@ -157,25 +159,27 @@ def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[st
     if not severities:
         return []
 
-    facts = [
-        {"title": f"{_severity_emoji(severity)} {severity.capitalize()}", "value": str(posture.get(severity, 0))}
-        for severity in severities
-    ]
-
     return [
         _text_block(f"Open security issues (severity >= {min_severity})", weight="Bolder", spacing="Medium"),
-        {"type": "FactSet", "spacing": "Small", "facts": facts},
+        {
+            "type": "ColumnSet",
+            "spacing": "Small",
+            "columns": [_stat_column(severity.capitalize(), posture.get(severity, 0)) for severity in severities],
+        },
     ]
 
 
 def _actions(links: NotificationLinks) -> list[dict[str, Any]]:
-    """Build the card's footer buttons, skipping any link that is unavailable."""
+    """Build the card's footer buttons as a centered ``ActionSet``, skipping unavailable links."""
     candidates = (
         ("View workflow run", links.run_url),
         ("Repository issues", links.repo_url),
         ("AquaSec console", links.aqua_url),
     )
-    return [{"type": "Action.OpenUrl", "title": title, "url": url} for title, url in candidates if url]
+    buttons = [{"type": "Action.OpenUrl", "title": title, "url": url} for title, url in candidates if url]
+    if not buttons:
+        return []
+    return [{"type": "ActionSet", "horizontalAlignment": "Center", "actions": buttons}]
 
 
 def build_security_card(
@@ -202,6 +206,7 @@ def build_security_card(
     body += _change_counters(issue_changes)
     body += _issue_sections(issue_changes, cap=issue_cap)
     body += _posture_section(posture, min_severity)
+    body += _actions(links)
 
     card: dict[str, Any] = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -210,9 +215,6 @@ def build_security_card(
         "msteams": {"width": "Full"},
         "body": body,
     }
-
-    if actions := _actions(links):
-        card["actions"] = actions
 
     return card
 

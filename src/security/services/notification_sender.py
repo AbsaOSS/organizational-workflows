@@ -68,20 +68,26 @@ class NotificationSender:
             return True
 
         payload = self._build_payload(result)
-        prefix = DRY_RUN_PREFIX if dry_run else LOGGING_PREFIX
-
-        logger.info(
-            "%sTeams notification for %s: %d issue change(s)",
-            prefix,
-            self.config.repo,
-            len(result.issue_changes),
-        )
-        logger.debug("%sTeams notification payload:\n%s", prefix, json.dumps(payload, indent=2, ensure_ascii=False))
 
         if dry_run:
-            logger.info("%sWould send Teams notification", DRY_RUN_PREFIX)
+            logger.info(
+                "%sWould send a Teams notification: %d issue change(s)",
+                DRY_RUN_PREFIX,
+                len(result.issue_changes),
+            )
+            logger.debug(
+                "%sTeams notification payload:\n%s", DRY_RUN_PREFIX, json.dumps(payload, indent=2, ensure_ascii=False)
+            )
             return True
 
+        logger.info(
+            "%sTeams notification sent: %d issue change(s)",
+            LOGGING_PREFIX,
+            len(result.issue_changes),
+        )
+        logger.debug(
+            "%sTeams notification payload:\n%s", LOGGING_PREFIX, json.dumps(payload, indent=2, ensure_ascii=False)
+        )
         return self.send(payload)
 
     def _build_payload(self, result: SyncResult) -> dict[str, Any]:

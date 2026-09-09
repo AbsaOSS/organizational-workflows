@@ -24,10 +24,16 @@ import logging
 import shutil
 
 from core.config import parse_runner_debug, setup_logging
+from core.github.issues import gh_label_create
 from core.helpers import write_json
 
 from security.alerts.aquasec_parser import AquaSecParser
-from security.constants import LOGGING_PREFIX
+from security.constants import (
+    LABEL_TYPE_AQUASEC,
+    LABEL_TYPE_AQUASEC_COLOR,
+    LABEL_TYPE_AQUASEC_DESCRIPTION,
+    LOGGING_PREFIX,
+)
 from security.config import SecurityConfig
 from security.services.authenticator import AquaSecAuthenticator
 from security.services.issue_syncer import IssueSyncer
@@ -117,6 +123,16 @@ def main(argv: list[str] | None = None) -> int:
     # Check gh CLI availability
     if shutil.which("gh") is None:
         raise SystemExit("ERROR: gh CLI is required. Install and authenticate (gh auth login).")
+
+    # MIGRATION-PHASE-2-REMOVE: auto-create of the type:aquasec label.
+    # Auto-create the type:aquasec label so target repos need no manual setup
+    # before the tech-debt -> aquasec switch.
+    gh_label_create(
+        repo,
+        LABEL_TYPE_AQUASEC,
+        color=LABEL_TYPE_AQUASEC_COLOR,
+        description=LABEL_TYPE_AQUASEC_DESCRIPTION,
+    )
 
     # Check required labels
     if missing := LabelChecker(repo).check_labels():

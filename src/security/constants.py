@@ -17,12 +17,17 @@
 """Shared constants used across the security workflow utilities."""
 
 LABEL_SCOPE_SECURITY = "scope:security"
-LABEL_TYPE_TECH_DEBT = "type:tech-debt"
+LABEL_TYPE_AQUASEC = "type:aquasec"
 LABEL_EPIC = "epic"
+
+# MIGRATION-PHASE-2-REMOVE: deprecated tech-debt label, replaced by type:aquasec.
+LABEL_TYPE_TECH_DEBT = "type:tech-debt"
+LABEL_TYPE_AQUASEC_COLOR = "79bf8f"
+LABEL_TYPE_AQUASEC_DESCRIPTION = "AquaSec generated security finding"
 
 REQUIRED_LABELS: list[str] = [
     LABEL_SCOPE_SECURITY,
-    LABEL_TYPE_TECH_DEBT,
+    LABEL_TYPE_AQUASEC,
     LABEL_EPIC,
 ]
 

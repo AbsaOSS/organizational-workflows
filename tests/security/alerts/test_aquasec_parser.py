@@ -23,6 +23,7 @@ from security.alerts.aquasec_parser import (
     _format_bullet_list,
     _map_severity,
     _parse_item,
+    _stabilize_scm_url,
 )
 
 
@@ -126,6 +127,40 @@ _SAST_ITEM = {
 }
 
 
+# _stabilize_scm_url
+
+@pytest.mark.parametrize("url,branch,expected", [
+    (
+        "https://github.com/absa-group/data-gateway/blob/032d7c89bb496a38f56c0a297c490d2a2e80c5a6/wf.yaml",
+        "master",
+        "https://github.com/absa-group/data-gateway/blob/master/wf.yaml",
+    ),
+    (
+        "https://github.com/absa-group/data-gateway/blob/032d7c89bb496a38f56c0a297c490d2a2e80c5a6/wf.yaml",
+        "develop",
+        "https://github.com/absa-group/data-gateway/blob/develop/wf.yaml",
+    ),
+    (
+        "https://github.com/absa-group/data-gateway/blob/032d7c89bb496a38f56c0a297c490d2a2e80c5a6/wf.yaml",
+        "",
+        "https://github.com/absa-group/data-gateway/blob/HEAD/wf.yaml",
+    ),
+    (
+        "https://github.com/absa-group/data-gateway/blob/032d7c89bb496a38f56c0a297c490d2a2e80c5a6/wf.yaml",
+        "   ",
+        "https://github.com/absa-group/data-gateway/blob/HEAD/wf.yaml",
+    ),
+    (
+        "https://github.com/absa-group/data-gateway/blob/master/wf.yaml",
+        "master",
+        "https://github.com/absa-group/data-gateway/blob/master/wf.yaml",
+    ),
+    ("", "master", ""),
+])
+def test_stabilize_scm_url(url, branch, expected) -> None:
+    assert expected == _stabilize_scm_url(url, branch)
+
+
 # _map_severity
 
 @pytest.mark.parametrize("numeric,expected", [
@@ -212,6 +247,16 @@ def test_parse_item_reachable_true() -> None:
     item = {**_VULN_ITEM, "reachable": True}
     alert = _parse_item(item, "org/repo")
     assert alert.alert_details.reachable == "True"
+
+
+def test_parse_item_stabilizes_scm_file_commit_sha() -> None:
+    item = {
+        **_VULN_ITEM,
+        "scm_file": "https://github.com/absa-group/AUL/blob/292f93a256f13a5573472416d608f35be934424a/pom.xml",
+        "branch": "develop",
+    }
+    alert = _parse_item(item, "org/repo")
+    assert alert.alert_details.scm_file == "https://github.com/absa-group/AUL/blob/develop/pom.xml"
 
 
 # AquaSecParser.parse

@@ -22,6 +22,7 @@ from security.constants import (
     GITHUB_BASE_URL,
     SEVERITY_EMOJI,
     TEAMS_ISSUE_LIST_CAP,
+    TEAMS_ISSUE_LIST_MIN_PER_STATE,
 )
 from security.issues.models import SEVERITY_ORDER, IssueChange
 from security.notifications.links import NotificationLinks
@@ -33,7 +34,7 @@ _SEVERITY_DISPLAY_ORDER = sorted(SEVERITY_ORDER, key=lambda severity: SEVERITY_O
 _STATE_SECTIONS: tuple[tuple[str, str], ...] = (
     ("new", "Opened"),
     ("reopen", "Reopened"),
-    ("closed", "Closed"),
+    ("closed", "Solved"),
 )
 
 _LIST_SEPARATOR = "\r"
@@ -67,7 +68,7 @@ def _issue_row(item: IssueChange) -> str:
     url = _issue_url(item.repo, item.issue_number)
     reference = f"[#{item.issue_number}]({url})" if url else "(pending)"
     descriptor = (item.rule_id or "").strip()
-    row = f"- {_severity_emoji(item.severity)} **{item.severity.capitalize()}** - {reference}"
+    row = f"- {_severity_emoji(item.severity)} **{item.severity.capitalize()}:** {reference}"
     return f"{row} - {descriptor}" if descriptor else row
 
 
@@ -77,7 +78,7 @@ def _header(repo: str) -> dict[str, Any]:
         "type": "Container",
         "style": "accent",
         "bleed": True,
-        "backgroundColor": "#7B83EB",
+        "backgroundColor": "#505AC9",
         "items": [
             _text_block("AquaSec Security Scan", weight="Bolder", size="Large", color="dark"),
             _text_block(repo or "unknown repository", isSubtle=True, spacing="None", color="dark"),
@@ -105,7 +106,7 @@ def _change_counters(issue_changes: list[IssueChange]) -> list[dict[str, Any]]:
             counts[item.state] += 1
 
     return [
-        _text_block("Changes in this run", weight="Bolder", spacing="Medium"),
+        _text_block("Vulnerabilities in this run", weight="Bolder", spacing="Medium"),
         {
             "type": "ColumnSet",
             "spacing": "Small",
@@ -114,28 +115,68 @@ def _change_counters(issue_changes: list[IssueChange]) -> list[dict[str, Any]]:
     ]
 
 
-def _issue_sections(issue_changes: list[IssueChange], *, cap: int) -> list[dict[str, Any]]:
-    """Build the per-state issue lists, truncated to *cap* rows in total."""
-    elements: list[dict[str, Any]] = []
-    remaining = cap
+def _allocate_shown_counts(counts: dict[str, int], *, cap: int, floor: int) -> dict[str, int]:
+    """Split *cap* across states so each non-empty state gets at least *floor* before extras.
 
+    Pass 1 gives every state up to ``floor`` items (or all of its items, if it has fewer).
+    Pass 2 hands out whatever of ``cap`` is left over to states that still have hidden items,
+    greedily in dict-iteration order.
+    """
+    if cap <= 0:
+        return dict.fromkeys(counts, 0)
+
+    shown: dict[str, int] = {}
+    remaining = cap
+    for state, total in counts.items():
+        allotted = min(floor, total, remaining)
+        shown[state] = allotted
+        remaining -= allotted
+
+    for state, total in counts.items():
+        if remaining <= 0:
+            break
+        extra = min(total - shown[state], remaining)
+        shown[state] += extra
+        remaining -= extra
+
+    return shown
+
+
+def _issue_sections(issue_changes: list[IssueChange], *, cap: int) -> list[dict[str, Any]]:
+    """Build the per-state issue lists, each keeping a minimum share of the shared cap.
+
+    Issues within a state are shown highest-severity first. Each state reports its own
+    "...and N more" note when truncated.
+    """
+    if cap <= 0:
+        if not issue_changes:
+            return []
+        return [_text_block(f"_...and {len(issue_changes)} more_", isSubtle=True, spacing="Small")]
+
+    by_state = {
+        state: sorted(
+            (item for item in issue_changes if item.state == state),
+            key=lambda item: SEVERITY_ORDER.get((item.severity or "").strip().lower(), 0),
+            reverse=True,
+        )
+        for state, _ in _STATE_SECTIONS
+    }
+    counts = {state: len(items) for state, items in by_state.items()}
+    shown = _allocate_shown_counts(counts, cap=cap, floor=TEAMS_ISSUE_LIST_MIN_PER_STATE)
+
+    elements: list[dict[str, Any]] = []
     for state, heading in _STATE_SECTIONS:
-        items = [item for item in issue_changes if item.state == state]
+        items = by_state[state]
         if not items:
             continue
 
-        shown = items[:remaining] if remaining > 0 else []
-        if not shown:
-            break
-
-        remaining -= len(shown)
+        visible = items[: shown[state]]
         elements.append(_text_block(heading, weight="Bolder", spacing="Medium"))
-        elements.append(_text_block(_LIST_SEPARATOR.join(_issue_row(item) for item in shown), spacing="Small"))
+        elements.append(_text_block(_LIST_SEPARATOR.join(_issue_row(item) for item in visible), spacing="Small"))
 
-    listed = min(cap, len(issue_changes))
-    hidden = len(issue_changes) - listed
-    if hidden > 0:
-        elements.append(_text_block(f"_...and {hidden} more_", isSubtle=True, spacing="Small"))
+        hidden = len(items) - len(visible)
+        if hidden > 0:
+            elements.append(_text_block(f"_...and {hidden} more_", isSubtle=True, spacing="Small"))
 
     return elements
 
@@ -150,49 +191,23 @@ def _posture_severities(min_severity: str) -> list[str]:
     ]
 
 
-def _posture_label_column(severity: str) -> dict[str, Any]:
-    """Build one label cell of the posture grid's header row."""
-    return {
-        "type": "Column",
-        "width": "stretch",
-        "items": [_text_block(f"{_severity_emoji(severity)} {severity.capitalize()}", horizontalAlignment="Center")],
-    }
-
-
-def _posture_value_column(value: int) -> dict[str, Any]:
-    """Build one value cell of the posture grid's count row."""
-    return {
-        "type": "Column",
-        "width": "stretch",
-        "items": [_text_block(str(value), horizontalAlignment="Center")],
-    }
-
-
 def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[str, Any]]:
     """Build the footer summarizing currently-open child issues by severity.
 
     This is secondary, at-a-glance context rather than the main content of the run (that's
-    ``_change_counters`` and ``_issue_sections`` above), so it's rendered smaller and subtler:
-    a plain heading and default-size counts, not the bold/``ExtraLarge`` styling used for the
-    run's own opened/reopened/closed numbers.
+    ``_change_counters`` and ``_issue_sections`` above), so it's rendered as one plain
+    comma-separated line, e.g. ``Critical: 0, High: 1, Low: 7``.
 
     Zero counts are kept so a clean severity reads as explicitly clear rather than missing.
-    Rendered as a two-row grid (severities, then counts) using the same ``ColumnSet`` technique
-    as the rest of the card, rather than the ``Table`` element, which is unverified for the
-    legacy Teams webhook rendering path.
     """
     severities = _posture_severities(min_severity)
     if not severities:
         return []
 
+    summary = ", ".join(f"{severity.capitalize()}: {posture.get(severity, 0)}" for severity in severities)
     return [
-        _text_block(f"Open security issues (severity >= {min_severity})", isSubtle=True, spacing="Medium"),
-        {"type": "ColumnSet", "spacing": "Small", "columns": [_posture_label_column(s) for s in severities]},
-        {
-            "type": "ColumnSet",
-            "spacing": "None",
-            "columns": [_posture_value_column(posture.get(s, 0)) for s in severities],
-        },
+        _text_block("Repository vulnerabilities", weight="Bolder", spacing="Medium"),
+        _text_block(summary, spacing="Small"),
     ]
 
 

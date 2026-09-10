@@ -23,6 +23,7 @@ from pytest_mock import MockerFixture
 
 from security.issues.models import IssueChange
 from security.notifications.card import (
+    _allocate_shown_counts,
     _issue_row,
     _posture_severities,
     build_message_payload,
@@ -69,7 +70,7 @@ def test_issue_row_links_and_marks_severity(links: NotificationLinks) -> None:
     """A numbered issue renders an emoji, bold severity, markdown link and rule id."""
     row = _issue_row(_issue(101, severity="critical", rule_id="Secrets"))
     assert "🔴" in row
-    assert "**Critical**" in row
+    assert "**Critical:**" in row
     assert f"[#101](https://github.com/{REPO}/issues/101)" in row
     assert row.endswith("Secrets")
 
@@ -112,7 +113,7 @@ def test_card_header_names_repository_and_is_coloured(links: NotificationLinks) 
     assert "Container" == header["type"]
     assert "accent" == header["style"]
     assert header["bleed"] is True
-    assert "#7B83EB" == header["backgroundColor"]
+    assert "#505AC9" == header["backgroundColor"]
     assert REPO == header["items"][1]["text"]
     assert all(item["color"] == "dark" for item in header["items"])
 
@@ -122,7 +123,40 @@ def test_card_counts_each_state(links: NotificationLinks) -> None:
     issue_changes = [_issue(1), _issue(2), _issue(3, state="reopen"), _issue(4, state="closed")]
     columns = next(e for e in _build(links, issue_changes=issue_changes)["body"] if e["type"] == "ColumnSet")["columns"]
     assert ["2", "1", "1"] == [column["items"][0]["text"] for column in columns]
-    assert ["Opened", "Reopened", "Closed"] == [column["items"][1]["text"] for column in columns]
+    assert ["Opened", "Reopened", "Solved"] == [column["items"][1]["text"] for column in columns]
+
+
+# _allocate_shown_counts
+
+
+def test_allocate_shown_counts_returns_full_counts_when_under_cap() -> None:
+    """No truncation is needed when everything already fits within the cap."""
+    counts = {"new": 3, "reopen": 2, "closed": 0}
+    assert counts == _allocate_shown_counts(counts, cap=10, floor=3)
+
+
+def test_allocate_shown_counts_gives_leftover_to_earlier_states_first() -> None:
+    """The worked example: 8/2/4 with cap 10, floor 3 -> 5/2/3."""
+    counts = {"new": 8, "reopen": 2, "closed": 4}
+    assert {"new": 5, "reopen": 2, "closed": 3} == _allocate_shown_counts(counts, cap=10, floor=3)
+
+
+def test_allocate_shown_counts_skips_empty_states() -> None:
+    """A state with zero items contributes nothing and takes nothing."""
+    counts = {"new": 12, "reopen": 0, "closed": 0}
+    assert {"new": 10, "reopen": 0, "closed": 0} == _allocate_shown_counts(counts, cap=10, floor=3)
+
+
+def test_allocate_shown_counts_shrinks_floor_when_cap_is_too_small() -> None:
+    """When the cap can't cover every state's floor, later states get less than the floor."""
+    counts = {"new": 8, "reopen": 2, "closed": 4}
+    assert {"new": 3, "reopen": 2, "closed": 0} == _allocate_shown_counts(counts, cap=5, floor=3)
+
+
+def test_allocate_shown_counts_zero_cap_shows_nothing() -> None:
+    """A non-positive cap shows nothing for any state."""
+    counts = {"new": 5, "reopen": 1, "closed": 0}
+    assert {"new": 0, "reopen": 0, "closed": 0} == _allocate_shown_counts(counts, cap=0, floor=3)
 
 
 # build_security_card - issue sections
@@ -134,7 +168,7 @@ def test_card_groups_issues_by_state_with_carriage_return_lists(links: Notificat
     texts = _texts(_build(links, issue_changes=issue_changes))
 
     assert "Opened" in texts
-    assert "Closed" in texts
+    assert "Solved" in texts
     assert "Reopened" not in texts  # no reopened issues, so no empty section
 
     opened_rows = texts[texts.index("Opened") + 1]
@@ -143,13 +177,49 @@ def test_card_groups_issues_by_state_with_carriage_return_lists(links: Notificat
 
 
 def test_card_caps_issue_list_and_reports_remainder(links: NotificationLinks) -> None:
-    """Only *issue_cap* issues are listed; the rest are summarised to protect the size limit."""
-    issue_changes = [_issue(n) for n in range(1, 16)]
+    """Each state keeps its own share of the cap and reports its own remainder."""
+    issue_changes = (
+        [_issue(n) for n in range(1, 9)]
+        + [_issue(n, state="reopen") for n in range(9, 11)]
+        + [_issue(n, state="closed") for n in range(11, 15)]
+    )
     texts = _texts(_build(links, issue_changes=issue_changes, issue_cap=10))
 
-    rows = texts[texts.index("Opened") + 1]
-    assert 10 == len(rows.split("\r"))
-    assert any("...and 5 more" in text for text in texts)
+    opened_rows = texts[texts.index("Opened") + 1]
+    reopened_rows = texts[texts.index("Reopened") + 1]
+    solved_rows = texts[texts.index("Solved") + 1]
+
+    assert 5 == len(opened_rows.split("\r"))
+    assert 2 == len(reopened_rows.split("\r"))
+    assert 3 == len(solved_rows.split("\r"))
+
+    assert "_...and 3 more_" == texts[texts.index("Opened") + 2]
+    assert "_...and 1 more_" == texts[texts.index("Solved") + 2]
+    assert not any("more" in text for text in texts[texts.index("Reopened") : texts.index("Solved")])
+
+
+def test_card_issue_list_never_starves_a_smaller_state(links: NotificationLinks) -> None:
+    """A single reopened issue still gets shown even when opened alone exceeds the cap."""
+    issue_changes = [_issue(n) for n in range(1, 21)] + [_issue(21, state="reopen")]
+    texts = _texts(_build(links, issue_changes=issue_changes, issue_cap=10))
+
+    assert "Reopened" in texts
+    reopened_rows = texts[texts.index("Reopened") + 1]
+    assert 1 == len(reopened_rows.split("\r"))
+
+
+def test_card_issue_rows_sorted_highest_severity_first(links: NotificationLinks) -> None:
+    """Issues within a state render critical-first regardless of input order."""
+    issue_changes = [
+        _issue(1, severity="low"),
+        _issue(2, severity="critical"),
+        _issue(3, severity="medium"),
+        _issue(4, severity="high"),
+    ]
+    texts = _texts(_build(links, issue_changes=issue_changes))
+
+    opened_rows = texts[texts.index("Opened") + 1].split("\r")
+    assert ["#2", "#4", "#3", "#1"] == [row.split("](")[0].split("[")[1] for row in opened_rows]
 
 
 def test_card_cap_zero_omits_rows_but_keeps_counters(links: NotificationLinks) -> None:
@@ -163,28 +233,32 @@ def test_card_cap_zero_omits_rows_but_keeps_counters(links: NotificationLinks) -
     assert any(element["type"] == "ColumnSet" for element in card["body"])
 
 
+def test_card_cap_zero_omits_overflow_note_when_no_issues(links: NotificationLinks) -> None:
+    """Zero cap with no issue activity renders no overflow note (nothing was actually hidden)."""
+    card = _build(links, issue_changes=[], issue_cap=0)
+    assert not any("more" in element.get("text", "") for element in card["body"])
+
+
 # build_security_card - posture footer
 
 
 def test_card_posture_keeps_zero_counts_within_threshold(links: NotificationLinks) -> None:
     """Zero counts are shown so a clean severity reads as explicitly clear."""
     card = _build(links, posture={"high": 22, "low": 9}, min_severity="medium")
-    heading_index = next(i for i, e in enumerate(card["body"]) if e.get("text", "").startswith("Open security issues"))
+    heading_index = next(i for i, e in enumerate(card["body"]) if e.get("text", "") == "Repository vulnerabilities")
     heading = card["body"][heading_index]
-    label_columns = card["body"][heading_index + 1]["columns"]
-    value_columns = card["body"][heading_index + 2]["columns"]
+    summary = card["body"][heading_index + 1]
 
-    assert heading["isSubtle"] is True  # secondary info, not the run's own counters
-    assert ["🔴 Critical", "🟠 High", "🟡 Medium"] == [column["items"][0]["text"] for column in label_columns]
-    assert ["0", "22", "0"] == [column["items"][0]["text"] for column in value_columns]  # 'low' is below the threshold
-    assert all("size" not in column["items"][0] for column in value_columns)  # subtler than the main counters
+    assert heading["weight"] == "Bolder"  # same emphasis as the other section headings
+    assert "isSubtle" not in heading
+    assert "Critical: 0, High: 22, Medium: 0" == summary["text"]  # 'low' is below the threshold, no emoji
 
 
 def test_card_omits_posture_section_when_no_severity_qualifies(links: NotificationLinks, mocker: MockerFixture) -> None:
     """No section is rendered when the configured threshold leaves nothing to report."""
     mocker.patch("security.notifications.card._posture_severities", return_value=[])
     card = _build(links, posture={"high": 1})
-    assert not any(e.get("text", "").startswith("Open security issues") for e in card["body"])
+    assert not any(e.get("text", "") == "Repository vulnerabilities" for e in card["body"])
 
 
 # build_security_card - actions

@@ -56,6 +56,7 @@ FETCH_SLEEP_SECONDS = 2
 AQUA_PLATFORM_URL = "https://eu-1.cloud.aquasec.com/ah/#/supplychain/codeRepositories/repositories"
 TEAMS_CARD_MAX_BYTES = 24_000
 TEAMS_ISSUE_LIST_CAP = 10
+TEAMS_ISSUE_LIST_MIN_PER_STATE = 3
 TEAMS_SUCCESS_BODIES: frozenset[str] = frozenset({"", "1"})
 
 SEVERITY_EMOJI: dict[str, str] = {

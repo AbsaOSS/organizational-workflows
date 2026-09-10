@@ -208,7 +208,7 @@ def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[st
             _posture_heading_text(min_severity),
             weight="Bolder",
             size="Medium",
-            spacing="Large",
+            spacing="ExtraLarge",
             horizontalAlignment="Center",
         ),
         {

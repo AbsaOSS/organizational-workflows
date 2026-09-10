@@ -60,7 +60,7 @@ def _issue_url(repo: str, issue_number: int) -> str:
 
 
 def _issue_row(item: IssueChange) -> str:
-    """Render a single issue as a Markdown list item.
+    """Render a single issue as one plain line (no list bullet).
 
     Issues created during a dry run have no number yet, so they are marked as pending
     rather than rendered as a broken link.
@@ -68,7 +68,7 @@ def _issue_row(item: IssueChange) -> str:
     url = _issue_url(item.repo, item.issue_number)
     reference = f"[#{item.issue_number}]({url})" if url else "(pending)"
     descriptor = (item.rule_id or "").strip()
-    row = f"- {_severity_emoji(item.severity)} **{item.severity.capitalize()}:** {reference}"
+    row = f"{_severity_emoji(item.severity)} **{item.severity.capitalize()}:** {reference}"
     return f"{row} ({descriptor})" if descriptor else row
 
 
@@ -208,7 +208,7 @@ def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[st
             _posture_heading_text(min_severity),
             weight="Bolder",
             size="Medium",
-            spacing="Medium",
+            spacing="Large",
             horizontalAlignment="Center",
         ),
         {

@@ -105,7 +105,7 @@ def _change_counters(issue_changes: list[IssueChange]) -> list[dict[str, Any]]:
             counts[item.state] += 1
 
     return [
-        _text_block("Vulnerabilities this run", weight="Bolder", size="Medium", spacing="Medium"),
+        _text_block("Vulnerabilities this run", weight="Bolder", size="Large", spacing="Medium"),
         {
             "type": "ColumnSet",
             "spacing": "Small",
@@ -205,7 +205,9 @@ def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[st
 
     summary = "  ".join(f"**{severity.capitalize()}:** {posture.get(severity, 0)}" for severity in severities)
     return [
-        _text_block("Repository vulnerabilities", weight="Bolder", size="Medium", spacing="Medium"),
+        _text_block(
+            f"Repository vulnerabilities (severity >= {min_severity})", weight="Bolder", size="Large", spacing="Medium"
+        ),
         _text_block(summary, spacing="Small"),
     ]
 

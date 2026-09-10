@@ -246,8 +246,11 @@ def test_card_cap_zero_omits_overflow_note_when_no_issues(links: NotificationLin
 def test_card_posture_keeps_zero_counts_within_threshold(links: NotificationLinks) -> None:
     """Zero counts are shown so a clean severity reads as explicitly clear."""
     card = _build(links, posture={"high": 22, "low": 9}, min_severity="medium")
-    heading_index = next(i for i, e in enumerate(card["body"]) if e.get("text", "") == "Repository vulnerabilities")
+    heading_index = next(
+        i for i, e in enumerate(card["body"]) if e.get("text", "").startswith("Repository vulnerabilities")
+    )
     heading = card["body"][heading_index]
+    assert heading["text"] == "Repository vulnerabilities (severity >= medium)"
     summary = card["body"][heading_index + 1]
 
     assert "isSubtle" not in heading
@@ -258,7 +261,7 @@ def test_card_omits_posture_section_when_no_severity_qualifies(links: Notificati
     """No section is rendered when the configured threshold leaves nothing to report."""
     mocker.patch("security.notifications.card._posture_severities", return_value=[])
     card = _build(links, posture={"high": 1})
-    assert not any(e.get("text", "") == "Repository vulnerabilities" for e in card["body"])
+    assert not any(e.get("text", "").startswith("Repository vulnerabilities") for e in card["body"])
 
 
 # build_security_card - actions

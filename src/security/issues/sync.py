@@ -249,6 +249,7 @@ def maybe_reopen_parent_issue(
 
     if gh_issue_edit_state(repo, parent_issue.number, "open"):
         parent_issue.state = "open"
+        logging.info(LOGGING_PREFIX + "Reopened parent issue #%d %s", parent_issue.number, rule_id)
         stats.parents_reopened += 1
         bump_severity(stats.parents_reopened_by_severity, parent_severity)
 
@@ -571,11 +572,11 @@ def _maybe_reopen_child(
     if sync.dry_run:
         reopened = True
         child_issue.state = "open"
-        logging.info(DRY_RUN_PREFIX + "Would reopen issue #%d", child_issue.number)
+        logging.info(DRY_RUN_PREFIX + "Would reopen child issue #%d", child_issue.number)
     elif gh_issue_edit_state(ctx.repo, child_issue.number, "open"):
         reopened = True
         child_issue.state = "open"
-        logging.info(LOGGING_PREFIX + "Reopened issue #%d", child_issue.number)
+        logging.info(LOGGING_PREFIX + "Reopened child issue #%d", child_issue.number)
 
     if reopened:
         sync.stats.children_reopened += 1

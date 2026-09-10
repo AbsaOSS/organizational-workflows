@@ -244,24 +244,32 @@ def test_card_cap_zero_omits_overflow_note_when_no_issues(links: NotificationLin
 
 
 def test_card_posture_keeps_zero_counts_within_threshold(links: NotificationLinks) -> None:
-    """Zero counts are shown so a clean severity reads as explicitly clear."""
+    """Zero counts are shown so a clean severity reads as explicitly clear, 'low' is excluded."""
     card = _build(links, posture={"high": 22, "low": 9}, min_severity="medium")
     heading_index = next(
-        i for i, e in enumerate(card["body"]) if e.get("text", "").startswith("Repository vulnerabilities")
+        i for i, e in enumerate(card["body"]) if e.get("text", "").startswith("Vulnerabilities repository")
     )
     heading = card["body"][heading_index]
-    assert heading["text"] == "Repository vulnerabilities (severity >= medium)"
-    summary = card["body"][heading_index + 1]
+    columns = card["body"][heading_index + 1]["columns"]
 
-    assert "isSubtle" not in heading
-    assert "**Critical:** 0  **High:** 22  **Medium:** 0" == summary["text"]  # 'low' is below the threshold, no emoji
+    assert heading["text"] == "Vulnerabilities repository (severity >= medium)"
+    assert ["Critical", "High", "Medium"] == [column["items"][1]["text"] for column in columns]
+    assert ["0", "22", "0"] == [column["items"][0]["text"] for column in columns]
+
+
+def test_card_posture_omits_threshold_suffix_when_showing_everything(links: NotificationLinks) -> None:
+    """'low' means every severity is shown, so the '(severity >= low)' suffix would be redundant."""
+    card = _build(links, posture={"high": 1}, min_severity="low")
+    heading = next(e for e in card["body"] if e.get("text", "").startswith("Vulnerabilities repository"))
+
+    assert heading["text"] == "Vulnerabilities repository"
 
 
 def test_card_omits_posture_section_when_no_severity_qualifies(links: NotificationLinks, mocker: MockerFixture) -> None:
     """No section is rendered when the configured threshold leaves nothing to report."""
     mocker.patch("security.notifications.card._posture_severities", return_value=[])
     card = _build(links, posture={"high": 1})
-    assert not any(e.get("text", "").startswith("Repository vulnerabilities") for e in card["body"])
+    assert not any(e.get("text", "").startswith("Vulnerabilities repository") for e in card["body"])
 
 
 # build_security_card - actions

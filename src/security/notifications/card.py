@@ -105,7 +105,9 @@ def _change_counters(issue_changes: list[IssueChange]) -> list[dict[str, Any]]:
             counts[item.state] += 1
 
     return [
-        _text_block("Vulnerabilities this run", weight="Bolder", size="Large", spacing="Medium"),
+        _text_block(
+            "Vulnerabilities this run", weight="Bolder", size="Medium", spacing="Medium", horizontalAlignment="Center"
+        ),
         {
             "type": "ColumnSet",
             "spacing": "Small",
@@ -190,12 +192,20 @@ def _posture_severities(min_severity: str) -> list[str]:
     ]
 
 
+def _posture_heading_text(min_severity: str) -> str:
+    """Return the posture section's heading, qualified by threshold unless it's a no-op."""
+    heading = "Vulnerabilities repository"
+    if min_severity != "low":
+        heading += f" (severity >= {min_severity})"
+    return heading
+
+
 def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[str, Any]]:
     """Build the footer summarizing currently-open child issues by severity.
 
-    This is secondary, at-a-glance context rather than the main content of the run (that's
-    ``_change_counters`` and ``_issue_sections`` above), so it's rendered as one plain
-    comma-separated line, e.g. ``Critical: 0, High: 1, Low: 7``.
+    This is secondary, at-a-glance context rather than the main content of the run, so it
+    mirrors ``_change_counters``'s stat-column layout: one column per qualifying severity,
+    with the count on top and the severity name below.
 
     Zero counts are kept so a clean severity reads as explicitly clear rather than missing.
     """
@@ -203,12 +213,19 @@ def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[st
     if not severities:
         return []
 
-    summary = "  ".join(f"**{severity.capitalize()}:** {posture.get(severity, 0)}" for severity in severities)
     return [
         _text_block(
-            f"Repository vulnerabilities (severity >= {min_severity})", weight="Bolder", size="Large", spacing="Medium"
+            _posture_heading_text(min_severity),
+            weight="Bolder",
+            size="Medium",
+            spacing="Medium",
+            horizontalAlignment="Center",
         ),
-        _text_block(summary, spacing="Small"),
+        {
+            "type": "ColumnSet",
+            "spacing": "Small",
+            "columns": [_stat_column(severity.capitalize(), posture.get(severity, 0)) for severity in severities],
+        },
     ]
 
 

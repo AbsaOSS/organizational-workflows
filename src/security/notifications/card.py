@@ -76,10 +76,10 @@ def _header(repo: str) -> dict[str, Any]:
     """Build the colored, edge-to-edge card header naming the repository."""
     return {
         "type": "Container",
-        "style": "warning",
+        "style": "attention",
         "bleed": True,
         "items": [
-            _text_block("AquaSec Security Scan", weight="Bolder", size="ExtraLarge", color="dark"),
+            _text_block("AquaSec Security Scan", weight="Bolder", size="Large", color="dark"),
             _text_block(repo or "unknown repository", isSubtle=True, spacing="None", color="dark"),
         ],
     }
@@ -105,7 +105,7 @@ def _change_counters(issue_changes: list[IssueChange]) -> list[dict[str, Any]]:
             counts[item.state] += 1
 
     return [
-        _text_block("Vulnerabilities this run", weight="Bolder", size="Large", spacing="Medium"),
+        _text_block("Vulnerabilities this run", weight="Bolder", size="Medium", spacing="Medium"),
         {
             "type": "ColumnSet",
             "spacing": "Small",
@@ -205,7 +205,7 @@ def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[st
 
     summary = "  ".join(f"**{severity.capitalize()}:** {posture.get(severity, 0)}" for severity in severities)
     return [
-        _text_block("Repository vulnerabilities", weight="Bolder", size="Large", spacing="Medium"),
+        _text_block("Repository vulnerabilities", weight="Bolder", size="Medium", spacing="Medium"),
         _text_block(summary, spacing="Small"),
     ]
 

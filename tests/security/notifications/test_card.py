@@ -23,7 +23,6 @@ from pytest_mock import MockerFixture
 
 from security.issues.models import IssueChange
 from security.notifications.card import (
-    _allocate_shown_counts,
     _issue_row,
     _posture_severities,
     build_message_payload,
@@ -149,39 +148,6 @@ def test_card_counts_each_state(links: NotificationLinks) -> None:
     assert ["Opened", "Reopened", "Solved"] == [column["items"][1]["text"] for column in columns]
 
 
-# _allocate_shown_counts
-
-
-def test_allocate_shown_counts_returns_full_counts_when_under_cap() -> None:
-    """No truncation is needed when everything already fits within the cap."""
-    counts = {"new": 3, "reopen": 2, "closed": 0}
-    assert counts == _allocate_shown_counts(counts, cap=10, floor=3)
-
-
-def test_allocate_shown_counts_gives_leftover_to_earlier_states_first() -> None:
-    """The worked example: 8/2/4 with cap 10, floor 3 -> 5/2/3."""
-    counts = {"new": 8, "reopen": 2, "closed": 4}
-    assert {"new": 5, "reopen": 2, "closed": 3} == _allocate_shown_counts(counts, cap=10, floor=3)
-
-
-def test_allocate_shown_counts_skips_empty_states() -> None:
-    """A state with zero items contributes nothing and takes nothing."""
-    counts = {"new": 12, "reopen": 0, "closed": 0}
-    assert {"new": 10, "reopen": 0, "closed": 0} == _allocate_shown_counts(counts, cap=10, floor=3)
-
-
-def test_allocate_shown_counts_shrinks_floor_when_cap_is_too_small() -> None:
-    """When the cap can't cover every state's floor, later states get less than the floor."""
-    counts = {"new": 8, "reopen": 2, "closed": 4}
-    assert {"new": 3, "reopen": 2, "closed": 0} == _allocate_shown_counts(counts, cap=5, floor=3)
-
-
-def test_allocate_shown_counts_zero_cap_shows_nothing() -> None:
-    """A non-positive cap shows nothing for any state."""
-    counts = {"new": 5, "reopen": 1, "closed": 0}
-    assert {"new": 0, "reopen": 0, "closed": 0} == _allocate_shown_counts(counts, cap=0, floor=3)
-
-
 # build_security_card - issue sections
 
 
@@ -199,32 +165,22 @@ def test_card_groups_issues_by_state_with_carriage_return_lists(links: Notificat
     assert _column_rows(columns["Reopened"]) is None  # no reopened issues, so no rows
 
 
-def test_card_caps_issue_list_and_reports_remainder(links: NotificationLinks) -> None:
-    """Each state keeps its own share of the cap and reports its own remainder."""
+def test_card_caps_issue_list_per_state_independently(links: NotificationLinks) -> None:
+    """Each state is capped on its own -- one state hitting the cap doesn't affect the others."""
     issue_changes = (
-        [_issue(n) for n in range(1, 9)]
-        + [_issue(n, state="reopen") for n in range(9, 11)]
-        + [_issue(n, state="closed") for n in range(11, 15)]
+        [_issue(n) for n in range(1, 13)]  # 12 opened, exceeds the cap
+        + [_issue(n, state="reopen") for n in range(13, 15)]  # 2 reopened, well under the cap
+        + [_issue(n, state="closed") for n in range(15, 19)]  # 4 closed, well under the cap
     )
     columns = _run_columns(_build(links, issue_changes=issue_changes, issue_cap=10))
 
-    assert 5 == len(_column_rows(columns["Opened"]).split("\r"))  # type: ignore[union-attr]
+    assert 10 == len(_column_rows(columns["Opened"]).split("\r"))  # type: ignore[union-attr]
     assert 2 == len(_column_rows(columns["Reopened"]).split("\r"))  # type: ignore[union-attr]
-    assert 3 == len(_column_rows(columns["Solved"]).split("\r"))  # type: ignore[union-attr]
+    assert 4 == len(_column_rows(columns["Solved"]).split("\r"))  # type: ignore[union-attr]
 
-    assert "_...and 3 more_" == _column_overflow(columns["Opened"])
-    assert "_...and 1 more_" == _column_overflow(columns["Solved"])
+    assert "_...and 2 more_" == _column_overflow(columns["Opened"])
     assert _column_overflow(columns["Reopened"]) is None
-
-
-def test_card_issue_list_never_starves_a_smaller_state(links: NotificationLinks) -> None:
-    """A single reopened issue still gets shown even when opened alone exceeds the cap."""
-    issue_changes = [_issue(n) for n in range(1, 21)] + [_issue(21, state="reopen")]
-    columns = _run_columns(_build(links, issue_changes=issue_changes, issue_cap=10))
-
-    reopened_rows = _column_rows(columns["Reopened"])
-    assert reopened_rows is not None
-    assert 1 == len(reopened_rows.split("\r"))
+    assert _column_overflow(columns["Solved"]) is None
 
 
 def test_card_issue_rows_sorted_highest_severity_first(links: NotificationLinks) -> None:

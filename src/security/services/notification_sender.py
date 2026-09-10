@@ -28,7 +28,7 @@ from security.constants import (
     HTTP_TIMEOUT,
     LOGGING_PREFIX,
     TEAMS_CARD_MAX_BYTES,
-    TEAMS_ISSUE_LIST_CAP,
+    TEAMS_ISSUE_CAP_PER_STATE,
     TEAMS_SUCCESS_BODIES,
 )
 from security.issues.models import SyncResult
@@ -111,14 +111,14 @@ class NotificationSender:
         return build_message_payload(self._build_card(result, links, issue_cap=0))
 
     def _build_card(
-        self, result: SyncResult, links: NotificationLinks, *, issue_cap: int = TEAMS_ISSUE_LIST_CAP
+        self, result: SyncResult, links: NotificationLinks, *, issue_cap: int = TEAMS_ISSUE_CAP_PER_STATE
     ) -> dict[str, Any]:
         """Render the Adaptive Card for a sync result.
 
         Args:
             result: Sync result carrying issue activity and posture.
             links: Repository and workflow-run links for the card.
-            issue_cap: Maximum number of issues listed individually; 0 omits the list.
+            issue_cap: Maximum number of issues listed individually per state; 0 omits the list.
 
         Returns:
             The rendered Adaptive Card.

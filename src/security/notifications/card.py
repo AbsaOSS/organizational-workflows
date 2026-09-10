@@ -21,8 +21,7 @@ from typing import Any
 from security.constants import (
     GITHUB_BASE_URL,
     SEVERITY_EMOJI,
-    TEAMS_ISSUE_LIST_CAP,
-    TEAMS_ISSUE_LIST_MIN_PER_STATE,
+    TEAMS_ISSUE_CAP_PER_STATE,
 )
 from security.issues.models import SEVERITY_ORDER, IssueChange
 from security.notifications.links import NotificationLinks
@@ -104,41 +103,13 @@ def _stat_column(label: str, value: int, rows: list[str] | None = None, hidden: 
     }
 
 
-def _allocate_shown_counts(counts: dict[str, int], *, cap: int, floor: int) -> dict[str, int]:
-    """Split *cap* across states so each non-empty state gets at least *floor* before extras.
-
-    Pass 1 gives every state up to ``floor`` items (or all of its items, if it has fewer).
-    Pass 2 hands out whatever of ``cap`` is left over to states that still have hidden items,
-    greedily in dict-iteration order.
-    """
-    if cap <= 0:
-        return dict.fromkeys(counts, 0)
-
-    shown: dict[str, int] = {}
-    remaining = cap
-    for state, total in counts.items():
-        allotted = min(floor, total, remaining)
-        shown[state] = allotted
-        remaining -= allotted
-
-    for state, total in counts.items():
-        if remaining <= 0:
-            break
-        extra = min(total - shown[state], remaining)
-        shown[state] += extra
-        remaining -= extra
-
-    return shown
-
-
 def _run_summary(issue_changes: list[IssueChange], *, cap: int) -> list[dict[str, Any]]:
     """Build the "Vulnerabilities this run" heading plus one column per state.
 
     Each column shows that state's count, then -- space permitting -- its own bullet list of
-    issues (highest severity first), capped by ``_allocate_shown_counts``, with its own
-    "...and N more" note when truncated. A non-positive cap keeps every count visible but
-    shows no rows, since ``_allocate_shown_counts`` naturally allots zero rows to every state
-    in that case; each non-empty state still gets its own overflow note.
+    issues (highest severity first), each independently capped at *cap* (so up to ``3 * cap``
+    rows total across the three columns), with its own "...and N more" note when truncated. A
+    non-positive cap keeps every count visible but shows no rows.
     """
     counts = {state: 0 for state, _ in _STATE_SECTIONS}
     by_state: dict[str, list[IssueChange]] = {state: [] for state, _ in _STATE_SECTIONS}
@@ -150,12 +121,10 @@ def _run_summary(issue_changes: list[IssueChange], *, cap: int) -> list[dict[str
     for state, items in by_state.items():
         items.sort(key=lambda item: SEVERITY_ORDER.get((item.severity or "").strip().lower(), 0), reverse=True)
 
-    shown = _allocate_shown_counts(counts, cap=cap, floor=TEAMS_ISSUE_LIST_MIN_PER_STATE)
-
     columns = []
     for state, label in _STATE_SECTIONS:
         items = by_state[state]
-        visible = items[: shown[state]]
+        visible = items[: max(cap, 0)]
         rows = [_issue_row(item) for item in visible]
         hidden = len(items) - len(visible)
         columns.append(_stat_column(label, counts[state], rows, hidden))
@@ -244,7 +213,7 @@ def build_security_card(
     issue_changes: list[IssueChange],
     posture: dict[str, int],
     min_severity: str,
-    issue_cap: int = TEAMS_ISSUE_LIST_CAP,
+    issue_cap: int = TEAMS_ISSUE_CAP_PER_STATE,
 ) -> dict[str, Any]:
     """Render a completed sync run as a Teams Adaptive Card.
 
@@ -253,7 +222,8 @@ def build_security_card(
         issue_changes: Child issues opened, reopened or closed during the run.
         posture: Count of currently-open child issues per severity.
         min_severity: Configured issue-creation threshold, used to scope the footer.
-        issue_cap: Maximum number of issues listed individually across all sections.
+        issue_cap: Maximum number of issues listed individually per state (Opened/Reopened/
+            Solved), applied independently to each.
 
     Returns:
         The Adaptive Card object, ready to be wrapped in a Teams message payload.

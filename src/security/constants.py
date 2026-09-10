@@ -55,8 +55,7 @@ FETCH_SLEEP_SECONDS = 2
 # Teams Adaptive Card rendering
 AQUA_PLATFORM_URL = "https://eu-1.cloud.aquasec.com/ah/#/supplychain/codeRepositories/repositories"
 TEAMS_CARD_MAX_BYTES = 24_000
-TEAMS_ISSUE_LIST_CAP = 10
-TEAMS_ISSUE_LIST_MIN_PER_STATE = 3
+TEAMS_ISSUE_CAP_PER_STATE = 10
 TEAMS_SUCCESS_BODIES: frozenset[str] = frozenset({"", "1"})
 
 SEVERITY_EMOJI: dict[str, str] = {

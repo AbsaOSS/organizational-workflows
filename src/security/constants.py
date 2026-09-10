@@ -52,6 +52,20 @@ HTTP_TIMEOUT = 30
 FETCH_PAGE_SIZE = 100
 FETCH_SLEEP_SECONDS = 2
 
+# Teams Adaptive Card rendering
+AQUA_PLATFORM_URL = "https://eu-1.cloud.aquasec.com/ah/#/supplychain/codeRepositories/repositories"
+TEAMS_CARD_MAX_BYTES = 24_000
+TEAMS_ISSUE_CAP_PER_STATE = 10
+TEAMS_SUCCESS_BODIES: frozenset[str] = frozenset({"", "1"})
+
+SEVERITY_EMOJI: dict[str, str] = {
+    "critical": "🔴",
+    "high": "🟠",
+    "medium": "🟡",
+    "low": "🟢",
+    "unknown": "⚪",
+}
+
 # Severity mapping (AquaSec numeric → lowercase string)
 SEVERITY_MAP: dict[int, str] = {1: "low", 2: "medium", 3: "high", 4: "critical"}
 

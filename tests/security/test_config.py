@@ -134,6 +134,33 @@ def test_load_reads_repo_from_args():
     assert "org/repo" == config.repo
 
 
+def test_load_reads_actions_run_env(monkeypatch):
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.absa.co.za")
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+
+    config = SecurityConfig.load(_make_args())
+
+    assert "https://github.absa.co.za" == config.github_server_url
+    assert "12345" == config.github_run_id
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("true", True), ("false", False), ("", False)],
+)
+def test_load_reads_github_actions_flag(monkeypatch, raw, expected):
+    """Annotations are only emitted on a runner, where Actions sets the flag to 'true'."""
+    monkeypatch.setenv("GITHUB_ACTIONS", raw)
+
+    assert expected == SecurityConfig.load(_make_args()).github_actions
+
+
+def test_load_defaults_github_actions_flag_to_false(monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+
+    assert SecurityConfig.load(_make_args()).github_actions is False
+
+
 def test_load_falls_back_to_github_repository_env(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", "env-org/env-repo")
     monkeypatch.setenv("AQUA_KEY", "k")

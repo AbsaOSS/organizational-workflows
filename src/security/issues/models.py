@@ -29,36 +29,24 @@ ParentOriginalBodies = dict[int, IssueBodySnapshot]  # Maps issue number → bod
 
 @dataclass
 class IssueIndex:
-    """In-memory indexes for fast issue lookup by fingerprint and rule_id."""
+    """Lookup maps over the repository's security issues, split by issue kind."""
 
-    by_fingerprint: dict[str, Issue]
+    child_by_fingerprint: dict[str, Issue]
     parent_by_rule_id: dict[str, Issue]
 
 
 @dataclass
-class NotifiedIssue:
-    """Tracks a new or reopened child issue for Teams notification."""
+class IssueChange:
+    """Tracks a child issue whose state changed during a sync, for Teams notification."""
 
     repo: str
     issue_number: int
     severity: str
-    category: str
-    state: str  # "new" or "reopen"
-    tool: str
-
-
-@dataclass
-class SeverityChange:
-    """Records a parent issue whose severity changed between syncs."""
-
-    repo: str
-    issue_number: int
     rule_id: str
-    old_severity: str
-    new_severity: str
+    state: str  # "new", "reopen" or "closed"
 
 
-# Ordered from lowest to highest so we can compute direction.
+# Ordered from lowest to highest so severities can be ranked and filtered.
 SEVERITY_ORDER: dict[str, int] = {
     "unknown": 0,
     "low": 1,
@@ -66,17 +54,6 @@ SEVERITY_ORDER: dict[str, int] = {
     "high": 3,
     "critical": 4,
 }
-
-
-def severity_direction(old: str, new: str) -> str:
-    """Return an emoji+label describing the direction of a severity change."""
-    old_rank = SEVERITY_ORDER.get(old.lower(), -1)
-    new_rank = SEVERITY_ORDER.get(new.lower(), -1)
-    if new_rank > old_rank:
-        return "⬆️ escalated"
-    if new_rank < old_rank:
-        return "⬇️ de-escalated"
-    return "↔️ unchanged"
 
 
 @dataclass
@@ -117,8 +94,8 @@ def bump_severity(counter: dict[str, int], severity: str | None) -> None:
 class SyncResult:
     """Aggregated output of a full sync run."""
 
-    notifications: list[NotifiedIssue]
-    severity_changes: list[SeverityChange]
+    issue_changes: list[IssueChange]
+    open_child_issues_by_severity: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -145,12 +122,11 @@ class SyncContext:
     """Shared orchestration state for the sync run."""
 
     issues: dict[int, Issue]
-    index: IssueIndex
+    issue_index: IssueIndex
     dry_run: bool
-    notifications: list[NotifiedIssue] | None
+    issue_changes: list[IssueChange] | None
     severity_priority_map: dict[str, str]
     priority_sync: ProjectPrioritySync | None
     stats: SyncStats = field(default_factory=SyncStats)
     parent_sub_issues_cache: dict[int, set[int]] = field(default_factory=dict)
-    severity_changes: list[SeverityChange] = field(default_factory=list)
     parent_original_bodies: ParentOriginalBodies = field(default_factory=dict)

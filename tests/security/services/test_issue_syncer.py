@@ -46,7 +46,7 @@ def config():
 def test_sync_calls_sync_alerts_and_issues(mocker, config):
     mocker.patch("security.services.issue_syncer.gh_issue_list_by_label", return_value={})
     mock_sync = mocker.patch("security.services.issue_syncer.sync_alerts_and_issues")
-    mock_sync.return_value = MagicMock(notifications=[], severity_changes=[])
+    mock_sync.return_value = MagicMock(issue_changes=[])
 
     syncer = IssueSyncer(config)
     syncer.sync({}, dry_run=False)
@@ -57,7 +57,7 @@ def test_sync_calls_sync_alerts_and_issues(mocker, config):
 def test_sync_passes_dry_run(mocker, config):
     mocker.patch("security.services.issue_syncer.gh_issue_list_by_label", return_value={})
     mock_sync = mocker.patch("security.services.issue_syncer.sync_alerts_and_issues")
-    mock_sync.return_value = MagicMock(notifications=[], severity_changes=[])
+    mock_sync.return_value = MagicMock(issue_changes=[])
 
     syncer = IssueSyncer(config)
     syncer.sync({}, dry_run=True)
@@ -68,7 +68,7 @@ def test_sync_passes_dry_run(mocker, config):
 
 def test_sync_returns_sync_result(mocker, config):
     mocker.patch("security.services.issue_syncer.gh_issue_list_by_label", return_value={})
-    expected = MagicMock(notifications=["n"], severity_changes=["s"])
+    expected = MagicMock(issue_changes=["n"])
     mocker.patch("security.services.issue_syncer.sync_alerts_and_issues", return_value=expected)
 
     syncer = IssueSyncer(config)
@@ -79,7 +79,7 @@ def test_sync_returns_sync_result(mocker, config):
 
 def test_sync_does_not_send_notifications(mocker, config):
     mocker.patch("security.services.issue_syncer.gh_issue_list_by_label", return_value={})
-    mocker.patch("security.services.issue_syncer.sync_alerts_and_issues", return_value=MagicMock(notifications=["n"], severity_changes=[]))
+    mocker.patch("security.services.issue_syncer.sync_alerts_and_issues", return_value=MagicMock(issue_changes=["n"]))
 
     syncer = IssueSyncer(config)
     result = syncer.sync({}, dry_run=False)

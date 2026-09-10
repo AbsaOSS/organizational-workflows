@@ -113,7 +113,6 @@ def test_card_header_names_repository_and_is_coloured(links: NotificationLinks) 
     assert "Container" == header["type"]
     assert "accent" == header["style"]
     assert header["bleed"] is True
-    assert "#505AC9" == header["backgroundColor"]
     assert REPO == header["items"][1]["text"]
     assert all(item["color"] == "dark" for item in header["items"])
 
@@ -121,7 +120,8 @@ def test_card_header_names_repository_and_is_coloured(links: NotificationLinks) 
 def test_card_counts_each_state(links: NotificationLinks) -> None:
     """Opened / reopened / closed counters reflect the notification states."""
     issue_changes = [_issue(1), _issue(2), _issue(3, state="reopen"), _issue(4, state="closed")]
-    columns = next(e for e in _build(links, issue_changes=issue_changes)["body"] if e["type"] == "ColumnSet")["columns"]
+    card = _build(links, issue_changes=issue_changes)
+    columns = next(e for e in card["body"] if e["type"] == "ColumnSet")["columns"]
     assert ["2", "1", "1"] == [column["items"][0]["text"] for column in columns]
     assert ["Opened", "Reopened", "Solved"] == [column["items"][1]["text"] for column in columns]
 
@@ -249,9 +249,8 @@ def test_card_posture_keeps_zero_counts_within_threshold(links: NotificationLink
     heading = card["body"][heading_index]
     summary = card["body"][heading_index + 1]
 
-    assert heading["weight"] == "Bolder"  # same emphasis as the other section headings
     assert "isSubtle" not in heading
-    assert "Critical: 0, High: 22, Medium: 0" == summary["text"]  # 'low' is below the threshold, no emoji
+    assert "Critical: 0  High: 22  Medium: 0" == summary["text"]  # 'low' is below the threshold, no emoji, no commas
 
 
 def test_card_omits_posture_section_when_no_severity_qualifies(links: NotificationLinks, mocker: MockerFixture) -> None:

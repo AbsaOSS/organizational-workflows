@@ -85,35 +85,23 @@ def _header(repo: str) -> dict[str, Any]:
     }
 
 
-def _stat_column(label: str, value: int) -> dict[str, Any]:
-    """Build one column of a centered, full-width stat row (counters or posture)."""
+def _stat_column(label: str, value: int, rows: list[str] | None = None, hidden: int = 0) -> dict[str, Any]:
+    """Build one centered, full-width stat column: a count, its label, and optionally its own
+    issue list stacked underneath (a `\\r`-joined bullet list plus an overflow note).
+    """
+    items: list[dict[str, Any]] = [
+        _text_block(str(value), size="ExtraLarge", weight="Bolder", horizontalAlignment="Center"),
+        _text_block(label, isSubtle=True, spacing="None", horizontalAlignment="Center"),
+    ]
+    if rows:
+        items.append(_text_block(_LIST_SEPARATOR.join(rows), spacing="Small"))
+    if hidden > 0:
+        items.append(_text_block(f"_...and {hidden} more_", isSubtle=True, spacing="Small"))
     return {
         "type": "Column",
         "width": "stretch",
-        "items": [
-            _text_block(str(value), size="ExtraLarge", weight="Bolder", horizontalAlignment="Center"),
-            _text_block(label, isSubtle=True, spacing="None", horizontalAlignment="Center"),
-        ],
+        "items": items,
     }
-
-
-def _change_counters(issue_changes: list[IssueChange]) -> list[dict[str, Any]]:
-    """Build the at-a-glance opened/reopened/closed counters for this run."""
-    counts = {state: 0 for state, _ in _STATE_SECTIONS}
-    for item in issue_changes:
-        if item.state in counts:
-            counts[item.state] += 1
-
-    return [
-        _text_block(
-            "Vulnerabilities this run", weight="Bolder", size="Medium", spacing="Medium", horizontalAlignment="Center"
-        ),
-        {
-            "type": "ColumnSet",
-            "spacing": "Small",
-            "columns": [_stat_column(label, counts[state]) for state, label in _STATE_SECTIONS],
-        },
-    ]
 
 
 def _allocate_shown_counts(counts: dict[str, int], *, cap: int, floor: int) -> dict[str, int]:
@@ -143,43 +131,45 @@ def _allocate_shown_counts(counts: dict[str, int], *, cap: int, floor: int) -> d
     return shown
 
 
-def _issue_sections(issue_changes: list[IssueChange], *, cap: int) -> list[dict[str, Any]]:
-    """Build the per-state issue lists, each keeping a minimum share of the shared cap.
+def _run_summary(issue_changes: list[IssueChange], *, cap: int) -> list[dict[str, Any]]:
+    """Build the "Vulnerabilities this run" heading plus one column per state.
 
-    Issues within a state are shown highest-severity first. Each state reports its own
-    "...and N more" note when truncated.
+    Each column shows that state's count, then -- space permitting -- its own bullet list of
+    issues (highest severity first), capped by ``_allocate_shown_counts``, with its own
+    "...and N more" note when truncated. A non-positive cap keeps every count visible but
+    shows no rows, since ``_allocate_shown_counts`` naturally allots zero rows to every state
+    in that case; each non-empty state still gets its own overflow note.
     """
-    if cap <= 0:
-        if not issue_changes:
-            return []
-        return [_text_block(f"_...and {len(issue_changes)} more_", isSubtle=True, spacing="Small")]
+    counts = {state: 0 for state, _ in _STATE_SECTIONS}
+    by_state: dict[str, list[IssueChange]] = {state: [] for state, _ in _STATE_SECTIONS}
+    for item in issue_changes:
+        if item.state in counts:
+            counts[item.state] += 1
+            by_state[item.state].append(item)
 
-    by_state = {
-        state: sorted(
-            (item for item in issue_changes if item.state == state),
-            key=lambda item: SEVERITY_ORDER.get((item.severity or "").strip().lower(), 0),
-            reverse=True,
-        )
-        for state, _ in _STATE_SECTIONS
-    }
-    counts = {state: len(items) for state, items in by_state.items()}
+    for state, items in by_state.items():
+        items.sort(key=lambda item: SEVERITY_ORDER.get((item.severity or "").strip().lower(), 0), reverse=True)
+
     shown = _allocate_shown_counts(counts, cap=cap, floor=TEAMS_ISSUE_LIST_MIN_PER_STATE)
 
-    elements: list[dict[str, Any]] = []
-    for state, heading in _STATE_SECTIONS:
+    columns = []
+    for state, label in _STATE_SECTIONS:
         items = by_state[state]
-        if not items:
-            continue
-
         visible = items[: shown[state]]
-        elements.append(_text_block(heading, weight="Bolder", spacing="Medium"))
-        elements.append(_text_block(_LIST_SEPARATOR.join(_issue_row(item) for item in visible), spacing="Small"))
-
+        rows = [_issue_row(item) for item in visible]
         hidden = len(items) - len(visible)
-        if hidden > 0:
-            elements.append(_text_block(f"_...and {hidden} more_", isSubtle=True, spacing="Small"))
+        columns.append(_stat_column(label, counts[state], rows, hidden))
 
-    return elements
+    return [
+        _text_block(
+            "Vulnerabilities This Run", weight="Bolder", size="Medium", spacing="Medium", horizontalAlignment="Center"
+        ),
+        {
+            "type": "ColumnSet",
+            "spacing": "Small",
+            "columns": columns,
+        },
+    ]
 
 
 def _posture_severities(min_severity: str) -> list[str]:
@@ -194,7 +184,7 @@ def _posture_severities(min_severity: str) -> list[str]:
 
 def _posture_heading_text(min_severity: str) -> str:
     """Return the posture section's heading, qualified by threshold unless it's a no-op."""
-    heading = "Vulnerabilities repository"
+    heading = "Repository Vulnerabilities"
     if min_severity != "low":
         heading += f" (severity >= {min_severity})"
     return heading
@@ -204,7 +194,7 @@ def _posture_section(posture: dict[str, int], min_severity: str) -> list[dict[st
     """Build the footer summarizing currently-open child issues by severity.
 
     This is secondary, at-a-glance context rather than the main content of the run, so it
-    mirrors ``_change_counters``'s stat-column layout: one column per qualifying severity,
+    mirrors ``_run_summary``'s stat-column layout: one column per qualifying severity,
     with the count on top and the severity name below.
 
     Zero counts are kept so a clean severity reads as explicitly clear rather than missing.
@@ -269,8 +259,7 @@ def build_security_card(
         The Adaptive Card object, ready to be wrapped in a Teams message payload.
     """
     body: list[dict[str, Any]] = [_header(links.repo)]
-    body += _change_counters(issue_changes)
-    body += _issue_sections(issue_changes, cap=issue_cap)
+    body += _run_summary(issue_changes, cap=issue_cap)
     body += _posture_section(posture, min_severity)
     body += _actions(links)
 

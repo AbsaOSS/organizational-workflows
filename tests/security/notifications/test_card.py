@@ -52,6 +52,28 @@ def _texts(card: dict[str, Any]) -> list[str]:
     return [element["text"] for element in card["body"] if element.get("type") == "TextBlock"]
 
 
+def _run_columns(card: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return the run-summary columns (Opened/Reopened/Solved) keyed by their label."""
+    columns = next(e for e in card["body"] if e["type"] == "ColumnSet")["columns"]
+    return {column["items"][1]["text"]: column for column in columns}
+
+
+def _column_rows(column: dict[str, Any]) -> str | None:
+    """Return a run column's bullet-list text, or None if it has no rows."""
+    for item in column["items"][2:]:
+        if not item["text"].startswith("_...and"):
+            return item["text"]
+    return None
+
+
+def _column_overflow(column: dict[str, Any]) -> str | None:
+    """Return a run column's "...and N more" note, or None if nothing was hidden."""
+    for item in column["items"][2:]:
+        if item["text"].startswith("_...and"):
+            return item["text"]
+    return None
+
+
 def _build(links: NotificationLinks, **overrides: Any) -> dict[str, Any]:
     params: dict[str, Any] = {
         "links": links,
@@ -164,17 +186,17 @@ def test_allocate_shown_counts_zero_cap_shows_nothing() -> None:
 
 
 def test_card_groups_issues_by_state_with_carriage_return_lists(links: NotificationLinks) -> None:
-    """Sections appear per state and list items are joined with \\r, as Teams requires."""
+    """Each state's rows live inside that state's column, joined with \\r, as Teams requires."""
     issue_changes = [_issue(1), _issue(2), _issue(3, state="closed")]
-    texts = _texts(_build(links, issue_changes=issue_changes))
+    columns = _run_columns(_build(links, issue_changes=issue_changes))
 
-    assert "Opened" in texts
-    assert "Solved" in texts
-    assert "Reopened" not in texts  # no reopened issues, so no empty section
-
-    opened_rows = texts[texts.index("Opened") + 1]
+    opened_rows = _column_rows(columns["Opened"])
+    assert opened_rows is not None
     assert "\r" in opened_rows
     assert "\n" not in opened_rows  # \n\n inside a list wrongly indents the next item
+
+    assert _column_rows(columns["Solved"]) is not None
+    assert _column_rows(columns["Reopened"]) is None  # no reopened issues, so no rows
 
 
 def test_card_caps_issue_list_and_reports_remainder(links: NotificationLinks) -> None:
@@ -184,28 +206,24 @@ def test_card_caps_issue_list_and_reports_remainder(links: NotificationLinks) ->
         + [_issue(n, state="reopen") for n in range(9, 11)]
         + [_issue(n, state="closed") for n in range(11, 15)]
     )
-    texts = _texts(_build(links, issue_changes=issue_changes, issue_cap=10))
+    columns = _run_columns(_build(links, issue_changes=issue_changes, issue_cap=10))
 
-    opened_rows = texts[texts.index("Opened") + 1]
-    reopened_rows = texts[texts.index("Reopened") + 1]
-    solved_rows = texts[texts.index("Solved") + 1]
+    assert 5 == len(_column_rows(columns["Opened"]).split("\r"))  # type: ignore[union-attr]
+    assert 2 == len(_column_rows(columns["Reopened"]).split("\r"))  # type: ignore[union-attr]
+    assert 3 == len(_column_rows(columns["Solved"]).split("\r"))  # type: ignore[union-attr]
 
-    assert 5 == len(opened_rows.split("\r"))
-    assert 2 == len(reopened_rows.split("\r"))
-    assert 3 == len(solved_rows.split("\r"))
-
-    assert "_...and 3 more_" == texts[texts.index("Opened") + 2]
-    assert "_...and 1 more_" == texts[texts.index("Solved") + 2]
-    assert not any("more" in text for text in texts[texts.index("Reopened") : texts.index("Solved")])
+    assert "_...and 3 more_" == _column_overflow(columns["Opened"])
+    assert "_...and 1 more_" == _column_overflow(columns["Solved"])
+    assert _column_overflow(columns["Reopened"]) is None
 
 
 def test_card_issue_list_never_starves_a_smaller_state(links: NotificationLinks) -> None:
     """A single reopened issue still gets shown even when opened alone exceeds the cap."""
     issue_changes = [_issue(n) for n in range(1, 21)] + [_issue(21, state="reopen")]
-    texts = _texts(_build(links, issue_changes=issue_changes, issue_cap=10))
+    columns = _run_columns(_build(links, issue_changes=issue_changes, issue_cap=10))
 
-    assert "Reopened" in texts
-    reopened_rows = texts[texts.index("Reopened") + 1]
+    reopened_rows = _column_rows(columns["Reopened"])
+    assert reopened_rows is not None
     assert 1 == len(reopened_rows.split("\r"))
 
 
@@ -217,21 +235,20 @@ def test_card_issue_rows_sorted_highest_severity_first(links: NotificationLinks)
         _issue(3, severity="medium"),
         _issue(4, severity="high"),
     ]
-    texts = _texts(_build(links, issue_changes=issue_changes))
+    columns = _run_columns(_build(links, issue_changes=issue_changes))
 
-    opened_rows = texts[texts.index("Opened") + 1].split("\r")
+    opened_rows = _column_rows(columns["Opened"]).split("\r")  # type: ignore[union-attr]
     assert ["#2", "#4", "#3", "#1"] == [row.split("](")[0].split("[")[1] for row in opened_rows]
 
 
 def test_card_cap_zero_omits_rows_but_keeps_counters(links: NotificationLinks) -> None:
     """The degraded card drops individual rows while still reporting the totals."""
     issue_changes = [_issue(n) for n in range(1, 6)]
-    card = _build(links, issue_changes=issue_changes, issue_cap=0)
-    texts = _texts(card)
+    columns = _run_columns(_build(links, issue_changes=issue_changes, issue_cap=0))
 
-    assert "Opened" not in texts
-    assert any("...and 5 more" in text for text in texts)
-    assert any(element["type"] == "ColumnSet" for element in card["body"])
+    assert "5" == columns["Opened"]["items"][0]["text"]
+    assert _column_rows(columns["Opened"]) is None
+    assert "_...and 5 more_" == _column_overflow(columns["Opened"])
 
 
 def test_card_cap_zero_omits_overflow_note_when_no_issues(links: NotificationLinks) -> None:
@@ -247,12 +264,12 @@ def test_card_posture_keeps_zero_counts_within_threshold(links: NotificationLink
     """Zero counts are shown so a clean severity reads as explicitly clear, 'low' is excluded."""
     card = _build(links, posture={"high": 22, "low": 9}, min_severity="medium")
     heading_index = next(
-        i for i, e in enumerate(card["body"]) if e.get("text", "").startswith("Vulnerabilities repository")
+        i for i, e in enumerate(card["body"]) if e.get("text", "").startswith("Repository Vulnerabilities")
     )
     heading = card["body"][heading_index]
     columns = card["body"][heading_index + 1]["columns"]
 
-    assert heading["text"] == "Vulnerabilities repository (severity >= medium)"
+    assert heading["text"] == "Repository Vulnerabilities (severity >= medium)"
     assert ["Critical", "High", "Medium"] == [column["items"][1]["text"] for column in columns]
     assert ["0", "22", "0"] == [column["items"][0]["text"] for column in columns]
 
@@ -260,16 +277,16 @@ def test_card_posture_keeps_zero_counts_within_threshold(links: NotificationLink
 def test_card_posture_omits_threshold_suffix_when_showing_everything(links: NotificationLinks) -> None:
     """'low' means every severity is shown, so the '(severity >= low)' suffix would be redundant."""
     card = _build(links, posture={"high": 1}, min_severity="low")
-    heading = next(e for e in card["body"] if e.get("text", "").startswith("Vulnerabilities repository"))
+    heading = next(e for e in card["body"] if e.get("text", "").startswith("Repository Vulnerabilities"))
 
-    assert heading["text"] == "Vulnerabilities repository"
+    assert heading["text"] == "Repository Vulnerabilities"
 
 
 def test_card_omits_posture_section_when_no_severity_qualifies(links: NotificationLinks, mocker: MockerFixture) -> None:
     """No section is rendered when the configured threshold leaves nothing to report."""
     mocker.patch("security.notifications.card._posture_severities", return_value=[])
     card = _build(links, posture={"high": 1})
-    assert not any(e.get("text", "").startswith("Vulnerabilities repository") for e in card["body"])
+    assert not any(e.get("text", "").startswith("Repository vulnerabilities") for e in card["body"])
 
 
 # build_security_card - actions

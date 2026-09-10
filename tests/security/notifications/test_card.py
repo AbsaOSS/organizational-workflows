@@ -72,7 +72,7 @@ def test_issue_row_links_and_marks_severity(links: NotificationLinks) -> None:
     assert "🔴" in row
     assert "**Critical:**" in row
     assert f"[#101](https://github.com/{REPO}/issues/101)" in row
-    assert row.endswith("Secrets")
+    assert row.endswith("(Secrets)")
 
 
 def test_issue_row_pending_when_no_number() -> None:
@@ -83,8 +83,10 @@ def test_issue_row_pending_when_no_number() -> None:
 
 
 def test_issue_row_omits_empty_rule_id() -> None:
-    """A blank rule id leaves no dangling separator."""
-    assert not _issue_row(_issue(7, rule_id="")).endswith("- ")
+    """A blank rule id leaves no dangling separator or empty parentheses."""
+    row = _issue_row(_issue(7, rule_id=""))
+    assert "()" not in row
+    assert not row.endswith("(")
 
 
 # _posture_severities
@@ -108,13 +110,15 @@ def test_posture_severities_scoped_by_min_severity(min_severity: str, expected: 
 
 
 def test_card_header_names_repository_and_is_coloured(links: NotificationLinks) -> None:
-    """The header is a bleeding accent container titled with the repository, purple, readable text."""
+    """The header is a bleeding, warning-styled container titled with the repository, readable text."""
     header = _build(links)["body"][0]
     assert "Container" == header["type"]
-    assert "accent" == header["style"]
+    assert "warning" == header["style"]  # only a schema-supported style enum actually renders
     assert header["bleed"] is True
+    assert "backgroundColor" not in header  # Container has no such property; it was always a no-op
     assert REPO == header["items"][1]["text"]
     assert all(item["color"] == "dark" for item in header["items"])
+    assert header["items"][0]["size"] == "ExtraLarge"  # the card's biggest text, above any section header
 
 
 def test_card_counts_each_state(links: NotificationLinks) -> None:
@@ -124,6 +128,17 @@ def test_card_counts_each_state(links: NotificationLinks) -> None:
     columns = next(e for e in card["body"] if e["type"] == "ColumnSet")["columns"]
     assert ["2", "1", "1"] == [column["items"][0]["text"] for column in columns]
     assert ["Opened", "Reopened", "Solved"] == [column["items"][1]["text"] for column in columns]
+
+
+def test_card_counters_heading_is_a_bigger_top_level_section(links: NotificationLinks) -> None:
+    """"Vulnerabilities this run" is a top-level section, bigger than the Opened/Reopened/Solved subheadings."""
+    card = _build(links, issue_changes=[_issue(1)])
+    heading = next(e for e in card["body"] if e.get("text") == "Vulnerabilities this run")
+    subheading = next(e for e in card["body"] if e.get("text") == "Opened")
+
+    assert heading["weight"] == "Bolder"
+    assert heading["size"] == "Large"
+    assert "size" not in subheading  # subsection stays at the default size
 
 
 # _allocate_shown_counts
@@ -250,7 +265,8 @@ def test_card_posture_keeps_zero_counts_within_threshold(links: NotificationLink
     summary = card["body"][heading_index + 1]
 
     assert "isSubtle" not in heading
-    assert "Critical: 0  High: 22  Medium: 0" == summary["text"]  # 'low' is below the threshold, no emoji, no commas
+    assert heading["size"] == "Large"
+    assert "**Critical:** 0  **High:** 22  **Medium:** 0" == summary["text"]  # 'low' is below the threshold, no emoji
 
 
 def test_card_omits_posture_section_when_no_severity_qualifies(links: NotificationLinks, mocker: MockerFixture) -> None:

@@ -65,6 +65,7 @@ class IssueSyncer:
         result = sync_alerts_and_issues(
             open_alerts,
             issues,
+            repo=repo,  # MIGRATION-PHASE-2-REMOVE: only consumed by the label migration sweep.
             dry_run=dry_run,
             severity_priority_map=spm,
             project_number=config.project_number,

@@ -35,6 +35,8 @@ def _aqua_env(monkeypatch):
     monkeypatch.setenv("AQUA_GROUP_ID", "12345")
     monkeypatch.setenv("AQUA_REPOSITORY_ID", "abc12345-e89b-12d3-a456-426614174000")
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
+    # MIGRATION-PHASE-2-REMOVE: Prevent the migration label auto-create from making a real gh call.
+    monkeypatch.setattr("security.main.gh_label_create", lambda *a, **k: True)
 
 
 def _mock_pipeline(mocker: MockerFixture):

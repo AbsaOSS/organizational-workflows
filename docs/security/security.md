@@ -17,9 +17,9 @@ This solution authenticates with the AquaSec API, fetches scan findings, and con
 ```mermaid
 flowchart TD
     A["🔑 Authenticate with AquaSec API"]
-    B["📥 Fetch and Normalise Findings"]
-    C["📝 Create / Update / Reopen Issues"]
-    D["✅ Close Resolved Findings"]
+    B["📥 Fetch and Normalise AquaSec Findings"]
+    C["📝 Create / Update / Reopen GH Issues"]
+    D["✅ Close Resolved GH Issues"]
     E["📣 Send Teams Notifications"]
 
     A --> B --> C --> D --> E

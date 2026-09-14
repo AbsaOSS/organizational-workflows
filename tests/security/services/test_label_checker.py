@@ -75,7 +75,7 @@ def test_check_labels_all_present(mocker: MockerFixture) -> None:
 def test_check_labels_some_missing(mocker: MockerFixture) -> None:
     mocker.patch.object(LabelChecker, "_fetch_labels", return_value=["scope:security", "epic"])
     missing = LabelChecker(REPO).check_labels()
-    assert "type:tech-debt" in missing
+    assert "type:aquasec" in missing
     assert len(missing) == 1
 
 

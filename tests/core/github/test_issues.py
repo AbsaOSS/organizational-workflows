@@ -41,6 +41,8 @@ from core.github.issues import (
     gh_issue_get_rest_id,
     gh_issue_get_sub_issue_numbers,
     gh_issue_list_by_label,
+    gh_issue_remove_labels,
+    gh_label_create,
 )
 
 
@@ -327,6 +329,50 @@ def test_add_labels_not_found_hint(mocker: MockerFixture, caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="root"):
         gh_issue_add_labels("org/repo", 1, ["bug"])
     assert any("deleted or transferred" in r.message for r in caplog.records)
+
+
+# gh_issue_remove_labels
+# MIGRATION-PHASE-2-REMOVE: tests for the migration-only remove-labels helper.
+
+def test_remove_labels_success(mocker: MockerFixture) -> None:
+    mock_run = mocker.patch("core.github.issues.run_gh", return_value=_ok())
+    gh_issue_remove_labels("org/repo", 1, ["type:tech-debt"])
+    mock_run.assert_called_once()
+    args = mock_run.call_args.args[0]
+    assert "--remove-label" in args and "type:tech-debt" in args
+
+def test_remove_labels_no_labels_skips_call(mocker: MockerFixture) -> None:
+    mock_run = mocker.patch("core.github.issues.run_gh")
+    gh_issue_remove_labels("org/repo", 1, [])
+    mock_run.assert_not_called()
+
+def test_remove_labels_failure_warns(mocker: MockerFixture, caplog) -> None:
+    mocker.patch("core.github.issues.run_gh", return_value=_err("boom"))
+    with caplog.at_level(logging.WARNING, logger="root"):
+        gh_issue_remove_labels("org/repo", 1, ["type:tech-debt"])
+    assert any("Failed to remove labels" in r.message for r in caplog.records)
+
+
+# gh_label_create
+# MIGRATION-PHASE-2-REMOVE: tests for the migration-only label-create helper.
+
+def test_label_create_success_uses_force(mocker: MockerFixture) -> None:
+    mock_run = mocker.patch("core.github.issues.run_gh", return_value=_ok())
+    assert gh_label_create("org/repo", "type:aquasec", color="d4c5f9", description="desc") is True
+    args = mock_run.call_args.args[0]
+    assert args[:3] == ["label", "create", "type:aquasec"]
+    assert "--force" in args
+    assert "--color" in args and "d4c5f9" in args
+    assert "--description" in args and "desc" in args
+
+def test_label_create_empty_name_skips_call(mocker: MockerFixture) -> None:
+    mock_run = mocker.patch("core.github.issues.run_gh")
+    assert gh_label_create("org/repo", "") is False
+    mock_run.assert_not_called()
+
+def test_label_create_failure_returns_false(mocker: MockerFixture) -> None:
+    mocker.patch("core.github.issues.run_gh", return_value=_err("nope"))
+    assert gh_label_create("org/repo", "type:aquasec") is False
 
 
 # gh_issue_create

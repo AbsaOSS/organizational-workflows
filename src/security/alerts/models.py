@@ -16,10 +16,15 @@
 
 """Alert-specific data models."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any
 
 from security.constants import NOT_AVAILABLE
+
+
+def _dataclass_field_names(dc: type) -> set[str]:
+    """Return the field names declared on a dataclass."""
+    return {f.name for f in fields(dc)}
 
 
 @dataclass
@@ -138,9 +143,9 @@ class Alert:
         ad = d.get("alert_details") or {}
         rd = d.get("rule_details") or {}
         return cls(
-            metadata=AlertMetadata(**{k: v for k, v in md.items() if k in AlertMetadata.__dataclass_fields__}),
-            alert_details=AlertDetails(**{k: v for k, v in ad.items() if k in AlertDetails.__dataclass_fields__}),
-            rule_details=RuleDetails(**{k: v for k, v in rd.items() if k in RuleDetails.__dataclass_fields__}),
+            metadata=AlertMetadata(**{k: v for k, v in md.items() if k in _dataclass_field_names(AlertMetadata)}),
+            alert_details=AlertDetails(**{k: v for k, v in ad.items() if k in _dataclass_field_names(AlertDetails)}),
+            rule_details=RuleDetails(**{k: v for k, v in rd.items() if k in _dataclass_field_names(RuleDetails)}),
             repo=repo or str(d.get("_repo", "")),
         )
 

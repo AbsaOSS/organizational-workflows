@@ -23,11 +23,18 @@ import argparse
 import logging
 import shutil
 
-from core.config import parse_runner_debug, setup_logging
+from core.config import emit_workflow_warning, parse_runner_debug, setup_logging
+from core.github.issues import gh_label_create
 from core.helpers import write_json
 
 from security.alerts.aquasec_parser import AquaSecParser
-from security.constants import LOGGING_PREFIX
+from security.constants import (
+    DRY_RUN_PREFIX,
+    LABEL_TYPE_AQUASEC,
+    LABEL_TYPE_AQUASEC_COLOR,
+    LABEL_TYPE_AQUASEC_DESCRIPTION,
+    LOGGING_PREFIX,
+)
 from security.config import SecurityConfig
 from security.services.authenticator import AquaSecAuthenticator
 from security.services.issue_syncer import IssueSyncer
@@ -118,6 +125,19 @@ def main(argv: list[str] | None = None) -> int:
     if shutil.which("gh") is None:
         raise SystemExit("ERROR: gh CLI is required. Install and authenticate (gh auth login).")
 
+    # MIGRATION-PHASE-2-REMOVE: auto-create of the type:aquasec label.
+    # Auto-create the type:aquasec label so target repos need no manual setup
+    # before the tech-debt -> aquasec switch.
+    if dry_run:
+        logger.info("%sWould ensure label '%s' exists in the repository", DRY_RUN_PREFIX, LABEL_TYPE_AQUASEC)
+    elif gh_label_create(
+        repo,
+        LABEL_TYPE_AQUASEC,
+        color=LABEL_TYPE_AQUASEC_COLOR,
+        description=LABEL_TYPE_AQUASEC_DESCRIPTION,
+    ):
+        logger.info("%sEnsured label '%s' exists in the repository", LOGGING_PREFIX, LABEL_TYPE_AQUASEC)
+
     # Check required labels
     if missing := LabelChecker(repo).check_labels():
         logger.error("%sRequired labels missing in %s: %s", LOGGING_PREFIX, repo, ", ".join(missing))
@@ -147,7 +167,12 @@ def main(argv: list[str] | None = None) -> int:
     result = syncer.sync(open_alerts, dry_run=dry_run)
 
     # Send Teams notifications
-    NotificationSender(config.teams_webhook_url).notify(result, dry_run=dry_run)
+    if not NotificationSender(config).notify(result, dry_run=dry_run) and config.github_actions:
+        emit_workflow_warning(
+            "The AquaSec security scan completed and all issues were synced, "
+            "but the Teams notification could not be delivered. See the step log for details.",
+            title="Teams notification not delivered",
+        )
 
     logger.info("%sProcess finished", LOGGING_PREFIX)
     return 0

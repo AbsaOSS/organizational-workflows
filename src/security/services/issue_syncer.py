@@ -43,13 +43,18 @@ class IssueSyncer:
             dry_run: If True, no changes are made.
 
         Returns:
-            SyncResult with notifications and severity changes.
+            SyncResult with issue changes and open-issue posture.
         """
         config = self.config
         repo = config.repo
 
-        issues = gh_issue_list_by_label(repo, config.issue_label)
-        logger.info("%sLoaded %d existing security issues for synchronization", LOGGING_PREFIX, len(issues))
+        issues = gh_issue_list_by_label(repo, config.security_label)
+        logger.info(
+            "%sLoaded %d existing security issues for sync (label %s)",
+            LOGGING_PREFIX,
+            len(issues),
+            config.security_label,
+        )
 
         spm = parse_severity_priority_map(config.severity_priority_map)
 
@@ -65,6 +70,7 @@ class IssueSyncer:
         result = sync_alerts_and_issues(
             open_alerts,
             issues,
+            repo=repo,  # MIGRATION-PHASE-2-REMOVE: only consumed by the label migration sweep.
             dry_run=dry_run,
             severity_priority_map=spm,
             project_number=config.project_number,

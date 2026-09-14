@@ -35,6 +35,8 @@ def _aqua_env(monkeypatch):
     monkeypatch.setenv("AQUA_GROUP_ID", "12345")
     monkeypatch.setenv("AQUA_REPOSITORY_ID", "abc12345-e89b-12d3-a456-426614174000")
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
+    # MIGRATION-PHASE-2-REMOVE: Prevent the migration label auto-create from making a real gh call.
+    monkeypatch.setattr("security.main.gh_label_create", lambda *a, **k: True)
 
 
 def _mock_pipeline(mocker: MockerFixture):
@@ -117,6 +119,42 @@ def test_missing_labels_returns_1(mocker):
     assert main(["--repo", REPO]) == 1
 
 
+# main - label auto-create (MIGRATION-PHASE-2-REMOVE)
+
+
+def test_label_create_skipped_and_would_ensure_logged_in_dry_run(mocker, monkeypatch, caplog):
+    """Dry-run must not mutate the repo: no real gh_label_create call."""
+    mock_create = mocker.patch("security.main.gh_label_create")
+    _mock_pipeline(mocker)
+
+    with caplog.at_level("INFO"):
+        assert main(["--repo", REPO, "--dry-run"]) == 0
+
+    mock_create.assert_not_called()
+    assert any("Would ensure label" in record.message for record in caplog.records)
+
+
+def test_label_create_called_and_ensured_logged_in_live_run(mocker, caplog):
+    mock_create = mocker.patch("security.main.gh_label_create", return_value=True)
+    _mock_pipeline(mocker)
+
+    with caplog.at_level("INFO"):
+        assert main(["--repo", REPO]) == 0
+
+    mock_create.assert_called_once()
+    assert any("Ensured label" in record.message for record in caplog.records)
+
+
+def test_no_ensured_label_log_on_create_failure(mocker, caplog):
+    mocker.patch("security.main.gh_label_create", return_value=False)
+    _mock_pipeline(mocker)
+
+    with caplog.at_level("INFO"):
+        assert main(["--repo", REPO]) == 0
+
+    assert not any("Ensured label" in record.message for record in caplog.records)
+
+
 # main - pipeline success
 
 
@@ -129,6 +167,28 @@ def test_pipeline_calls_notify(mocker):
     mocks = _mock_pipeline(mocker)
     main(["--repo", REPO])
     mocks["notifier"].assert_called_once()
+
+
+def test_failed_notification_does_not_fail_the_run(mocker, monkeypatch):
+    """Issues are already synced by then, so a failed card must not redden the run."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    mocks = _mock_pipeline(mocker)
+    mocks["notifier"].return_value = False
+    warn = mocker.patch("security.main.emit_workflow_warning")
+
+    assert main(["--repo", REPO]) == 0
+    warn.assert_called_once()
+
+
+def test_failed_notification_skips_annotation_outside_actions(mocker, monkeypatch):
+    """A local run must not print stray workflow commands."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    mocks = _mock_pipeline(mocker)
+    mocks["notifier"].return_value = False
+    warn = mocker.patch("security.main.emit_workflow_warning")
+
+    assert main(["--repo", REPO]) == 0
+    warn.assert_not_called()
 
 
 # main - scan output

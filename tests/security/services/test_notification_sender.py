@@ -16,187 +16,194 @@
 
 """Tests for security.services.notification_sender module."""
 
+import json
+import logging
+
 import pytest
 import requests
-from unittest.mock import MagicMock
+from pytest_mock import MockerFixture
 
-from security.issues.models import NotifiedIssue, SeverityChange
+from security.issues.models import IssueChange, SyncResult
 from security.services.notification_sender import NotificationSender
 
-
-@pytest.fixture
-def sample_notifications() -> list[NotifiedIssue]:
-    return [
-        NotifiedIssue(repo="org/repo-a", issue_number=10, severity="high", category="sast", state="new", tool="AquaSec"),
-        NotifiedIssue(repo="org/repo-b", issue_number=20, severity="medium", category="sca", state="reopen", tool="AquaSec"),
-    ]
+REPO = "org/repo"
+WEBHOOK = "https://hook.example.com"
 
 
 @pytest.fixture
-def sample_changes() -> list[SeverityChange]:
-    return [
-        SeverityChange(repo="org/repo-a", issue_number=5, rule_id="CVE-2026-1234", old_severity="medium", new_severity="critical"),
-    ]
+def config(mocker: MockerFixture) -> object:
+    return mocker.MagicMock(
+        repo=REPO,
+        teams_webhook_url=WEBHOOK,
+        security_label="scope:security",
+        min_severity="medium",
+        github_server_url="https://github.com",
+        github_run_id="12345",
+    )
 
 
-# _build_payload
+@pytest.fixture
+def result() -> SyncResult:
+    return SyncResult(
+        issue_changes=[
+            IssueChange(repo=REPO, issue_number=10, severity="high", rule_id="AVD-001", state="new")
+        ],
+        open_child_issues_by_severity={"high": 2},
+    )
 
 
-def test_build_payload_without_title():
-    payload = NotificationSender._build_payload("Hello **world**")
-
-    assert "message" == payload["type"]
-    card = payload["attachments"][0]["content"]
-    assert "AdaptiveCard" == card["type"]
-    assert 1 == len(card["body"])
-    assert "Hello **world**" == card["body"][0]["items"][0]["text"]
-
-
-def test_build_payload_with_title_and_subtitle():
-    payload = NotificationSender._build_payload("Body text", title="My Title", subtitle="Sub")
-
-    card = payload["attachments"][0]["content"]
-    assert 2 == len(card["body"])
-    header = card["body"][0]
-    assert "accent" == header["style"]
-    assert "My Title" == header["items"][0]["text"]
-    assert "Sub" == header["items"][1]["text"]
-
-
-# _build_issues_body
-
-
-def test_build_issues_body_counts(sample_notifications):
-    body = NotificationSender._build_issues_body(sample_notifications)
-    assert "**1** new" in body
-    assert "**1** reopened" in body
-
-
-def test_build_issues_body_contains_links(sample_notifications):
-    body = NotificationSender._build_issues_body(sample_notifications)
-    assert "https://github.com/org/repo-a/issues/10" in body
-    assert "https://github.com/org/repo-b/issues/20" in body
-
-
-def test_build_issues_body_state_tags(sample_notifications):
-    body = NotificationSender._build_issues_body(sample_notifications)
-    assert "[new]" in body
-    assert "[reopen]" in body
-
-
-def test_build_issues_body_pending_issue_number_zero():
-    n = NotifiedIssue(repo="org/repo", issue_number=0, severity="high", category="sast", state="new", tool="AquaSec")
-    body = NotificationSender._build_issues_body([n])
-    assert "(pending)" in body
-    assert "issues/0" not in body
-
-
-# _build_severity_body
-
-
-def test_build_severity_body_counts(sample_changes):
-    body = NotificationSender._build_severity_body(sample_changes)
-    assert "**1** parent issue(s)" in body
-
-
-def test_build_severity_body_contains_link(sample_changes):
-    body = NotificationSender._build_severity_body(sample_changes)
-    assert "https://github.com/org/repo-a/issues/5" in body
-
-
-def test_build_severity_body_direction(sample_changes):
-    body = NotificationSender._build_severity_body(sample_changes)
-    assert "escalated" in body
-
-
-def test_build_severity_body_severities(sample_changes):
-    body = NotificationSender._build_severity_body(sample_changes)
-    assert "**medium**" in body
-    assert "**critical**" in body
-
-
-def test_build_severity_body_rule_id(sample_changes):
-    body = NotificationSender._build_severity_body(sample_changes)
-    assert "CVE-2026-1234" in body
+@pytest.fixture
+def post(mocker: MockerFixture) -> MockerFixture:
+    mock = mocker.patch("security.services.notification_sender.requests.post")
+    mock.return_value.ok = True
+    mock.return_value.status_code = 200
+    mock.return_value.text = "1"
+    return mock
 
 
 # notify
 
 
-def test_notify_calls_both_dispatchers(mocker, sample_notifications, sample_changes):
-    result = MagicMock(notifications=sample_notifications, severity_changes=sample_changes)
-    mock_issues = mocker.patch.object(NotificationSender, "_notify_issues")
-    mock_sev = mocker.patch.object(NotificationSender, "_notify_severity_changes")
+def test_notify_sends_a_single_card(config: object, result: SyncResult, post: MockerFixture) -> None:
+    NotificationSender(config).notify(result, dry_run=False)
 
-    NotificationSender("https://hook").notify(result, dry_run=False)
-
-    mock_issues.assert_called_once_with(sample_notifications, dry_run=False)
-    mock_sev.assert_called_once_with(sample_changes, dry_run=False)
+    payload = json.loads(post.call_args.kwargs["data"].decode("utf-8"))
+    assert 1 == len(payload["attachments"])
+    assert REPO in json.dumps(payload)
 
 
-def test_notify_skips_when_no_webhook(mocker):
-    result = MagicMock(notifications=["n"], severity_changes=[])
-    mock_issues = mocker.patch.object(NotificationSender, "_notify_issues")
+def test_notify_logs_summary_and_payload(
+    config: object, result: SyncResult, post: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Operators get a one-line confirmation, with the full card only under debug."""
+    caplog.set_level(logging.DEBUG)
 
-    NotificationSender("").notify(result, dry_run=False)
+    NotificationSender(config).notify(result, dry_run=False)
 
-    mock_issues.assert_not_called()
+    info = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("Teams notification sent: 1 issue change(s)" in m for m in info)
+    assert any("Teams notification payload:" in r.message for r in caplog.records if r.levelno == logging.DEBUG)
 
 
-def test_notify_dry_run_passed_through(mocker, sample_notifications):
-    result = MagicMock(notifications=sample_notifications, severity_changes=[])
-    mock_issues = mocker.patch.object(NotificationSender, "_notify_issues")
-    mocker.patch.object(NotificationSender, "_notify_severity_changes")
+def test_notify_skips_when_no_webhook(
+    config: object, result: SyncResult, post: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    config.teams_webhook_url = ""
 
-    NotificationSender("https://hook").notify(result, dry_run=True)
+    NotificationSender(config).notify(result, dry_run=False)
 
-    _, kwargs = mock_issues.call_args
-    assert kwargs["dry_run"] is True
+    post.assert_not_called()
+    assert "Teams webhook URL not configured" in caplog.text
+
+
+def test_notify_skips_when_run_changed_nothing(
+    config: object, post: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Quiet runs stay silent instead of posting an empty report."""
+    caplog.set_level(logging.INFO)
+    NotificationSender(config).notify(SyncResult(issue_changes=[]), dry_run=False)
+
+    post.assert_not_called()
+    assert "No issue activity" in caplog.text
+
+
+def test_notify_dry_run_logs_without_posting(
+    config: object, result: SyncResult, post: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    NotificationSender(config).notify(result, dry_run=True)
+
+    post.assert_not_called()
+
+
+# _build_payload
+
+
+def test_build_payload_degrades_when_oversized(
+    config: object, result: SyncResult, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An oversized card is silently dropped by Teams, so the issue list is trimmed locally."""
+    caplog.set_level(logging.WARNING)
+    mocker.patch("security.services.notification_sender.TEAMS_CARD_MAX_BYTES", 10)
+
+    payload = NotificationSender(config)._build_payload(result)
+
+    assert "exceeds" in caplog.text
+    assert "...and 1 more" in json.dumps(payload)
 
 
 # send
 
 
-def test_send_posts_to_webhook(mocker):
-    mock_response = mocker.Mock()
-    mock_response.status_code = 200
-    mock_response.ok = True
-    mock_response.text = "1"
-    mock_post = mocker.patch("security.services.notification_sender.requests.post", return_value=mock_response)
+def test_send_posts_utf8_with_charset(config: object, result: SyncResult, post: MockerFixture) -> None:
+    """Teams only renders emoji when the charset is declared and the body is UTF-8 encoded."""
+    NotificationSender(config).notify(result, dry_run=False)
 
-    NotificationSender("https://hook.example.com").send("Test body", title="Title")
-
-    mock_post.assert_called_once()
-    assert "https://hook.example.com" == mock_post.call_args[0][0]
+    assert WEBHOOK == post.call_args.args[0]
+    assert "application/json; charset=utf-8" == post.call_args.kwargs["headers"]["Content-Type"]
+    data = post.call_args.kwargs["data"]
+    assert isinstance(data, bytes)
+    assert "🟠" in data.decode("utf-8")
 
 
-def test_send_raises_system_exit_on_non_200(mocker):
-    mock_response = mocker.Mock()
-    mock_response.status_code = 500
-    mock_response.ok = False
-    mock_response.text = "Internal error"
-    mocker.patch("security.services.notification_sender.requests.post", return_value=mock_response)
+def test_send_reports_failure_on_error_response(
+    config: object, result: SyncResult, post: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The sync already wrote to GitHub, so a rejected webhook is reported, not fatal."""
+    post.return_value.ok = False
+    post.return_value.status_code = 413
+    post.return_value.text = "Request Entity too large"
 
-    with pytest.raises(SystemExit, match="webhook request failed"):
-        NotificationSender("https://hook.example.com").send("Test body")
-
-
-def test_send_raises_system_exit_on_request_exception(mocker):
-    mocker.patch(
-        "security.services.notification_sender.requests.post",
-        side_effect=requests.RequestException("Connection failed"),
-    )
-
-    with pytest.raises(SystemExit, match="webhook request failed"):
-        NotificationSender("https://hook.example.com").send("Test body")
+    assert NotificationSender(config).notify(result, dry_run=False) is False
+    assert "rejected the message" in caplog.text
+    assert "413" in caplog.text
 
 
-# send_dry_run
+def test_send_reports_failure_on_request_exception(
+    config: object, result: SyncResult, post: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A network error must not abort the run either."""
+    post.side_effect = requests.RequestException("boom")
+
+    assert NotificationSender(config).notify(result, dry_run=False) is False
+    assert "boom" in caplog.text
 
 
-def test_send_dry_run_does_not_post(mocker):
-    mock_post = mocker.patch("security.services.notification_sender.requests.post")
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Microsoft Teams endpoint returned HTTP error 429",
+        "Request Entity too large",
+        "Invalid webhook payload",
+        "Summary or Text is required.",
+    ],
+)
+def test_send_reports_failure_when_success_status_carries_an_error_body(
+    config: object, result: SyncResult, post: MockerFixture, body: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Teams reports failures inside 200-level responses, so the body must be inspected."""
+    post.return_value.text = body
 
-    NotificationSender("https://hook.example.com").send_dry_run("Test body", title="Title")
+    assert NotificationSender(config).notify(result, dry_run=False) is False
+    assert "rejected the message" in caplog.text
 
-    mock_post.assert_not_called()
+
+@pytest.mark.parametrize("body", ["1", "", "   "])
+def test_send_accepts_documented_success_bodies(
+    config: object, result: SyncResult, post: MockerFixture, body: str
+) -> None:
+    """A successful post returns either ``1`` or an empty body."""
+    post.return_value.text = body
+
+    assert NotificationSender(config).notify(result, dry_run=False) is True
+
+
+def test_send_reports_failure_when_body_is_unrecognized(
+    config: object, result: SyncResult, post: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A body that isn't a documented success value is treated as a rejection, not a guess."""
+    post.return_value.text = "something unexpected"
+
+    assert NotificationSender(config).notify(result, dry_run=False) is False
+    assert "rejected the message" in caplog.text

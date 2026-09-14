@@ -35,6 +35,7 @@ SECURITY_FINDING_DEFAULT = "Security finding"
 NOT_AVAILABLE = "N/A"
 
 GITHUB_BASE_URL = "https://github.com"
+DEFAULT_SCM_REF = "HEAD"
 
 LOGGING_PREFIX = "Security - "
 DRY_RUN_PREFIX = "Security [DRY-RUN] - "

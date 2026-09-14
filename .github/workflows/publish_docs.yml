@@ -38,9 +38,7 @@ jobs:
           persist-credentials: false
 
       - name: Render and publish single-page docs
-        # Bumped by hand: the upstream repo publishes no tags or releases,
-        # so Dependabot cannot track this pin.
-        uses: AbsaOSS/knowledge-base/actions/publish-single-page-docs@fa935dc6ed1aae54d295e457424ee636914147c3
+        uses: AbsaOSS/knowledge-base/actions/publish-single-page-docs@83d63d28635416e4a0c428f9f4472df74d9e1919 # v1.0.0
         with:
           # Which release the docs bundle is attached to
           release-tag: ${{ inputs.release-tag || github.event.release.tag_name }}

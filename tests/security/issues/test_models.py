@@ -21,40 +21,12 @@ import pytest
 from security.issues.models import (
     AlertContext,
     IssueIndex,
-    NotifiedIssue,
+    IssueChange,
     SEVERITY_ORDER,
-    SeverityChange,
     SyncContext,
     SyncResult,
     bump_severity,
-    severity_direction,
 )
-
-
-# =====================================================================
-# severity_direction
-# =====================================================================
-
-
-def test_escalated() -> None:
-    assert "escalated" in severity_direction("low", "high")
-
-def test_de_escalated() -> None:
-    assert "de-escalated" in severity_direction("critical", "medium")
-
-def test_unchanged() -> None:
-    assert "unchanged" in severity_direction("high", "high")
-
-def test_case_insensitive() -> None:
-    assert "escalated" in severity_direction("LOW", "HIGH")
-
-def test_unknown_old() -> None:
-    result = severity_direction("unknown", "high")
-    assert "escalated" in result
-
-def test_unknown_both() -> None:
-    result = severity_direction("unknown", "unknown")
-    assert "unchanged" in result
 
 
 # =====================================================================
@@ -79,33 +51,23 @@ def test_all_keys_present() -> None:
 
 
 def test_notified_issue_creation() -> None:
-    n = NotifiedIssue(
+    n = IssueChange(
         repo="org/repo", issue_number=42, severity="high",
-        category="sast", state="new", tool="AquaSec",
+        rule_id="AVD-001", state="new",
     )
     assert n.repo == "org/repo"
     assert n.issue_number == 42
     assert n.state == "new"
 
 
-def test_severity_change_creation() -> None:
-    sc = SeverityChange(
-        repo="org/repo", issue_number=1, rule_id="CVE-123",
-        old_severity="medium", new_severity="critical",
-    )
-    assert sc.old_severity == "medium"
-    assert sc.new_severity == "critical"
-
-
 def test_sync_result_creation() -> None:
-    sr = SyncResult(notifications=[], severity_changes=[])
-    assert sr.notifications == []
-    assert sr.severity_changes == []
+    sr = SyncResult(issue_changes=[])
+    assert sr.issue_changes == []
 
 
 def test_issue_index_creation() -> None:
-    idx = IssueIndex(by_fingerprint={}, parent_by_rule_id={})
-    assert idx.by_fingerprint == {}
+    idx = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    assert idx.child_by_fingerprint == {}
     assert idx.parent_by_rule_id == {}
 
 
@@ -124,8 +86,8 @@ def test_alert_context_creation() -> None:
 
 def test_sync_context_creation() -> None:
     sc = SyncContext(
-        issues={}, index=IssueIndex({}, {}), dry_run=True,
-        notifications=[], severity_priority_map={}, priority_sync=None,
+        issues={}, issue_index=IssueIndex({}, {}), dry_run=True,
+        issue_changes=[], severity_priority_map={}, priority_sync=None,
     )
     assert sc.dry_run is True
 

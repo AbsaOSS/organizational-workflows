@@ -43,7 +43,7 @@ class IssueSyncer:
             dry_run: If True, no changes are made.
 
         Returns:
-            SyncResult with notifications and severity changes.
+            SyncResult with issue changes and open-issue posture.
         """
         config = self.config
         repo = config.repo

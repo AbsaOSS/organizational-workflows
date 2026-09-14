@@ -48,6 +48,9 @@ class SecurityConfig:
     teams_webhook_url: str = ""
     min_severity: str = MIN_SEVERITY_DEFAULT
     scan_output: str = ""
+    github_server_url: str = ""
+    github_run_id: str = ""
+    github_actions: bool = False
 
     @classmethod
     def load(cls, args: argparse.Namespace) -> "SecurityConfig":
@@ -79,6 +82,9 @@ class SecurityConfig:
             teams_webhook_url=args.teams_webhook_url or os.environ.get("TEAMS_WEBHOOK_URL", ""),
             min_severity=min_severity,
             scan_output=args.scan_output,
+            github_server_url=os.environ.get("GITHUB_SERVER_URL", ""),
+            github_run_id=os.environ.get("GITHUB_RUN_ID", ""),
+            github_actions=os.environ.get("GITHUB_ACTIONS", "") == "true",
         )
 
     def validate(self) -> None:

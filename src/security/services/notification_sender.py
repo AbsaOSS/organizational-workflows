@@ -22,169 +22,151 @@ from typing import Any
 
 import requests
 
-from security.constants import DRY_RUN_PREFIX, HTTP_TIMEOUT, LOGGING_PREFIX
-from security.issues.models import NotifiedIssue, SeverityChange, severity_direction
-from security.issues.sync import SyncResult
+from security.config import SecurityConfig
+from security.constants import (
+    DRY_RUN_PREFIX,
+    HTTP_TIMEOUT,
+    LOGGING_PREFIX,
+    TEAMS_CARD_MAX_BYTES,
+    TEAMS_ISSUE_CAP_PER_STATE,
+    TEAMS_SUCCESS_BODIES,
+)
+from security.issues.models import SyncResult
+from security.notifications.card import build_message_payload, build_security_card
+from security.notifications.links import NotificationLinks
 
 logger = logging.getLogger(__name__)
 
 
 class NotificationSender:
-    """Sends Adaptive Card messages to Microsoft Teams via Incoming Webhook."""
+    """Sends a single Adaptive Card summarizing a sync run to Microsoft Teams."""
 
-    def __init__(self, webhook_url: str) -> None:
-        self.webhook_url = webhook_url
+    def __init__(self, config: SecurityConfig) -> None:
+        self.config = config
+        self.webhook_url = config.teams_webhook_url
 
-    def notify(self, result: SyncResult, *, dry_run: bool) -> None:
-        """Send Teams notifications for issue activity and severity changes.
+    def notify(self, result: SyncResult, *, dry_run: bool) -> bool:
+        """Send the Teams notification for a completed sync run.
+
+        A card is only produced when the run actually changed something, so quiet runs stay
+        silent instead of posting an empty report.
 
         Args:
-            result: Sync result containing notifications and severity changes.
-            dry_run: If True, log intended notifications without sending.
+            result: Sync result carrying issue activity and posture.
+            dry_run: If True, log the intended notification without sending it.
+
+        Returns:
+            False only when a notification was attempted and Teams did not accept it. Skipped
+            and dry-run notifications count as success because nothing failed.
         """
         if not self.webhook_url:
-            logger.info("%sTeams webhook URL not configured: skipping notifications", LOGGING_PREFIX)
-            return
+            logger.info("%sTeams webhook URL not configured: skipping notification", LOGGING_PREFIX)
+            return True
 
-        self._notify_issues(result.notifications, dry_run=dry_run)
-        self._notify_severity_changes(result.severity_changes, dry_run=dry_run)
-
-    def _notify_issues(self, notifications: list[NotifiedIssue], *, dry_run: bool) -> None:
-        """Send a Teams message about new / reopened issues."""
-        if not notifications:
+        if not result.issue_changes:
             logger.info("%sNo issue activity: skipping Teams notification", LOGGING_PREFIX)
-            return
+            return True
 
-        body = self._build_issues_body(notifications)
-        title = "Aquasec - New/Reopened Security Issues"
-
-        if dry_run:
-            logger.info("%sWould send Teams notification: %s", DRY_RUN_PREFIX, title)
-            self.send_dry_run(body, title=title)
-        else:
-            self.send(body, title=title)
-            logger.info("%sNotification sent: %s", LOGGING_PREFIX, title)
-
-    def _notify_severity_changes(self, changes: list[SeverityChange], *, dry_run: bool) -> None:
-        """Send a Teams message about parent severity changes."""
-        if not changes:
-            logger.info("%sNo severity changes: skipping Teams severity notification", LOGGING_PREFIX)
-            return
-
-        body = self._build_severity_body(changes)
-        title = "Aquasec - Parent Severity Changes"
+        payload = self._build_payload(result)
 
         if dry_run:
-            logger.info("%sWould send Teams notification: %s", DRY_RUN_PREFIX, title)
-            self.send_dry_run(body, title=title)
-        else:
-            self.send(body, title=title)
-            logger.info("%sNotification sent: %s", LOGGING_PREFIX, title)
-
-    @staticmethod
-    def _build_issues_body(notifications: list[NotifiedIssue]) -> str:
-        """Build a Markdown body summarising new / reopened issues for Teams."""
-        new_issues = [n for n in notifications if n.state == "new"]
-        reopened_issues = [n for n in notifications if n.state == "reopen"]
-
-        lines: list[str] = [f"**{len(new_issues)}** new, **{len(reopened_issues)}** reopened\n"]
-
-        for n in notifications:
-            state_tag = "new" if n.state == "new" else "reopen"
-            link = f"https://github.com/{n.repo}/issues/{n.issue_number}"
-            issue_ref = f"[Issue #{n.issue_number}]({link})" if n.issue_number else "(pending)"
-            lines.append(f"- **[{state_tag}]** *{n.severity}* - {n.category} - {issue_ref} ({n.repo})\n")
-
-        return "\n".join(lines)
-
-    @staticmethod
-    def _build_severity_body(changes: list[SeverityChange]) -> str:
-        """Build a Markdown body summarising parent-issue severity changes."""
-        lines: list[str] = [f"**{len(changes)}** parent issue(s) with severity change\n"]
-
-        for ch in changes:
-            direction = severity_direction(ch.old_severity, ch.new_severity)
-            link = f"https://github.com/{ch.repo}/issues/{ch.issue_number}"
-            issue_ref = f"[Issue #{ch.issue_number}]({link})"
-            lines.append(
-                f"- {issue_ref} \u2013 **{ch.old_severity}** \u2192 **{ch.new_severity}** ({direction}) "
-                f"\u2013 rule_id=`{ch.rule_id}`\n"
+            logger.info(
+                "%sWould send a Teams notification: %d issue change(s)",
+                DRY_RUN_PREFIX,
+                len(result.issue_changes),
             )
+            logger.debug(
+                "%sTeams notification payload:\n%s", DRY_RUN_PREFIX, json.dumps(payload, indent=2, ensure_ascii=False)
+            )
+            return True
 
-        return "\n".join(lines)
-
-    @staticmethod
-    def _build_payload(
-        body: str,
-        title: str | None = None,
-        subtitle: str | None = None,
-    ) -> dict[str, Any]:
-        """Build the full webhook JSON payload (Adaptive Card message)."""
-        elements: list[dict[str, Any]] = []
-
-        if title:
-            header_items: list[dict[str, Any]] = [
-                {"type": "TextBlock", "text": title, "wrap": True, "weight": "Bolder", "size": "Large"},
-            ]
-            if subtitle:
-                header_items.append(
-                    {"type": "TextBlock", "text": subtitle, "wrap": True, "isSubtle": True, "spacing": "None"},
-                )
-            elements.append({"type": "Container", "style": "accent", "bleed": True, "items": header_items})
-
-        elements.append(
-            {
-                "type": "Container",
-                "separator": bool(title),
-                "items": [{"type": "TextBlock", "text": body, "wrap": True}],
-            }
+        logger.info(
+            "%sTeams notification sent: %d issue change(s)",
+            LOGGING_PREFIX,
+            len(result.issue_changes),
         )
+        logger.debug(
+            "%sTeams notification payload:\n%s", LOGGING_PREFIX, json.dumps(payload, indent=2, ensure_ascii=False)
+        )
+        return self.send(payload)
 
-        return {
-            "type": "message",
-            "attachments": [
-                {
-                    "contentType": "application/vnd.microsoft.card.adaptive",
-                    "contentUrl": None,
-                    "content": {
-                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                        "type": "AdaptiveCard",
-                        "version": "1.5",
-                        "body": elements,
-                    },
-                }
-            ],
-        }
+    def _build_payload(self, result: SyncResult) -> dict[str, Any]:
+        """Build the message payload, shrinking it when it would exceed the Teams limit."""
+        links = NotificationLinks.build(
+            repo=self.config.repo,
+            security_label=self.config.security_label,
+            server_url=self.config.github_server_url,
+            run_id=self.config.github_run_id,
+        )
+        payload = build_message_payload(self._build_card(result, links))
 
-    def send(self, body: str, *, title: str | None = None, subtitle: str | None = None) -> None:
-        """Send a notification to Teams.
+        if len(self._encode(payload)) <= TEAMS_CARD_MAX_BYTES:
+            return payload
+
+        logger.warning(
+            "%sTeams notification exceeds %d bytes: omitting the individual issue list",
+            LOGGING_PREFIX,
+            TEAMS_CARD_MAX_BYTES,
+        )
+        return build_message_payload(self._build_card(result, links, issue_cap=0))
+
+    def _build_card(
+        self, result: SyncResult, links: NotificationLinks, *, issue_cap: int = TEAMS_ISSUE_CAP_PER_STATE
+    ) -> dict[str, Any]:
+        """Render the Adaptive Card for a sync result.
 
         Args:
-            body: Markdown body text for the Adaptive Card.
-            title: Optional bold title in the card header.
-            subtitle: Optional subtle subtitle below the title.
+            result: Sync result carrying issue activity and posture.
+            links: Repository and workflow-run links for the card.
+            issue_cap: Maximum number of issues listed individually per state; 0 omits the list.
 
-        Raises:
-            SystemExit: If the webhook request fails.
+        Returns:
+            The rendered Adaptive Card.
         """
-        payload = self._build_payload(body, title=title, subtitle=subtitle)
+        return build_security_card(
+            links=links,
+            issue_changes=result.issue_changes,
+            posture=result.open_child_issues_by_severity,
+            min_severity=self.config.min_severity,
+            issue_cap=issue_cap,
+        )
 
+    @staticmethod
+    def _encode(payload: dict[str, Any]) -> bytes:
+        """Serialise *payload* as UTF-8, which Teams requires for emoji to render."""
+        return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    def send(self, payload: dict[str, Any]) -> bool:
+        """Post a prebuilt payload to the Teams webhook.
+
+        A failed notification never aborts the run: the issue sync has already been written
+        to GitHub by this point, so the failure is reported and reported only.
+
+        Args:
+            payload: The Teams message payload to send.
+
+        Returns:
+            True if Teams accepted the message.
+        """
         try:
             resp = requests.post(
                 self.webhook_url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
+                data=self._encode(payload),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 timeout=HTTP_TIMEOUT,
             )
         except requests.RequestException as e:
-            raise SystemExit(f"ERROR: Teams webhook request failed: {e}") from e
+            logger.error("%sTeams webhook request failed: %s", LOGGING_PREFIX, e)
+            return False
 
-        if not resp.ok:
-            raise SystemExit(f"ERROR: Teams webhook request failed.\n  Status: {resp.status_code}\n  Body: {resp.text}")
+        body = (resp.text or "").strip()
+        if not resp.ok or body.lower() not in TEAMS_SUCCESS_BODIES:
+            logger.error(
+                "%sTeams webhook rejected the message. Status: %d, body: %s",
+                LOGGING_PREFIX,
+                resp.status_code,
+                body,
+            )
+            return False
 
-        logger.info("%sMessage sent to Teams successfully", LOGGING_PREFIX)
-
-    def send_dry_run(self, body: str, *, title: str | None = None, subtitle: str | None = None) -> None:
-        """Log the payload that would be sent without actually sending."""
-        payload = self._build_payload(body, title=title, subtitle=subtitle)
-        logger.info("%sWould send Teams notification:\n%s", DRY_RUN_PREFIX, json.dumps(payload, indent=2))
+        return True

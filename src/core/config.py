@@ -45,3 +45,23 @@ def setup_logging(verbose: bool = False) -> None:
 
     if verbose:
         logging.debug("Verbose logging enabled")
+
+
+def emit_workflow_warning(message: str, *, title: str) -> None:
+    """Print a GitHub Actions ``::warning::`` annotation so a failure surfaces in the run UI.
+    Args:
+        message: Annotation body.
+        title: Annotation title shown in the Actions UI.
+    """
+    print(f"::warning title={_escape_property(title)}::{_escape_data(message)}")
+    sys.stdout.flush()
+
+
+def _escape_data(value: str) -> str:
+    """Escape a workflow-command message per the Actions toolkit rules."""
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _escape_property(value: str) -> str:
+    """Escape a workflow-command property, which also reserves ``:`` and ``,``."""
+    return _escape_data(value).replace(":", "%3A").replace(",", "%2C")

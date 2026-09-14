@@ -46,6 +46,8 @@ Patterns
 - All logs must start with "<Domain> -" prefix (e.g., "Security -")
 - Never disable pylint behavior in the code
 - External links should link to a new window
+- Write product and tool names as spelled by their owners: Markdown, GitHub, AquaSec, Python, Teams
+- Use American English (colored, serialize, behavior)
 
 Testing
 - Mirror src structure: `src/security/module.py` -> `tests/security/test_module.py`

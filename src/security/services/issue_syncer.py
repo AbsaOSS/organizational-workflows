@@ -48,8 +48,13 @@ class IssueSyncer:
         config = self.config
         repo = config.repo
 
-        issues = gh_issue_list_by_label(repo, config.issue_label)
-        logger.info("%sLoaded %d existing security issues for synchronization", LOGGING_PREFIX, len(issues))
+        issues = gh_issue_list_by_label(repo, config.security_label)
+        logger.info(
+            "%sLoaded %d existing security issues for sync (label %s)",
+            LOGGING_PREFIX,
+            len(issues),
+            config.security_label,
+        )
 
         spm = parse_severity_priority_map(config.severity_priority_map)
 

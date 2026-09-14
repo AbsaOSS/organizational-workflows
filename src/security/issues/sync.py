@@ -255,7 +255,7 @@ def maybe_reopen_parent_issue(
 
 
 def _close_resolved_parent_issues(
-    parent_issues: dict[int, Issue],
+    issues: dict[int, Issue],
     issue_index: IssueIndex,
     *,
     dry_run: bool,
@@ -264,8 +264,8 @@ def _close_resolved_parent_issues(
     """Close open parent issues whose known child issues are all closed."""
     child_issues_by_rule_id: dict[str, list[Issue]] = {}
 
-    for parent_issue in parent_issues.values():
-        secmeta = load_secmeta(parent_issue.body)
+    for issue in issues.values():
+        secmeta = load_secmeta(issue.body)
         if secmeta.get("type", "").strip().lower() != SECMETA_TYPE_CHILD:
             continue
 
@@ -273,7 +273,7 @@ def _close_resolved_parent_issues(
         if not rule_id:
             continue
 
-        child_issues_by_rule_id.setdefault(rule_id, []).append(parent_issue)
+        child_issues_by_rule_id.setdefault(rule_id, []).append(issue)
 
     for rule_id, parent_issue in issue_index.parent_by_rule_id.items():
         if parent_issue.state.lower() == "closed":

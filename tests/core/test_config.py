@@ -16,7 +16,38 @@
 
 import pytest
 
-from core.config import emit_workflow_warning
+from core.config import _escape_data, _escape_property, emit_workflow_warning
+
+
+# _escape_data
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("100% failed", "100%25 failed"),
+        ("line one\nline two", "line one%0Aline two"),
+        ("carriage\rreturn", "carriage%0Dreturn"),
+    ],
+)
+def test_escape_data_escapes_reserved_characters(value: str, expected: str) -> None:
+    """Unescaped '%'/CR/LF would corrupt or truncate an Actions workflow command."""
+    assert expected == _escape_data(value)
+
+
+# _escape_property
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Teams: failed, retry", "Teams%3A failed%2C retry"),
+        ("100%: two, three", "100%25%3A two%2C three"),
+    ],
+)
+def test_escape_property_escapes_reserved_characters(value: str, expected: str) -> None:
+    """':' and ',' delimit properties, so they must be escaped in addition to '%'/CR/LF."""
+    assert expected == _escape_property(value)
 
 
 # emit_workflow_warning

@@ -17,12 +17,17 @@
 """Shared constants used across the security workflow utilities."""
 
 LABEL_SCOPE_SECURITY = "scope:security"
-LABEL_TYPE_TECH_DEBT = "type:tech-debt"
+LABEL_TYPE_AQUASEC = "type:aquasec"
 LABEL_EPIC = "epic"
+
+# MIGRATION-PHASE-2-REMOVE: deprecated tech-debt label, replaced by type:aquasec.
+LABEL_TYPE_TECH_DEBT = "type:tech-debt"
+LABEL_TYPE_AQUASEC_COLOR = "79bf8f"
+LABEL_TYPE_AQUASEC_DESCRIPTION = "AquaSec generated security finding"
 
 REQUIRED_LABELS: list[str] = [
     LABEL_SCOPE_SECURITY,
-    LABEL_TYPE_TECH_DEBT,
+    LABEL_TYPE_AQUASEC,
     LABEL_EPIC,
 ]
 
@@ -35,6 +40,7 @@ SECURITY_FINDING_DEFAULT = "Security finding"
 NOT_AVAILABLE = "N/A"
 
 GITHUB_BASE_URL = "https://github.com"
+DEFAULT_SCM_REF = "HEAD"
 
 LOGGING_PREFIX = "Security - "
 DRY_RUN_PREFIX = "Security [DRY-RUN] - "
@@ -45,6 +51,20 @@ AQUA_SCAN_URL = "https://eu-1.codesec.aquasec.com/api/v1/scans/results"
 HTTP_TIMEOUT = 30
 FETCH_PAGE_SIZE = 100
 FETCH_SLEEP_SECONDS = 2
+
+# Teams Adaptive Card rendering
+AQUA_PLATFORM_URL = "https://eu-1.cloud.aquasec.com/ah/#/supplychain/codeRepositories/repositories"
+TEAMS_CARD_MAX_BYTES = 24_000
+TEAMS_ISSUE_CAP_PER_STATE = 10
+TEAMS_SUCCESS_BODIES: frozenset[str] = frozenset({"", "1"})
+
+SEVERITY_EMOJI: dict[str, str] = {
+    "critical": "🔴",
+    "high": "🟠",
+    "medium": "🟡",
+    "low": "🟢",
+    "unknown": "⚪",
+}
 
 # Severity mapping (AquaSec numeric → lowercase string)
 SEVERITY_MAP: dict[int, str] = {1: "low", 2: "medium", 3: "high", 4: "critical"}

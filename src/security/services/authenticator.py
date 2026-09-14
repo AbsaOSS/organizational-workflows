@@ -61,7 +61,7 @@ class AquaSecAuthenticator:
         Raises:
             SystemExit: If authentication fails.
         """
-        logger.info("%sAPI authentication starting.", LOGGING_PREFIX)
+        logger.info("%sAPI authentication starting", LOGGING_PREFIX)
 
         timestamp = int(time.time())
         method = "POST"
@@ -93,5 +93,5 @@ class AquaSecAuthenticator:
         if not bearer_token:
             raise SystemExit("ERROR: AquaSec API response missing bearer token data.")
 
-        logger.info("%sAPI authentication successful.", LOGGING_PREFIX)
+        logger.info("%sAPI authentication successful", LOGGING_PREFIX)
         return bearer_token

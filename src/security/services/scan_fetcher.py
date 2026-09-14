@@ -44,7 +44,7 @@ class ScanFetcher:
         Raises:
             SystemExit: If fetching fails.
         """
-        logger.info("%sScan findings fetch starting.", LOGGING_PREFIX)
+        logger.info("%sScan findings fetch starting", LOGGING_PREFIX)
 
         findings: list[dict[str, Any]] = []
         page_num = 1
@@ -85,6 +85,6 @@ class ScanFetcher:
             time.sleep(FETCH_SLEEP_SECONDS)
 
         findings_total = len(findings)
-        logger.info("%sScan findings fetch successful (%d total).", LOGGING_PREFIX, findings_total)
+        logger.info("%sScan findings fetch successful (%d total)", LOGGING_PREFIX, findings_total)
 
         return {"total": findings_total, "data": findings}

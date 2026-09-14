@@ -17,10 +17,10 @@ This solution authenticates with the AquaSec API, fetches scan findings, and con
 ```mermaid
 flowchart TD
     A["🔑 Authenticate with AquaSec API"]
-    B["📥 Fetch and Normalise Findings"]
-    C["📝 Create / Update / Reopen Issues"]
-    D["✅ Close Resolved Findings"]
-    E["📣 Send Notifications"]
+    B["📥 Fetch and Normalise AquaSec Findings"]
+    C["📝 Create / Update / Reopen GH Issues"]
+    D["✅ Close Resolved GH Issues"]
+    E["📣 Send Teams Notifications"]
 
     A --> B --> C --> D --> E
 
@@ -39,7 +39,7 @@ flowchart TD
 
 4. **Close Resolved Findings**: Issues for findings that are no longer detected in the scan are **automatically closed**. Closed issues remain searchable and traceable through their history and any waiver labels.
 
-5. **Send Notifications**: When new or reopened findings are detected a notification can be sent automatically.
+5. **Send Teams Notifications**: When issues are opened, reopened or closed, a single Microsoft Teams card summarizing the run is sent automatically.
 
 ---
 
@@ -48,7 +48,7 @@ flowchart TD
 - **Zero manual triage**: New findings from AquaSec scans automatically become Issues with severity, context, and links to the affected code.
 - **Single source of truth**: GitHub Issues is the system of record. No need to check a separate security portal.
 - **Lifecycle automation**: Issues are reopened when findings reappear, automatically closed when resolved, and updated if needed.
-- **Notifications**: Option to notify the team of new or reopened security findings in real-time.
+- **Teams notifications**: One notification summarizing issue activity and the repository's current open-finding posture, sent only when something actually changed.
 - **Priority sync**: Findings are mapped to priority levels on a ProjectV2 board, keeping planning and security aligned.
 - **Organizational scale**: Shared reusable workflows mean every repository gets the same security process with a single caller workflow.
 
@@ -78,7 +78,7 @@ After a successful run, findings appear as a GitHub Issues with defined body str
 
 **Title:** `[SEC:CRITICAL][FP=a1b2c3d4] requests: Improper certificate verification allows MITM attacks`
 
-**Labels:** `scope:security`, `type:tech-debt`
+**Labels:** `scope:security`, `type:aquasec`
 
 ```markdown
 <!--secmeta
@@ -125,7 +125,7 @@ Each unique rule (e.g. a specific CVE) gets a parent issue that groups all indiv
 
 **Title:** `Security Alert – CVE-2024-99999`
 
-**Labels:** `scope:security`, `epic`
+**Labels:** `scope:security`, `type:aquasec`, `epic`
 
 ```markdown
 <!--secmeta
@@ -181,7 +181,7 @@ Adopt the security automation by adding a short caller workflow to your reposito
 | `AQUA_SECRET` | Yes | AquaSec API secret |
 | `AQUA_GROUP_ID` | Yes | AquaSec group identifier |
 | `AQUA_REPOSITORY_ID` | Yes | AquaSec repository identifier |
-| `TEAMS_WEBHOOK_URL` | No | Teams webhook for real-time alerts |
+| `TEAMS_WEBHOOK_URL` | No | Teams webhook for run notifications |
 
 ### Example Caller Workflow
 

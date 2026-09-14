@@ -41,13 +41,16 @@ class SecurityConfig:
     repo: str
     dry_run: bool = False
     verbose: bool = False
-    issue_label: str = field(default=LABEL_SCOPE_SECURITY)
+    security_label: str = field(default=LABEL_SCOPE_SECURITY)
     severity_priority_map: str = ""
     project_number: int | None = None
     project_org: str = ""
     teams_webhook_url: str = ""
     min_severity: str = MIN_SEVERITY_DEFAULT
     scan_output: str = ""
+    github_server_url: str = ""
+    github_run_id: str = ""
+    github_actions: bool = False
 
     @classmethod
     def load(cls, args: argparse.Namespace) -> "SecurityConfig":
@@ -72,13 +75,16 @@ class SecurityConfig:
             repo=args.repo or os.environ.get("GITHUB_REPOSITORY", ""),
             dry_run=bool(args.dry_run),
             verbose=bool(args.verbose),
-            issue_label=args.issue_label,
+            security_label=args.issue_label,
             severity_priority_map=args.severity_priority_map or os.environ.get("SEVERITY_PRIORITY_MAP", ""),
             project_number=project_number,
             project_org=args.project_org or os.environ.get("PROJECT_ORG", ""),
             teams_webhook_url=args.teams_webhook_url or os.environ.get("TEAMS_WEBHOOK_URL", ""),
             min_severity=min_severity,
             scan_output=args.scan_output,
+            github_server_url=os.environ.get("GITHUB_SERVER_URL", ""),
+            github_run_id=os.environ.get("GITHUB_RUN_ID", ""),
+            github_actions=os.environ.get("GITHUB_ACTIONS", "") == "true",
         )
 
     def validate(self) -> None:

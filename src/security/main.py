@@ -34,6 +34,7 @@ from security.constants import (
     LABEL_TYPE_AQUASEC_COLOR,
     LABEL_TYPE_AQUASEC_DESCRIPTION,
     LOGGING_PREFIX,
+    REQUIRED_LABELS,
 )
 from security.config import SecurityConfig
 from security.services.authenticator import AquaSecAuthenticator
@@ -139,7 +140,10 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("%sEnsured label '%s' exists in the repository", LOGGING_PREFIX, LABEL_TYPE_AQUASEC)
 
     # Check required labels
-    if missing := LabelChecker(repo).check_labels():
+    # MIGRATION-PHASE-2-REMOVE: type:aquasec is self-managed (auto-created above), so it must
+    # not be a hard precondition for repos running the pipeline for the first time or in dry-run.
+    required_labels = [label for label in REQUIRED_LABELS if label != LABEL_TYPE_AQUASEC]
+    if missing := LabelChecker(repo, required=required_labels).check_labels():
         logger.error("%sRequired labels missing in %s: %s", LOGGING_PREFIX, repo, ", ".join(missing))
         return 1
     logger.info("%sAll required labels present", LOGGING_PREFIX)

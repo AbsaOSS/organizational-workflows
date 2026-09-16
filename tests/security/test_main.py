@@ -39,9 +39,8 @@ def _aqua_env(monkeypatch):
     monkeypatch.setattr("security.main.gh_label_create", lambda *a, **k: True)
 
 
-def _mock_pipeline(mocker: MockerFixture):
-    """Mock external dependencies in the pipeline."""
-    mocker.patch.object(LabelChecker, "check_labels", return_value=[])
+def _mock_pipeline_stages(mocker: MockerFixture):
+    """Mock external dependencies downstream of the label check."""
     mock_auth = mocker.patch("security.main.AquaSecAuthenticator")
     mock_auth.return_value.authenticate.return_value = "token"
     mock_fetcher = mocker.patch("security.main.ScanFetcher")
@@ -58,6 +57,12 @@ def _mock_pipeline(mocker: MockerFixture):
         "syncer": mock_syncer,
         "notifier": mock_notifier,
     }
+
+
+def _mock_pipeline(mocker: MockerFixture):
+    """Mock external dependencies in the pipeline, including the label check."""
+    mocker.patch.object(LabelChecker, "check_labels", return_value=[])
+    return _mock_pipeline_stages(mocker)
 
 
 # parse_args
@@ -117,6 +122,43 @@ def test_env_repo_fallback(mocker, monkeypatch):
 def test_missing_labels_returns_1(mocker):
     mocker.patch.object(LabelChecker, "check_labels", return_value=["epic"])
     assert main(["--repo", REPO]) == 1
+
+
+# main - type:aquasec excluded from required labels (MIGRATION-PHASE-2-REMOVE)
+
+
+def test_missing_type_aquasec_label_does_not_fail_dry_run(mocker):
+    """First-time repos without type:aquasec must not fail dry-run (Phase 1 migration)."""
+    mocker.patch.object(LabelChecker, "_fetch_labels", return_value=["scope:security", "epic"])
+    _mock_pipeline_stages(mocker)
+
+    assert main(["--repo", REPO, "--dry-run"]) == 0
+
+
+def test_missing_type_aquasec_label_does_not_fail_live_run(mocker):
+    mocker.patch.object(LabelChecker, "_fetch_labels", return_value=["scope:security", "epic"])
+    _mock_pipeline_stages(mocker)
+
+    assert main(["--repo", REPO]) == 0
+
+
+def test_missing_other_required_label_still_fails(mocker):
+    """Labels other than type:aquasec remain a hard precondition."""
+    mocker.patch.object(LabelChecker, "_fetch_labels", return_value=["type:aquasec"])
+    _mock_pipeline_stages(mocker)
+
+    assert main(["--repo", REPO]) == 1
+
+
+def test_label_checker_called_without_type_aquasec_requirement(mocker):
+    mock_checker_cls = mocker.patch("security.main.LabelChecker")
+    mock_checker_cls.return_value.check_labels.return_value = []
+    _mock_pipeline_stages(mocker)
+
+    main(["--repo", REPO])
+
+    _, kwargs = mock_checker_cls.call_args
+    assert "type:aquasec" not in kwargs["required"]
 
 
 # main - label auto-create (MIGRATION-PHASE-2-REMOVE)

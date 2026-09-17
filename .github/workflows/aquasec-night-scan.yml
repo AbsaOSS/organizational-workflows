@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   aquasec-night-scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@ab0b5372e2ec35be6f9bccf364dd024486e59bc1 #v1.3.0
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@277660de348163abf9855fcedfcfa9ec0da1c176 # v1.4.1
     with:
       dry-run: ${{ inputs.dry-run || false }}
       min-severity: 'high'

@@ -298,10 +298,7 @@ def gh_issue_remove_labels(repo: str, number: int, labels: list[str]) -> None:
 
 
 def gh_label_create(repo: str, name: str, *, color: str = "", description: str = "") -> bool:
-    """Create or update label *name* in *repo* (idempotent via ``--force``).
-
-    MIGRATION-PHASE-2-REMOVE: helper only used by the label auto-create.
-    """
+    """Create or update label *name* in *repo* (idempotent via ``--force``)."""
     if not name:
         return False
 

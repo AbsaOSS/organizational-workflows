@@ -51,6 +51,7 @@ flowchart TD
 - **Teams notifications**: One notification summarizing issue activity and the repository's current open-finding posture, sent only when something actually changed.
 - **Priority sync**: Findings are mapped to priority levels on a ProjectV2 board, keeping planning and security aligned.
 - **Organizational scale**: Shared reusable workflows mean every repository gets the same security process with a single caller workflow.
+- **Zero label setup**: Required labels are created automatically on first run, so onboarding a new repository is smoother.
 
 ---
 
@@ -58,15 +59,16 @@ flowchart TD
 
 Sometimes a finding should be accepted rather than fixed. Either because it is a
 **suppression** or a **false positive**. These waivers are handled by people,
-not the pipeline. Pipeline never adds, removes, or reads these labels.
+not the pipeline. The pipeline creates these labels so they are available in every
+repository, but never adds, removes, or reads them on an issue.
 
 To record a waiver, apply the matching label to the child issue and add a comment
 linking the related Jira ticket:
 
 | Label | Meaning |
 | --- | --- |
-| `sec:suppression` | A real finding is knowingly accepted for a period. |
-| `sec:false-positive` | A finding is confirmed not to be a real issue. |
+| `sec:suppression` | A request to knowingly accept a real finding for a period. |
+| `sec:false-positive` | A request to confirm a finding is not a real issue. |
 
 ---
 

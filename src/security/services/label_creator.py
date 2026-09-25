@@ -16,7 +16,6 @@
 
 """Ensures the labels the security pipeline relies on exist in a GitHub repository."""
 
-import json
 import logging
 
 from core.github.client import run_gh
@@ -69,7 +68,7 @@ class LabelCreator:
         return still_missing
 
     def _fetch_labels(self) -> list[str]:
-        """Return all label names in the repository via ``gh label list``.
+        """Return all label names in the repository via the paginated GitHub API.
 
         Returns:
             List of label names.
@@ -77,9 +76,8 @@ class LabelCreator:
         Raises:
             SystemExit: If the ``gh`` CLI call fails.
         """
-        result = run_gh(["label", "list", "--repo", self.repo, "--json", "name", "--limit", "500"])
+        result = run_gh(["api", "--paginate", f"repos/{self.repo}/labels", "--jq", ".[].name"])
         if result.returncode != 0:
-            logger.error("%sgh label list failed:\n%s", LOGGING_PREFIX, result.stderr)
+            logger.error("%sgh api repos/{repo}/labels failed:\n%s", LOGGING_PREFIX, result.stderr)
             raise SystemExit(1)
-        labels = json.loads(result.stdout)
-        return [entry["name"] for entry in labels if entry.get("name")]
+        return [label for label in result.stdout.splitlines() if label]

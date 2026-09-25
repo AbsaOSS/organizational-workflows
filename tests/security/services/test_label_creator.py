@@ -21,7 +21,6 @@ Each method is tested against its own collaborators: ``_fetch_labels`` against t
 Anything left unmocked is caught by the global guard in ``tests/conftest.py``.
 """
 
-import json
 import logging
 import subprocess
 
@@ -36,7 +35,7 @@ REPO = "my-org/my-repo"
 
 
 def _all_label_names() -> list[str]:
-    """Every label the pipeline requires, as ``gh label list`` would report them."""
+    """Every label the pipeline requires, as ``gh api .../labels`` would report them."""
     return [spec.name for spec in REQUIRED_LABEL_SPECS]
 
 
@@ -46,8 +45,13 @@ def _completed(*, returncode: int = 0, stdout: str = "", stderr: str = "") -> su
 
 
 def _label_list(*names: str) -> subprocess.CompletedProcess:
-    """A successful ``gh label list --json name`` response for *names*."""
-    return _completed(stdout=json.dumps([{"name": name} for name in names]))
+    """A successful ``gh api --paginate .../labels --jq '.[].name'`` response for *names*.
+
+    Mirrors ``gh``'s real output: one name per line, with one line per page rather than
+    a single JSON document, which is why ``_fetch_labels`` parses lines instead of JSON.
+    """
+    stdout = "".join(f"{name}\n" for name in names)
+    return _completed(stdout=stdout)
 
 
 # _fetch_labels
@@ -61,13 +65,13 @@ def test_fetch_labels_returns_names(mocker: MockerFixture) -> None:
 
     assert LabelCreator(REPO)._fetch_labels() == ["scope:security", "epic"]
     mock_gh.assert_called_once_with(
-        ["label", "list", "--repo", REPO, "--json", "name", "--limit", "500"],
+        ["api", "--paginate", f"repos/{REPO}/labels", "--jq", ".[].name"],
     )
 
 
 def test_fetch_labels_skips_empty_names(mocker: MockerFixture) -> None:
-    payload = json.dumps([{"name": "good"}, {"name": ""}, {}])
-    mocker.patch("security.services.label_creator.run_gh", return_value=_completed(stdout=payload))
+    stdout = "good\n\n"
+    mocker.patch("security.services.label_creator.run_gh", return_value=_completed(stdout=stdout))
 
     assert LabelCreator(REPO)._fetch_labels() == ["good"]
 

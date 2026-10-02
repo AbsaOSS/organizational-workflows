@@ -16,20 +16,34 @@
 
 """Shared constants used across the security workflow utilities."""
 
+from dataclasses import dataclass
+
 LABEL_SCOPE_SECURITY = "scope:security"
 LABEL_TYPE_AQUASEC = "type:aquasec"
 LABEL_EPIC = "epic"
+LABEL_SEC_SUPPRESSION = "sec:suppression"
+LABEL_SEC_FALSE_POSITIVE = "sec:false-positive"
 
 # MIGRATION-PHASE-2-REMOVE: deprecated tech-debt label, replaced by type:aquasec.
 LABEL_TYPE_TECH_DEBT = "type:tech-debt"
-LABEL_TYPE_AQUASEC_COLOR = "79bf8f"
-LABEL_TYPE_AQUASEC_DESCRIPTION = "AquaSec generated security finding"
 
-REQUIRED_LABELS: list[str] = [
-    LABEL_SCOPE_SECURITY,
-    LABEL_TYPE_AQUASEC,
-    LABEL_EPIC,
-]
+
+@dataclass(frozen=True)
+class LabelSpec:
+    """A label the pipeline guarantees exists in the target repository."""
+
+    name: str
+    color: str
+    description: str
+
+
+REQUIRED_LABEL_SPECS: tuple[LabelSpec, ...] = (
+    LabelSpec(LABEL_SCOPE_SECURITY, "dc143c", "Security, auth, compliance"),
+    LabelSpec(LABEL_TYPE_AQUASEC, "79bf8f", "AquaSec generated security finding"),
+    LabelSpec(LABEL_EPIC, "3e4b9e", "A bigger feature that needs more deliverable subtasks to finish"),
+    LabelSpec(LABEL_SEC_SUPPRESSION, "f26d8c", "A security suppression request"),
+    LabelSpec(LABEL_SEC_FALSE_POSITIVE, "a0e3bc", "A security false positive confirmation request"),
+)
 
 SECMETA_KEYS_PARENT = {"type", "repo", "rule_id", "severity"}
 SECMETA_KEYS_CHILD = {"type", "fingerprint", "repo", "rule_id", "severity"}

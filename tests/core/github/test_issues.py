@@ -354,7 +354,6 @@ def test_remove_labels_failure_warns(mocker: MockerFixture, caplog) -> None:
 
 
 # gh_label_create
-# MIGRATION-PHASE-2-REMOVE: tests for the migration-only label-create helper.
 
 def test_label_create_success_uses_force(mocker: MockerFixture) -> None:
     mock_run = mocker.patch("core.github.issues.run_gh", return_value=_ok())

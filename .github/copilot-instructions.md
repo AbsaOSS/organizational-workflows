@@ -20,12 +20,12 @@ src/
 │   └── rendering.py             # Generic Markdown template renderer
 │
 ├── security/                    # Security workflow domain
-│   ├── main.py                  # Pipeline orchestrator (validate → check → auth → fetch → parse → sync → notify)
+│   ├── main.py                  # Pipeline orchestrator (validate → ensure labels → auth → fetch → parse → sync → notify)
 │   ├── config.py                # SecurityConfig dataclass
 │   ├── constants.py             # Labels, event types, metadata types, AquaSec API URLs
 │   ├── alerts/                  # Alert domain (parsing, models)
 │   ├── issues/                  # Issue management (sync, builder, secmeta)
-│   └── services/                # Service classes (authenticator, scan_fetcher, label_checker, issue_syncer, notification_sender)
+│   └── services/                # Service classes (authenticator, scan_fetcher, label_creator, issue_syncer, notification_sender)
 │
 tests/                           # Mirrors src/ structure
 ```

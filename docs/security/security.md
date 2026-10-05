@@ -15,20 +15,64 @@ This solution authenticates with the AquaSec API, fetches scan findings, and con
 > **Note:** This solution currently supports the AquaSec scanner only.
 
 ```mermaid
+%%{init: {'themeVariables': {'edgeLabelBackground':'rgba(255,255,255,0.75)'}}}%%
 flowchart TD
-    A["🔑 Authenticate with AquaSec API"]
-    B["📥 Fetch and Normalise AquaSec Findings"]
-    C["📝 Create / Update / Reopen GH Issues"]
-    D["✅ Close Resolved GH Issues"]
-    E["📣 Send Teams Notifications"]
+    IN[("AquaSec API credentials")]
+    AUTH["Authenticate with AquaSec"]
+    FETCH["Fetch AquaSec scan findings"]
+    NORM["Normalise AquaSec findings"]
+    MATCH{"Compare finding<br/>with existing GH issues"}
+    CREATE["Create Issue"]
+    UPDATE["Update Issue"]
+    REOPEN["Reopen Issue"]
+    CLOSE["Close Issue"]
+    EPIC["Ensure linked to rule issue"]
+    EPICCHECK{"All findings for<br/>this rule resolved?"}
+    EPICCLOSE["Auto-close the rule issue"]
+    EPICSTAY["Rule issue stays open"]
+    CHANGED{"Did anything<br/>change this run?"}
+    TEAMS["Send Teams notification"]
+    QUIET["No notification"]
 
-    A --> B --> C --> D --> E
+    IN --> AUTH
+    AUTH --> FETCH
+    FETCH --> NORM
+    NORM --> MATCH
 
-    style A fill:#2e5090,color:#fff,stroke:#1e3a70
-    style B fill:#b07a1e,color:#fff,stroke:#8a5e10
-    style C fill:#2a7a6a,color:#fff,stroke:#1a5a4a
-    style D fill:#5a3d8a,color:#fff,stroke:#3a1d6a
-    style E fill:#2a7a40,color:#fff,stroke:#1a5a28
+    MATCH -->|"New finding"| CREATE
+    MATCH -->|"Changed"| UPDATE
+    MATCH -->|"Was closed, reappeared"| REOPEN
+    MATCH -->|"No longer detected"| CLOSE
+
+    CREATE --> EPIC
+    UPDATE --> EPIC
+    REOPEN --> EPIC
+    CLOSE --> EPICCHECK
+    EPICCHECK -->|"Yes"| EPICCLOSE
+    EPICCHECK -->|"No"| EPICSTAY
+
+    CREATE --> CHANGED
+    REOPEN --> CHANGED
+    CLOSE --> CHANGED
+    CHANGED -->|"Yes"| TEAMS
+    CHANGED -->|"No"| QUIET
+
+    style IN fill:#2b5896,color:#fff,stroke:#000
+    style AUTH fill:#2b6696,color:#fff,stroke:#000
+    style FETCH fill:#2b7596,color:#fff,stroke:#000
+    style NORM fill:#2b8496,color:#fff,stroke:#000
+    style MATCH fill:#52525b,color:#fff,stroke:#000
+    style CREATE fill:#2b9396,color:#fff,stroke:#000
+    style UPDATE fill:#2b9396,color:#fff,stroke:#000
+    style REOPEN fill:#2b9396,color:#fff,stroke:#000
+    style CLOSE fill:#2b9396,color:#fff,stroke:#000
+    style EPIC fill:#2b968a,color:#fff,stroke:#000
+    style EPICCHECK fill:#52525b,color:#fff,stroke:#000
+    style EPICCLOSE fill:#2b968a,color:#fff,stroke:#000
+    style EPICSTAY fill:#52525b,color:#fff,stroke:#000
+    style CHANGED fill:#52525b,color:#fff,stroke:#000
+    style TEAMS fill:#2b967b,color:#fff,stroke:#000
+    style QUIET fill:#52525b,color:#fff,stroke:#000
 ```
 
 1. **Authenticate with AquaSec**: The pipeline authenticates using HMAC-SHA256 signed credentials to obtain a bearer token from the AquaSec API.
@@ -39,7 +83,7 @@ flowchart TD
 
 4. **Close Resolved Findings**: Issues for findings that are no longer detected in the scan are **automatically closed**. Closed issues remain searchable and traceable through their history and any waiver labels.
 
-5. **Send Teams Notifications**: When issues are opened, reopened or closed, a single Microsoft Teams card summarizing the run is sent automatically.
+5. **Send Teams Notifications (Optional)**: When issues are opened, reopened or closed, a single Microsoft Teams card summarizing the run is sent automatically.
 
 ---
 

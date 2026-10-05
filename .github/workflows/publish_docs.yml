@@ -38,7 +38,7 @@ jobs:
           persist-credentials: false
 
       - name: Render and publish single-page docs
-        uses: AbsaOSS/knowledge-base/actions/publish-single-page-docs@83d63d28635416e4a0c428f9f4472df74d9e1919 # v1.0.0
+        uses: AbsaOSS/knowledge-base/actions/publish-single-page-docs@5740e216dc1f57dc4c1599623e04c637dcfbef3e # v1.3.0
         with:
           # Which release the docs bundle is attached to
           release-tag: ${{ inputs.release-tag || github.event.release.tag_name }}

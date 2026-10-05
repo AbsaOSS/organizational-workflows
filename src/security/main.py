@@ -16,7 +16,7 @@
 #
 
 """Orchestrator that runs the full Security pipeline.
-Pipeline: validate config -> check labels -> authenticate -> fetch -> parse -> sync -> notify.
+Pipeline: validate config -> ensure labels -> authenticate -> fetch -> parse -> sync -> notify.
 """
 
 import argparse
@@ -24,22 +24,14 @@ import logging
 import shutil
 
 from core.config import emit_workflow_warning, parse_runner_debug, setup_logging
-from core.github.issues import gh_label_create
 from core.helpers import write_json
 
 from security.alerts.aquasec_parser import AquaSecParser
-from security.constants import (
-    DRY_RUN_PREFIX,
-    LABEL_TYPE_AQUASEC,
-    LABEL_TYPE_AQUASEC_COLOR,
-    LABEL_TYPE_AQUASEC_DESCRIPTION,
-    LOGGING_PREFIX,
-    REQUIRED_LABELS,
-)
+from security.constants import LOGGING_PREFIX
 from security.config import SecurityConfig
 from security.services.authenticator import AquaSecAuthenticator
 from security.services.issue_syncer import IssueSyncer
-from security.services.label_checker import LabelChecker
+from security.services.label_creator import LabelCreator
 from security.services.notification_sender import NotificationSender
 from security.services.scan_fetcher import ScanFetcher
 
@@ -52,7 +44,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description=(
             "Security pipeline orchestrator:\n"
             "  1) Validate configuration\n"
-            "  2) Check required labels exist\n"
+            "  2) Ensure required labels exist\n"
             "  3) Authenticate with AquaSec API\n"
             "  4) Fetch repository scan findings\n"
             "  5) Parse findings\n"
@@ -126,27 +118,15 @@ def main(argv: list[str] | None = None) -> int:
     if shutil.which("gh") is None:
         raise SystemExit("ERROR: gh CLI is required. Install and authenticate (gh auth login).")
 
-    # MIGRATION-PHASE-2-REMOVE: auto-create of the type:aquasec label.
-    # Auto-create the type:aquasec label so target repos need no manual setup
-    # before the tech-debt -> aquasec switch.
-    if dry_run:
-        logger.info("%sWould ensure label '%s' exists in the repository", DRY_RUN_PREFIX, LABEL_TYPE_AQUASEC)
-    elif gh_label_create(
-        repo,
-        LABEL_TYPE_AQUASEC,
-        color=LABEL_TYPE_AQUASEC_COLOR,
-        description=LABEL_TYPE_AQUASEC_DESCRIPTION,
-    ):
-        logger.info("%sEnsured label '%s' exists in the repository", LOGGING_PREFIX, LABEL_TYPE_AQUASEC)
-
-    # Check required labels
-    # MIGRATION-PHASE-2-REMOVE: type:aquasec is self-managed (auto-created above), so it must
-    # not be a hard precondition for repos running the pipeline for the first time or in dry-run.
-    required_labels = [label for label in REQUIRED_LABELS if label != LABEL_TYPE_AQUASEC]
-    if missing := LabelChecker(repo, required=required_labels).check_labels():
-        logger.error("%sRequired labels missing in %s: %s", LOGGING_PREFIX, repo, ", ".join(missing))
+    # Ensure the labels the pipeline relies on exist, creating any that are missing
+    if missing := LabelCreator(repo).ensure_labels(dry_run=dry_run):
+        logger.error(
+            "%sRequired labels are missing from %s and could not be created: %s.",
+            LOGGING_PREFIX,
+            repo,
+            ", ".join(missing),
+        )
         return 1
-    logger.info("%sAll required labels present", LOGGING_PREFIX)
 
     # Authenticate with AquaSec
     authenticator = AquaSecAuthenticator(config.aqua_key, config.aqua_secret, config.aqua_group_id)

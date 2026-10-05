@@ -20,7 +20,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from security.main import main, parse_args
-from security.services.label_checker import LabelChecker
+from security.services.label_creator import LabelCreator
 from security.services.notification_sender import NotificationSender
 
 
@@ -35,12 +35,10 @@ def _aqua_env(monkeypatch):
     monkeypatch.setenv("AQUA_GROUP_ID", "12345")
     monkeypatch.setenv("AQUA_REPOSITORY_ID", "abc12345-e89b-12d3-a456-426614174000")
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
-    # MIGRATION-PHASE-2-REMOVE: Prevent the migration label auto-create from making a real gh call.
-    monkeypatch.setattr("security.main.gh_label_create", lambda *a, **k: True)
 
 
 def _mock_pipeline_stages(mocker: MockerFixture):
-    """Mock external dependencies downstream of the label check."""
+    """Mock external dependencies downstream of the label ensure step."""
     mock_auth = mocker.patch("security.main.AquaSecAuthenticator")
     mock_auth.return_value.authenticate.return_value = "token"
     mock_fetcher = mocker.patch("security.main.ScanFetcher")
@@ -60,8 +58,8 @@ def _mock_pipeline_stages(mocker: MockerFixture):
 
 
 def _mock_pipeline(mocker: MockerFixture):
-    """Mock external dependencies in the pipeline, including the label check."""
-    mocker.patch.object(LabelChecker, "check_labels", return_value=[])
+    """Mock external dependencies in the pipeline, including the label ensure step."""
+    mocker.patch.object(LabelCreator, "ensure_labels", return_value=[])
     return _mock_pipeline_stages(mocker)
 
 
@@ -116,85 +114,34 @@ def test_env_repo_fallback(mocker, monkeypatch):
     mocks["auth"].assert_called_once()
 
 
-# main - label check
+# main - required labels
 
 
-def test_missing_labels_returns_1(mocker):
-    mocker.patch.object(LabelChecker, "check_labels", return_value=["epic"])
+def test_labels_that_could_not_be_created_return_1(mocker):
+    """A label that cannot be created is a permissions problem: fail fast, before authenticating."""
+    mocker.patch.object(LabelCreator, "ensure_labels", return_value=["epic"])
+    mocks = _mock_pipeline_stages(mocker)
+
     assert main(["--repo", REPO]) == 1
+    mocks["auth"].assert_not_called()
 
 
-# main - type:aquasec excluded from required labels (MIGRATION-PHASE-2-REMOVE)
-
-
-def test_missing_type_aquasec_label_does_not_fail_dry_run(mocker):
-    """First-time repos without type:aquasec must not fail dry-run (Phase 1 migration)."""
-    mocker.patch.object(LabelChecker, "_fetch_labels", return_value=["scope:security", "epic"])
-    _mock_pipeline_stages(mocker)
-
-    assert main(["--repo", REPO, "--dry-run"]) == 0
-
-
-def test_missing_type_aquasec_label_does_not_fail_live_run(mocker):
-    mocker.patch.object(LabelChecker, "_fetch_labels", return_value=["scope:security", "epic"])
-    _mock_pipeline_stages(mocker)
+def test_labels_all_ensured_lets_the_run_continue(mocker):
+    ensure = mocker.patch.object(LabelCreator, "ensure_labels", return_value=[])
+    mocks = _mock_pipeline_stages(mocker)
 
     assert main(["--repo", REPO]) == 0
+    ensure.assert_called_once_with(dry_run=False)
+    mocks["auth"].assert_called_once()
 
 
-def test_missing_other_required_label_still_fails(mocker):
-    """Labels other than type:aquasec remain a hard precondition."""
-    mocker.patch.object(LabelChecker, "_fetch_labels", return_value=["type:aquasec"])
+def test_dry_run_is_forwarded_to_the_label_creator(mocker):
+    ensure = mocker.patch.object(LabelCreator, "ensure_labels", return_value=[])
     _mock_pipeline_stages(mocker)
 
-    assert main(["--repo", REPO]) == 1
+    main(["--repo", REPO, "--dry-run"])
 
-
-def test_label_checker_called_without_type_aquasec_requirement(mocker):
-    mock_checker_cls = mocker.patch("security.main.LabelChecker")
-    mock_checker_cls.return_value.check_labels.return_value = []
-    _mock_pipeline_stages(mocker)
-
-    main(["--repo", REPO])
-
-    _, kwargs = mock_checker_cls.call_args
-    assert "type:aquasec" not in kwargs["required"]
-
-
-# main - label auto-create (MIGRATION-PHASE-2-REMOVE)
-
-
-def test_label_create_skipped_and_would_ensure_logged_in_dry_run(mocker, monkeypatch, caplog):
-    """Dry-run must not mutate the repo: no real gh_label_create call."""
-    mock_create = mocker.patch("security.main.gh_label_create")
-    _mock_pipeline(mocker)
-
-    with caplog.at_level("INFO"):
-        assert main(["--repo", REPO, "--dry-run"]) == 0
-
-    mock_create.assert_not_called()
-    assert any("Would ensure label" in record.message for record in caplog.records)
-
-
-def test_label_create_called_and_ensured_logged_in_live_run(mocker, caplog):
-    mock_create = mocker.patch("security.main.gh_label_create", return_value=True)
-    _mock_pipeline(mocker)
-
-    with caplog.at_level("INFO"):
-        assert main(["--repo", REPO]) == 0
-
-    mock_create.assert_called_once()
-    assert any("Ensured label" in record.message for record in caplog.records)
-
-
-def test_no_ensured_label_log_on_create_failure(mocker, caplog):
-    mocker.patch("security.main.gh_label_create", return_value=False)
-    _mock_pipeline(mocker)
-
-    with caplog.at_level("INFO"):
-        assert main(["--repo", REPO]) == 0
-
-    assert not any("Ensured label" in record.message for record in caplog.records)
+    ensure.assert_called_once_with(dry_run=True)
 
 
 # main - pipeline success
@@ -257,7 +204,7 @@ def test_scan_output_skipped_when_not_provided(mocker):
 
 def test_pipeline_call_order(mocker):
     call_order: list[str] = []
-    mocker.patch.object(LabelChecker, "check_labels", side_effect=lambda: (call_order.append("check"), [])[-1])
+    mocker.patch.object(LabelCreator, "ensure_labels", side_effect=lambda **_: (call_order.append("ensure"), [])[-1])
     mock_auth = mocker.patch("security.main.AquaSecAuthenticator")
     mock_auth.return_value.authenticate.side_effect = lambda: (call_order.append("auth"), "token")[-1]
     mock_fetcher = mocker.patch("security.main.ScanFetcher")
@@ -270,14 +217,14 @@ def test_pipeline_call_order(mocker):
 
     main(["--repo", REPO])
 
-    assert call_order == ["check", "auth", "fetch", "parse", "sync", "notify"]
+    assert call_order == ["ensure", "auth", "fetch", "parse", "sync", "notify"]
 
 
 # main - error propagation
 
 
 def test_auth_error_propagates(mocker):
-    mocker.patch.object(LabelChecker, "check_labels", return_value=[])
+    mocker.patch.object(LabelCreator, "ensure_labels", return_value=[])
     mock_auth = mocker.patch("security.main.AquaSecAuthenticator")
     mock_auth.return_value.authenticate.side_effect = SystemExit("auth failed")
 
@@ -286,7 +233,7 @@ def test_auth_error_propagates(mocker):
 
 
 def test_fetch_error_propagates(mocker):
-    mocker.patch.object(LabelChecker, "check_labels", return_value=[])
+    mocker.patch.object(LabelCreator, "ensure_labels", return_value=[])
     mock_auth = mocker.patch("security.main.AquaSecAuthenticator")
     mock_auth.return_value.authenticate.return_value = "token"
     mock_fetcher = mocker.patch("security.main.ScanFetcher")

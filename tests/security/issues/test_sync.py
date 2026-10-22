@@ -156,13 +156,18 @@ def test_parent_not_in_fingerprint_index() -> None:
     assert "fp_parent" not in idx.child_by_fingerprint
 
 
-def test_first_fingerprint_wins() -> None:
-    """If two children share the same fingerprint, the first one wins."""
+def test_lowest_number_child_wins_regardless_of_order() -> None:
     c1 = _issue_with_secmeta(10, {"type": "child", "fingerprint": "shared_fp"})
     c2 = _issue_with_secmeta(20, {"type": "child", "fingerprint": "shared_fp"})
-    issues = {10: c1, 20: c2}
-    idx = build_issue_index(issues)
+    idx = build_issue_index({20: c2, 10: c1})
     assert idx.child_by_fingerprint["shared_fp"].number == 10
+
+
+def test_lowest_number_parent_wins_regardless_of_order() -> None:
+    p1 = _issue_with_secmeta(5, {"type": "parent", "rule_id": "R1"})
+    p2 = _issue_with_secmeta(50, {"type": "parent", "rule_id": "R1"})
+    idx = build_issue_index({50: p2, 5: p1})
+    assert idx.parent_by_rule_id["R1"].number == 5
 
 
 def test_mixed_issues() -> None:

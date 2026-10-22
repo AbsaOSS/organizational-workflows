@@ -77,7 +77,10 @@ from .templates import PARENT_BODY_TEMPLATE
 
 
 def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
-    """Build the child-by-fingerprint and parent-by-rule lookup maps from existing issues."""
+    """Build the child-by-fingerprint and parent-by-rule lookup maps from existing issues.
+
+    When duplicates exist, the oldest (lowest-numbered) issue wins.
+    """
     child_by_fingerprint: dict[str, Issue] = {}
     parent_by_rule_id: dict[str, Issue] = {}
 
@@ -87,11 +90,15 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
         if secmeta_type == SECMETA_TYPE_PARENT:
             rule_id = secmeta.get("rule_id", "").strip()
             if rule_id:
-                parent_by_rule_id.setdefault(rule_id, issue)
+                existing_parent = parent_by_rule_id.get(rule_id)
+                if existing_parent is None or issue.number < existing_parent.number:
+                    parent_by_rule_id[rule_id] = issue
 
         fp = secmeta.get("fingerprint", "").strip() or secmeta.get("alert_hash", "").strip()
         if fp and secmeta_type != SECMETA_TYPE_PARENT:
-            child_by_fingerprint.setdefault(fp, issue)
+            existing_child = child_by_fingerprint.get(fp)
+            if existing_child is None or issue.number < existing_child.number:
+                child_by_fingerprint[fp] = issue
 
     return IssueIndex(
         child_by_fingerprint=child_by_fingerprint,

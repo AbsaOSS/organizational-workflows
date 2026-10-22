@@ -207,7 +207,7 @@ def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
     issues: dict[int, Issue] = {}
     for obj in items:
         try:
-            number = int(obj.get("number"))
+            number = int(obj.get("number", ""))
         except (TypeError, ValueError): # fmt: skip
             continue
         label_nodes = (obj.get("labels") or {}).get("nodes") or []

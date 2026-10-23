@@ -147,55 +147,76 @@ def gh_issue_get_sub_issue_numbers(repo: str, parent_number: int) -> set[int]:
         return set()
 
 
-def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
-    """Load issues with a given label.
+_LIST_BY_LABEL_QUERY = """
+query($owner:String!, $name:String!, $label:String!, $endCursor:String){
+  repository(owner:$owner, name:$name){
+    issues(first:100, labels:[$label], states:[OPEN,CLOSED], after:$endCursor){
+      pageInfo{ hasNextPage endCursor }
+      nodes{ number state title body labels(first:50){ nodes{ name } } }
+    }
+  }
+}
+"""
 
-    This is used to pre-mine issue data so matching can happen locally without
-    repeatedly calling ``gh issue list`` for every alert.
+
+def gh_issue_list_by_label(repo: str, label: str) -> dict[int, Issue]:
+    """Load all issues (open and closed) with a given label.
+
+    Uses paginated GraphQL because ``gh issue list`` is search-backed and
+    silently capped at 1000 results. This pre-mines issue data so matching can
+    happen locally without repeatedly calling GitHub for every alert.
+
+    Raises:
+        RuntimeError: If the listing fails or returns malformed output, so that
+            callers never mistake an incomplete load for "no existing issues".
     """
 
     if not label:
         return {}
 
+    owner, _, name = repo.partition("/")
     res = run_gh(
         [
-            "issue",
-            "list",
-            "--repo",
-            repo,
-            "--label",
-            label,
-            "--state",
-            "all",
-            "--json",
-            "number,state,title,body,labels",
-            "--limit",
-            "5000",
+            "api",
+            "graphql",
+            "--paginate",
+            "-f",
+            f"query={_LIST_BY_LABEL_QUERY}",
+            "-F",
+            f"owner={owner}",
+            "-F",
+            f"name={name}",
+            "-F",
+            f"label={label}",
+            "--jq",
+            ".data.repository.issues.nodes[]",
         ]
     )
 
     if res.returncode != 0:
-        logging.error("gh issue list by label failed: %s", res.stderr)
-        return {}
+        raise RuntimeError(f"Failed to list issues with label {label!r} in {repo}: {res.stderr}")
 
+    items: list[dict] = []
     try:
-        items = json.loads(res.stdout or "[]")
-    except json.JSONDecodeError:
-        return {}
+        for line in (res.stdout or "").splitlines():
+            if line.strip():
+                items.append(json.loads(line))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Invalid issue list response for label {label!r} in {repo}: {exc}") from exc
 
     issues: dict[int, Issue] = {}
-    for obj in items or []:
+    for obj in items:
         try:
-            number = int(obj.get("number"))
+            number = int(obj.get("number", ""))
         except (TypeError, ValueError): # fmt: skip
             continue
-        raw_labels = obj.get("labels") or []
-        label_names = [str(lbl.get("name") or lbl) if isinstance(lbl, dict) else str(lbl) for lbl in raw_labels]
+        label_nodes = (obj.get("labels") or {}).get("nodes") or []
+        label_names = [str(lbl.get("name", "")) for lbl in label_nodes if isinstance(lbl, dict)]
         issues[number] = Issue(
             number=number,
-            state=str(obj.get("state", "")),
-            title=str(obj.get("title", "")),
-            body=str(obj.get("body", "")),
+            state=str(obj.get("state") or "").lower(),
+            title=str(obj.get("title") or ""),
+            body=str(obj.get("body") or ""),
             labels=label_names,
         )
 

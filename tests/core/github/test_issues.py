@@ -394,15 +394,20 @@ def test_create_issue_failure_returns_none(mocker: MockerFixture) -> None:
 
 
 def test_list_by_label_success(mocker: MockerFixture) -> None:
+    # --paginate with --jq emits one JSON object per line across all pages
     payload = [
-        {"number": 1, "state": "open", "title": "T1", "body": "b1", "labels": [{"name": "bug"}]},
-        {"number": 2, "state": "closed", "title": "T2", "body": "b2", "labels": []},
+        {"number": 1, "state": "OPEN", "title": "T1", "body": "b1", "labels": {"nodes": [{"name": "bug"}]}},
+        {"number": 2, "state": "CLOSED", "title": "T2", "body": None, "labels": {"nodes": []}},
     ]
-    mocker.patch("core.github.issues.run_gh", return_value=_ok(stdout=json.dumps(payload)))
+    stdout = "\n".join(json.dumps(p) for p in payload) + "\n"
+    mocker.patch("core.github.issues.run_gh", return_value=_ok(stdout=stdout))
     issues = gh_issue_list_by_label("org/repo", "bug")
     assert len(issues) == 2
     assert issues[1].title == "T1"
+    assert issues[1].state == "open"
     assert issues[1].labels == ["bug"]
+    assert issues[2].state == "closed"
+    assert issues[2].body == ""
     assert issues[2].labels == []
 
 def test_list_by_label_empty_label_returns_empty(mocker: MockerFixture) -> None:
@@ -410,6 +415,12 @@ def test_list_by_label_empty_label_returns_empty(mocker: MockerFixture) -> None:
     assert gh_issue_list_by_label("org/repo", "") == {}
     mock_run.assert_not_called()
 
-def test_list_by_label_gh_failure_returns_empty(mocker: MockerFixture) -> None:
-    mocker.patch("core.github.issues.run_gh", return_value=_err("network error"))
-    assert gh_issue_list_by_label("org/repo", "bug") == {}
+@pytest.mark.parametrize(
+    "result",
+    [_err("network error"), _ok(stdout="not json")],
+    ids=["gh-failure", "malformed-output"],
+)
+def test_list_by_label_failure_raises(mocker: MockerFixture, result: subprocess.CompletedProcess) -> None:
+    mocker.patch("core.github.issues.run_gh", return_value=result)
+    with pytest.raises(RuntimeError):
+        gh_issue_list_by_label("org/repo", "bug")

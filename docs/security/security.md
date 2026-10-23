@@ -215,6 +215,17 @@ When the scan step completes successfully, the fetched AquaSec findings are uplo
 
 ---
 
+## Why GitHub and AquaSec Numbers Can Differ
+
+The numbers in GitHub and in the AquaSec portal are not expected to match. The Teams notification and GitHub Issues can show **fewer** findings than AquaSec, by design.
+
+- **AquaSec counts every route.** If a vulnerable library is pulled in by several of your other libraries, AquaSec lists one finding for each route.
+- **GitHub counts every problem once.** The pipeline opens a single issue for each unique problem, because it is fixed once, for example by upgrading that library.
+
+> **Note:** The Teams notification counts only open security issues (children). The rule issues (parents) that group them are not counted.
+
+---
+
 ## Getting Started
 
 Adopt the security automation by adding a short caller workflow to your repository.

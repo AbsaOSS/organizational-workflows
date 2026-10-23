@@ -13,7 +13,7 @@
 
 If you need to build the project locally, follow the steps for dedicated solution:
 
-- **Security Solution:** [Running Locally](src/security/README.md#running-locally)
+- **Security Solution:** [Running Locally](src/security/README.md#running-locally), domain language and rules in [CONTEXT.md](src/security/CONTEXT.md)
 
 ---
 

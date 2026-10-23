@@ -5,6 +5,10 @@ A collection of reusable GitHub Actions workflows with Python automation backend
 Each workflow domain is a self-contained package under `src/`. The workflows are
 designed to be called via `workflow_call` from other repositories.
 
+Domain language
+Before changing security code, read `src/security/CONTEXT.md` (glossary, lifecycle rules, invariants)
+and use its terms in code, logs, tests and docs.
+
 Structure
 ```text
 src/

@@ -4,7 +4,7 @@
 
 Security Automation provides **continuous, automated vulnerability management** for your repositories. It authenticates directly with the AquaSec API, fetches scan findings, and automatically converts them into structured **GitHub Issues** with full lifecycle management. This gives your team a managed security posture without manual triage effort.
 
-> For setup instructions and technical configuration, see the [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md).
+> For setup instructions, see the [How to Onboard guide](/knowledge-base/how-to-onboard-security-automation).
 
 ---
 
@@ -93,7 +93,6 @@ flowchart TD
 - **Single source of truth**: GitHub Issues is the system of record. No need to check a separate security portal.
 - **Lifecycle automation**: Issues are reopened when findings reappear, automatically closed when resolved, and updated if needed.
 - **Teams notifications**: One notification summarizing issue activity and the repository's current open-finding posture, sent only when something actually changed.
-- **Priority sync**: Findings are mapped to priority levels on a ProjectV2 board, keeping planning and security aligned.
 - **Organizational scale**: Shared reusable workflows mean every repository gets the same security process with a single caller workflow.
 - **Zero label setup**: Required labels are created automatically on first run, so onboarding a new repository is smoother.
 
@@ -248,6 +247,6 @@ See the full example at [aquasec-night-scan-example.yml](https://github.com/Absa
 
 ## See Also
 
-- [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): setup instructions, shared workflow configuration, and technical details
+- [How to Onboard](/knowledge-base/how-to-onboard-security-automation): step-by-step onboarding guide
+- [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): running locally and technical details
 - [Example Caller Workflow](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
-- [Repository README](https://github.com/AbsaOSS/organizational-workflows/blob/master/README.md): overview of all organizational workflows

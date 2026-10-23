@@ -49,3 +49,9 @@ jobs:
               slug: security-automation
               icon: shield
               tags: [security, automation, aquasec, workflows]
+            - md: docs/security/how-to-onboard.md
+              title: How to Onboard to Security Automation
+              description: Step-by-step guide to onboard a repository to AquaSec-driven security issue automation.
+              slug: how-to-onboard-security-automation
+              icon: shield
+              tags: [security, onboarding, aquasec ]

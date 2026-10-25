@@ -78,7 +78,6 @@ PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run --verb
 | `--repo`                  | Target repository (owner/repo).                                                            |
 | `--dry-run`               | Simulate without writing issues. All intended actions are logged.                          |
 | `--verbose`               | Enable verbose logging.                                                                    |
-| `--issue-label`           | Label used to discover existing security issues (default: `scope:security`).               |
 | `--teams-webhook-url`     | Teams webhook URL (default: `$TEAMS_WEBHOOK_URL`).                                         |
 | `--min-severity`          | Minimum severity for issue creation: `low`, `medium`, `high`, `critical` (default: `low`). |
 

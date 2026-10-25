@@ -20,9 +20,9 @@ import argparse
 import logging
 import os
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from security.constants import LABEL_SCOPE_SECURITY, LOGGING_PREFIX, MIN_SEVERITY_DEFAULT, VALID_SEVERITIES
+from security.constants import LOGGING_PREFIX, MIN_SEVERITY_DEFAULT, VALID_SEVERITIES
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,6 @@ class SecurityConfig:
     repo: str
     dry_run: bool = False
     verbose: bool = False
-    security_label: str = field(default=LABEL_SCOPE_SECURITY)
     severity_priority_map: str = ""
     project_number: int | None = None
     project_org: str = ""
@@ -75,7 +74,6 @@ class SecurityConfig:
             repo=args.repo or os.environ.get("GITHUB_REPOSITORY", ""),
             dry_run=bool(args.dry_run),
             verbose=bool(args.verbose),
-            security_label=args.issue_label,
             severity_priority_map=args.severity_priority_map or os.environ.get("SEVERITY_PRIORITY_MAP", ""),
             project_number=project_number,
             project_org=args.project_org or os.environ.get("PROJECT_ORG", ""),

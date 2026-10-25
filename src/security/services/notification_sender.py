@@ -94,7 +94,6 @@ class NotificationSender:
         """Build the message payload, shrinking it when it would exceed the Teams limit."""
         links = NotificationLinks.build(
             repo=self.config.repo,
-            security_label=self.config.security_label,
             server_url=self.config.github_server_url,
             run_id=self.config.github_run_id,
         )

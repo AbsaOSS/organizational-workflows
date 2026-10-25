@@ -35,7 +35,6 @@ def config(mocker: MockerFixture) -> object:
     return mocker.MagicMock(
         repo=REPO,
         teams_webhook_url=WEBHOOK,
-        security_label="scope:security",
         min_severity="medium",
         github_server_url="https://github.com",
         github_run_id="12345",

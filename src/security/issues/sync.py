@@ -26,14 +26,12 @@ import logging
 
 from core.helpers import normalize_path
 from core.github.issues import (
-    gh_issue_add_labels,
     gh_issue_add_sub_issue_by_number,
     gh_issue_create,
     gh_issue_edit_body,
     gh_issue_edit_state,
     gh_issue_edit_title,
     gh_issue_get_sub_issue_numbers,
-    gh_issue_remove_labels,
 )
 from core.github.projects import ProjectPrioritySync, gh_project_get_priority_field
 from core.models import Issue
@@ -45,7 +43,6 @@ from security.constants import (
     LABEL_EPIC,
     LABEL_SCOPE_SECURITY,
     LABEL_TYPE_AQUASEC,
-    LABEL_TYPE_TECH_DEBT,
     LOGGING_PREFIX,
     SECMETA_TYPE_CHILD,
     SECMETA_TYPE_PARENT,
@@ -72,7 +69,7 @@ from .models import (
     bump_severity,
 )
 from .secmeta import load_secmeta, render_secmeta
-from .summary import LabelMigrationSummary, render_sync_summary
+from .summary import render_sync_summary
 from .templates import PARENT_BODY_TEMPLATE
 
 
@@ -104,111 +101,6 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
         child_by_fingerprint=child_by_fingerprint,
         parent_by_rule_id=parent_by_rule_id,
     )
-
-
-def _migrate_issue_labels(
-    repo: str,
-    issue: Issue,
-    add_labels: list[str],
-    *,
-    dry_run: bool,
-    label_summary: LabelMigrationSummary | None = None,
-) -> bool:
-    """Stamp *add_labels* onto *issue* and strip the deprecated tech-debt label.
-
-    MIGRATION-PHASE-2-REMOVE: tech-debt label removal branch.
-
-    Only the labels actually missing are added, and ``type:tech-debt`` is only
-    removed when present, so an already-migrated issue costs zero API calls.
-
-    Defensive scoping: the label is only unassigned from the individual issue
-    when that issue carries *both* ``scope:security`` and ``type:tech-debt``, so
-    ``type:tech-debt`` is never touched on issues used for other purposes. This
-    only un-assigns the label from the aquasec generated issues.
-
-    When *label_summary* is provided, the counts of added/removed labels (and
-    the migrated-issue tally) are accumulated onto it so the caller can report
-    them in the sync summary.
-
-    Returns:
-        True when the issue needed migrating (or would in a dry run).
-    """
-    labels = list(issue.labels or [])
-    missing = [label for label in add_labels if label not in labels]
-    stale = LABEL_TYPE_TECH_DEBT in labels and LABEL_SCOPE_SECURITY in labels
-
-    if not missing and not stale:
-        return False
-
-    parts = []
-    if missing:
-        parts.append(f"add: {', '.join(missing)}")
-    if stale:
-        parts.append(f"remove: {LABEL_TYPE_TECH_DEBT}")
-    detail = ", ".join(parts)
-
-    if dry_run:
-        logging.info("%sWould migrate labels on issue #%d (%s)", DRY_RUN_PREFIX, issue.number, detail)
-        if label_summary is not None:
-            label_summary.issues_migrated += 1
-            label_summary.labels_added += len(missing)
-            label_summary.labels_removed += 1 if stale else 0
-        return True
-
-    logging.info("%sMigrating labels on issue #%d (%s)", LOGGING_PREFIX, issue.number, detail)
-
-    if missing:
-        gh_issue_add_labels(repo, issue.number, missing)
-        labels += missing
-
-    if stale:
-        gh_issue_remove_labels(repo, issue.number, [LABEL_TYPE_TECH_DEBT])
-        labels = [label for label in labels if label != LABEL_TYPE_TECH_DEBT]
-
-    issue.labels = labels
-    if label_summary is not None:
-        label_summary.issues_migrated += 1
-        label_summary.labels_added += len(missing)
-        label_summary.labels_removed += 1 if stale else 0
-    return True
-
-
-def _migrate_all_security_issue_labels(repo: str, issues: dict[int, Issue], *, dry_run: bool) -> LabelMigrationSummary:
-    """One-pass label migration over every AquaSec-generated issue.
-
-    MIGRATION-PHASE-2-REMOVE: full-population label migration sweep.
-
-    Stamps ``type:aquasec`` and strips the deprecated ``type:tech-debt`` on *all*
-    fetched security issues, including closed ones and those not matched by a
-    current alert. Issues are identified as AquaSec-owned by the presence of a
-    parent/child ``secmeta`` block, so unrelated ``scope:security`` issues are
-    never touched.
-
-    Returns:
-        A summary of how many issues were migrated and how many labels were
-        added/removed, for inclusion in the sync summary.
-    """
-    label_summary = LabelMigrationSummary()
-    for issue in issues.values():
-        secmeta_type = load_secmeta(issue.body).get("type", "").strip().lower()
-        if secmeta_type in (SECMETA_TYPE_PARENT, SECMETA_TYPE_CHILD):
-            _migrate_issue_labels(
-                repo,
-                issue,
-                [LABEL_SCOPE_SECURITY, LABEL_TYPE_AQUASEC],
-                dry_run=dry_run,
-                label_summary=label_summary,
-            )
-
-    if not label_summary.issues_migrated:
-        return label_summary
-
-    if dry_run:
-        logging.info("%sWould migrate labels on %d security issue(s)", DRY_RUN_PREFIX, label_summary.issues_migrated)
-    else:
-        logging.info("%sMigrated labels on %d security issue(s)", LOGGING_PREFIX, label_summary.issues_migrated)
-
-    return label_summary
 
 
 def find_issue_in_index(
@@ -376,13 +268,6 @@ def ensure_parent_issue(
         # defer the API call until all alerts have been processed.
         if existing.number not in parent_original_bodies:
             parent_original_bodies[existing.number] = (repo_full, existing.body or "")
-            # MIGRATION-PHASE-2-REMOVE: stamp aquasec label on existing parent issues.
-            _migrate_issue_labels(
-                repo_full,
-                existing,
-                [LABEL_SCOPE_SECURITY, LABEL_TYPE_AQUASEC, LABEL_EPIC],
-                dry_run=dry_run,
-            )
         existing.body = rebuilt
 
         # Detect parent title drift and update when needed.
@@ -667,13 +552,13 @@ def _rebuild_and_apply_child_body(
                 bump_severity(sync.stats.children_body_updated_by_severity, ctx.severity)
 
 
-def _sync_child_title_and_labels(
+def _sync_child_title(
     *,
     ctx: AlertContext,
     sync: SyncContext,
     child_issue: Issue,
 ) -> None:
-    """Fix title drift and ensure required labels and priority on the child issue."""
+    """Fix title drift and ensure the priority on the child issue."""
     expected_title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
     if expected_title != (child_issue.title or ""):
         if sync.dry_run:
@@ -690,11 +575,6 @@ def _sync_child_title_and_labels(
                 logging.debug("New updated title for child issue #%d: %s", child_issue.number, expected_title)
                 sync.stats.children_title_updated += 1
                 bump_severity(sync.stats.children_title_updated_by_severity, ctx.severity)
-
-    # MIGRATION-PHASE-2-REVERT: replace with the permanent call below, do not delete.
-    #   if not sync.dry_run:
-    #       gh_issue_add_labels(ctx.repo, child_issue.number, [LABEL_SCOPE_SECURITY, LABEL_TYPE_AQUASEC])
-    _migrate_issue_labels(ctx.repo, child_issue, [LABEL_SCOPE_SECURITY, LABEL_TYPE_AQUASEC], dry_run=sync.dry_run)
 
     if sync.priority_sync is not None:
         sync.priority_sync.enqueue(ctx.repo, child_issue.number, ctx.severity, sync.severity_priority_map)
@@ -760,7 +640,7 @@ def _handle_existing_child_issue(
     _maybe_reopen_child(ctx=ctx, sync=sync, child_issue=child_issue, parent_issue=parent_issue)
     secmeta = _merge_child_secmeta(ctx=ctx, child_issue=child_issue)
     _rebuild_and_apply_child_body(ctx=ctx, sync=sync, child_issue=child_issue, secmeta=secmeta)
-    _sync_child_title_and_labels(ctx=ctx, sync=sync, child_issue=child_issue)
+    _sync_child_title(ctx=ctx, sync=sync, child_issue=child_issue)
 
     if parent_issue is not None:
         _ensure_child_linked_to_parent(ctx=ctx, sync=sync, child_issue=child_issue, parent_issue=parent_issue)
@@ -1001,8 +881,6 @@ def sync_alerts_and_issues(
     alerts: dict[int, Alert],
     issues: dict[int, Issue],
     *,
-    # MIGRATION-PHASE-2-REMOVE: only consumed by the label migration sweep below.
-    repo: str = "",
     dry_run: bool = False,
     severity_priority_map: dict[str, str] | None = None,
     project_number: int | None = None,
@@ -1014,11 +892,6 @@ def sync_alerts_and_issues(
     issue_changes: list[IssueChange] = []
     issue_index = build_issue_index(issues)
     spm = severity_priority_map or {}
-
-    # MIGRATION-PHASE-2-REMOVE: up-front label migration sweep call.
-    label_summary = LabelMigrationSummary()
-    if repo:
-        label_summary = _migrate_all_security_issue_labels(repo, issues, dry_run=dry_run)
 
     priority_sync = _init_priority_sync(
         alerts,
@@ -1053,7 +926,7 @@ def sync_alerts_and_issues(
     _close_resolved_child_issues(alerts, issue_index, dry_run=dry_run, stats=sync.stats, issue_changes=issue_changes)
     _close_resolved_parent_issues(issues, issue_index, dry_run=dry_run, stats=sync.stats)
 
-    _log_sync_summary(sync.stats, label_summary, dry_run=dry_run)
+    _log_sync_summary(sync.stats, dry_run=dry_run)
 
     return SyncResult(
         issue_changes=issue_changes,
@@ -1061,8 +934,8 @@ def sync_alerts_and_issues(
     )
 
 
-def _log_sync_summary(stats: SyncStats, label_summary: LabelMigrationSummary, *, dry_run: bool) -> None:
+def _log_sync_summary(stats: SyncStats, *, dry_run: bool) -> None:
     """Log the completed sync run's summary, reusing the shared pure renderer."""
     prefix = DRY_RUN_PREFIX if dry_run else LOGGING_PREFIX
-    lines = render_sync_summary(stats, label_summary)
+    lines = render_sync_summary(stats)
     logging.info("\n".join(prefix + line for line in lines))

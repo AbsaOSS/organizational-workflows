@@ -58,11 +58,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--repo", default="", help="GitHub repository (owner/repo). Falls back to $GITHUB_REPOSITORY env var"
     )
     p.add_argument(
-        "--issue-label",
-        default="scope:security",
-        help="Mine existing issues with this label (default: scope:security)",
-    )
-    p.add_argument(
         "--severity-priority-map",
         default="",
         help=(

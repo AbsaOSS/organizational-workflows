@@ -1,3 +1,19 @@
+#
+# Copyright 2026 ABSA Group Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
 """Pure rendering of a completed sync run into plain-text summary lines.
 
 The functions here take no dependency on ``logging`` and bake in no prefix
@@ -6,25 +22,9 @@ output today and a future Teams-notification body without duplicating the
 rendering logic.
 """
 
-from dataclasses import dataclass
-
-from ..constants import LABEL_TYPE_AQUASEC, LABEL_TYPE_TECH_DEBT
 from .models import SEVERITY_ORDER, SyncStats
 
 _SEVERITY_DISPLAY_ORDER = sorted(SEVERITY_ORDER, key=lambda severity: SEVERITY_ORDER[severity], reverse=True)
-
-
-@dataclass
-class LabelMigrationSummary:
-    """Repo-level label-sweep outcome for a single sync run.
-
-    MIGRATION-PHASE-2-REMOVE: entire dataclass, once the tech-debt -> aquasec
-    label migration sweep is retired.
-    """
-
-    issues_migrated: int = 0
-    labels_added: int = 0
-    labels_removed: int = 0
 
 
 def _format_severity_breakdown(counter: dict[str, int]) -> str:
@@ -49,29 +49,11 @@ def _render_issue_section(title: str, rows: list[str | None]) -> list[str]:
     return [f"{title}:"] + [f"  {part}" for part in parts]
 
 
-def _render_label_section(label_summary: LabelMigrationSummary) -> list[str]:
-    """Render the label-sweep section, always present so the outcome is explicit.
-
-    MIGRATION-PHASE-2-REMOVE: entire function, once the label migration sweep
-    is retired.
-    """
-    if not label_summary.issues_migrated:
-        return ["Labels: no repository label action needed"]
-
-    return [
-        "Labels:",
-        f"  issue(s) migrated: {label_summary.issues_migrated}",
-        f"  {LABEL_TYPE_AQUASEC} added: {label_summary.labels_added}",
-        f"  {LABEL_TYPE_TECH_DEBT} removed: {label_summary.labels_removed}",
-    ]
-
-
-def render_sync_summary(stats: SyncStats, label_summary: LabelMigrationSummary) -> list[str]:
+def render_sync_summary(stats: SyncStats) -> list[str]:
     """Render the full sync summary as plain, prefix-free lines.
 
     Args:
         stats: Lifecycle counters (including per-severity breakdowns) for the run.
-        label_summary: Outcome of the repo-level label migration sweep for the run.
 
     Returns:
         Plain text lines (no logging prefix) ready to be logged as-is or reused
@@ -101,12 +83,6 @@ def render_sync_summary(stats: SyncStats, label_summary: LabelMigrationSummary) 
     )
 
     if parent_lines or child_lines:
-        lines = ["Sync complete:", *parent_lines, *child_lines]
-    else:
-        lines = ["Sync complete: no changes"]
+        return ["Sync complete:", *parent_lines, *child_lines]
 
-    # MIGRATION-PHASE-2-REMOVE: suppress the label no-op placeholder line
-    if label_summary.issues_migrated or parent_lines or child_lines:
-        lines += _render_label_section(label_summary)
-
-    return lines
+    return ["Sync complete: no changes"]

@@ -1237,7 +1237,7 @@ def test_ensure_issue_without_aquasec_fingerprint_keys_off_result_hash(
 
 
 def test_ensure_issue_missing_alert_hash_raises() -> None:
-    """Raises SystemExit when alert hash is missing."""
+    """Raises SystemExit when the Finding Identity is missing."""
     alert = Alert.from_dict({
         "metadata": {"alert_number": 1, "state": "open", "rule_id": "R1", "severity": "high"},
         "alert_details": {},
@@ -1245,12 +1245,12 @@ def test_ensure_issue_missing_alert_hash_raises() -> None:
     }, repo="org/repo")
     issues: dict[int, Issue] = {}
     issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
-    with pytest.raises(SystemExit, match="alert_hash"):
+    with pytest.raises(SystemExit, match="missing Finding Identity"):
         ensure_issue(alert, _make_sync_context(issues=issues, issue_index=issue_index, dry_run=True))
 
 
 def test_ensure_issue_missing_alert_details_raises() -> None:
-    """Raises SystemExit when alert_details has no alert_hash."""
+    """Raises SystemExit when alert_details yields no Finding Identity."""
     alert = Alert.from_dict({
         "metadata": {"alert_number": 1, "state": "open"},
         "alert_details": {},
@@ -1258,7 +1258,7 @@ def test_ensure_issue_missing_alert_details_raises() -> None:
     }, repo="org/repo")
     issues: dict[int, Issue] = {}
     issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
-    with pytest.raises(SystemExit, match="alert_hash"):
+    with pytest.raises(SystemExit, match="missing Finding Identity"):
         ensure_issue(alert, _make_sync_context(issues=issues, issue_index=issue_index, dry_run=True))
 
 

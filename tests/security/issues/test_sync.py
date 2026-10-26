@@ -193,12 +193,12 @@ def test_empty() -> None:
 
 
 def test_alert_hash_indexed_in_legacy_map() -> None:
-    """A child issue's stored alert_hash lands in the lookup-only child_by_alert_hash map."""
+    """A child issue with only an alert_hash is keyed in both maps, so closure still reaches it."""
     child = _issue_with_secmeta(5, {"type": "child", "alert_hash": "hash_123"})
     issues = {5: child}
     idx = build_issue_index(issues)
     assert "hash_123" in idx.child_by_alert_hash
-    assert "hash_123" not in idx.child_by_identity_key
+    assert "hash_123" in idx.child_by_identity_key
 
 
 def test_both_keys_indexed_separately() -> None:
@@ -613,6 +613,31 @@ def test_handle_new_child_creates_issue(mocker: MockerFixture, sast_alert: Alert
     assert len(sync.issue_changes) == 1
     assert sync.issue_changes[0].state == "new"
     assert {"high": 1} == sync.stats.children_created_by_severity
+
+
+def test_handle_new_child_persists_both_identity_keys(mocker: MockerFixture, sast_alert: Alert) -> None:
+    """A created child carries both secmeta keys, so the next run needs no body rewrite."""
+    mock_create = mocker.patch("security.issues.sync.gh_issue_create", return_value=42)
+    ctx = _make_alert_context(alert=sast_alert, rule_name="sast")
+    sync = _make_sync_context(issue_index=IssueIndex(child_by_identity_key={}, parent_by_rule_id={}))
+
+    _handle_new_child_issue(ctx=ctx, sync=sync, parent_issue=None)
+
+    secmeta = load_secmeta(mock_create.call_args.args[2])
+    assert ctx.identity_key == secmeta["fingerprint"]
+    assert ctx.alert_hash == secmeta["alert_hash"]
+
+
+def test_handle_new_child_indexes_under_both_keys(mocker: MockerFixture, sast_alert: Alert) -> None:
+    """The created issue is reachable from the primary map and the lookup-only fallback map."""
+    mocker.patch("security.issues.sync.gh_issue_create", return_value=42)
+    ctx = _make_alert_context(alert=sast_alert, rule_name="sast")
+    sync = _make_sync_context(issue_index=IssueIndex(child_by_identity_key={}, parent_by_rule_id={}))
+
+    _handle_new_child_issue(ctx=ctx, sync=sync, parent_issue=None)
+
+    assert 42 == sync.issue_index.child_by_identity_key[ctx.identity_key].number
+    assert 42 == sync.issue_index.child_by_alert_hash[ctx.alert_hash].number
 
 
 def test_handle_new_child_dry_run(sast_alert: Alert) -> None:

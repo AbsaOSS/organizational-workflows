@@ -81,6 +81,9 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
     is the Finding Identity itself for every Finding Category except ``sast`` — it only becomes a
     historical fallback for ``sast`` issues created before the AquaSec Fingerprint was adopted.
 
+    A child issue that stores no Finding Identity is keyed in the primary map by its Result Hash, so
+    that counting and closure still reach it.
+
     When duplicates exist, the oldest (lowest-numbered) issue wins.
     """
     child_by_identity_key: dict[str, Issue] = {}
@@ -98,7 +101,9 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
                     parent_by_rule_id[rule_id] = issue
             continue
 
-        identity_key = secmeta.get("fingerprint", "").strip()
+        # Fall back to the Result Hash so a child issue written without a Finding Identity still
+        # lands in the primary map, where counting and closure can reach it.
+        identity_key = secmeta.get("fingerprint", "").strip() or secmeta.get("alert_hash", "").strip()
         if identity_key:
             existing_child = child_by_identity_key.get(identity_key)
             if existing_child is None or issue.number < existing_child.number:
@@ -390,6 +395,7 @@ def _handle_new_child_issue(
     secmeta: dict[str, str] = {
         "type": SECMETA_TYPE_CHILD,
         "fingerprint": ctx.identity_key,
+        "alert_hash": ctx.alert_hash,
         "repo": ctx.repo,
         "rule_id": ctx.rule_id,
         "severity": ctx.severity,
@@ -425,7 +431,10 @@ def _handle_new_child_issue(
             state="new",
         )
         # Mirror the real path so the run's posture count includes this issue.
-        sync.issue_index.child_by_identity_key[ctx.identity_key] = Issue(number=0, state="open", title=title, body=body)
+        mirrored = Issue(number=0, state="open", title=title, body=body)
+        sync.issue_index.child_by_identity_key[ctx.identity_key] = mirrored
+        if ctx.alert_hash:
+            sync.issue_index.child_by_alert_hash[ctx.alert_hash] = mirrored
         if sync.priority_sync is not None:
             sync.priority_sync.enqueue(ctx.repo, 0, ctx.severity, sync.severity_priority_map)
         return
@@ -440,6 +449,8 @@ def _handle_new_child_issue(
     created = Issue(number=num, state="open", title=title, body=body)
     sync.issues[num] = created
     sync.issue_index.child_by_identity_key[ctx.identity_key] = created
+    if ctx.alert_hash:
+        sync.issue_index.child_by_alert_hash[ctx.alert_hash] = created
 
     _record_for_notification(
         sync.issue_changes,
@@ -689,8 +700,8 @@ def ensure_issue(
 
     if not identity_key:
         raise SystemExit(
-            f"ERROR: missing 'alert_hash' in alert_details for alert_number={alert_number}. "
-            "Ensure the collector/scanner includes an 'Alert hash: ...' line."
+            f"ERROR: missing Finding Identity in alert_details for alert_number={alert_number}. "
+            "Ensure the scan result carries an AquaSec 'fingerprint' or a 'result_hash'."
         )
 
     repo_full = alert.repo

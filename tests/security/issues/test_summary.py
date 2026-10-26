@@ -18,11 +18,9 @@
 
 from security.issues.models import SyncStats
 from security.issues.summary import (
-    LabelMigrationSummary,
     _format_severity_breakdown,
     _format_stat_line,
     _render_issue_section,
-    _render_label_section,
     render_sync_summary,
 )
 
@@ -75,50 +73,13 @@ def test_render_issue_section_empty_and_filtered() -> None:
 
 
 # =====================================================================
-# _render_label_section
-# MIGRATION-PHASE-2-REMOVE: delete this test once the label migration sweep is retired.
-# =====================================================================
-
-
-def test_render_label_section_zero_and_migrated() -> None:
-    """No migration activity renders a one-line explicit no-op; activity renders 3 count lines."""
-    assert ["Labels: no repository label action needed"] == _render_label_section(LabelMigrationSummary())
-    assert [
-        "Labels:",
-        "  issue(s) migrated: 3",
-        "  type:aquasec added: 4",
-        "  type:tech-debt removed: 1",
-    ] == _render_label_section(LabelMigrationSummary(issues_migrated=3, labels_added=4, labels_removed=1))
-
-
-# =====================================================================
 # render_sync_summary
 # =====================================================================
 
 
 def test_render_sync_summary_no_changes() -> None:
-    """Empty stats and an empty label summary render only the no-changes line: the redundant
-    label no-op line is suppressed when there's no other activity to contrast it with.
-
-    MIGRATION-PHASE-2-REMOVE: delete the suppression check below.
-    """
-    lines = render_sync_summary(SyncStats(), LabelMigrationSummary())
-    assert ["Sync complete: no changes"] == lines
-
-
-def test_render_sync_summary_no_issue_activity_with_label_activity() -> None:
-    """Label migration activity alone still renders its real section, even with no issue changes.
-
-    MIGRATION-PHASE-2-REMOVE: delete this test once the label migration sweep is retired.
-    """
-    lines = render_sync_summary(SyncStats(), LabelMigrationSummary(issues_migrated=2, labels_added=2, labels_removed=1))
-    assert lines == [
-        "Sync complete: no changes",
-        "Labels:",
-        "  issue(s) migrated: 2",
-        "  type:aquasec added: 2",
-        "  type:tech-debt removed: 1",
-    ]
+    """Empty stats render only the no-changes line."""
+    assert ["Sync complete: no changes"] == render_sync_summary(SyncStats())
 
 
 def test_render_sync_summary_full_activity() -> None:
@@ -130,9 +91,8 @@ def test_render_sync_summary_full_activity() -> None:
         children_reopened=1, children_reopened_by_severity={"critical": 1},
         children_relinked=1,
     )
-    label_summary = LabelMigrationSummary(issues_migrated=4, labels_added=5, labels_removed=2)
 
-    lines = render_sync_summary(stats, label_summary)
+    lines = render_sync_summary(stats)
 
     assert lines == [
         "Sync complete:",
@@ -143,9 +103,4 @@ def test_render_sync_summary_full_activity() -> None:
         "  created: 15 (high: 15)",
         "  reopened: 1 (critical: 1)",
         "  relinked: 1",
-        "Labels:",
-        # MIGRATION-PHASE-2-REMOVE: delete these 3 line once the label migration sweep is retired.
-        "  issue(s) migrated: 4",
-        "  type:aquasec added: 5",
-        "  type:tech-debt removed: 2",
     ]

@@ -19,7 +19,7 @@
 from dataclasses import dataclass
 from urllib.parse import quote
 
-from security.constants import AQUA_PLATFORM_URL, GITHUB_BASE_URL
+from security.constants import AQUA_PLATFORM_URL, GITHUB_BASE_URL, LABEL_SCOPE_SECURITY, LABEL_TYPE_AQUASEC
 
 
 @dataclass
@@ -39,12 +39,11 @@ class NotificationLinks:
     aqua_url: str = AQUA_PLATFORM_URL
 
     @classmethod
-    def build(cls, *, repo: str, security_label: str, server_url: str, run_id: str) -> "NotificationLinks":
+    def build(cls, *, repo: str, server_url: str, run_id: str) -> "NotificationLinks":
         """Build the card links from already-resolved configuration values.
 
         Args:
             repo: Full ``owner/name`` of the scanned repository.
-            security_label: Label used to filter the repository's security issues.
             server_url: GitHub server URL. Falls back to ``github.com`` when empty.
             run_id: Workflow run identifier. When empty the run link is omitted.
 
@@ -54,7 +53,7 @@ class NotificationLinks:
         server = server_url or GITHUB_BASE_URL
         run_url = f"{server}/{repo}/actions/runs/{run_id}" if repo and run_id else ""
 
-        query = quote(f"is:issue is:open label:{security_label}")
+        query = quote(f"is:issue is:open label:{LABEL_SCOPE_SECURITY} label:{LABEL_TYPE_AQUASEC}")
         repo_url = f"{server}/{repo}/issues?q={query}" if repo else ""
 
         return cls(repo=repo, repo_url=repo_url, run_url=run_url)

@@ -22,7 +22,7 @@ from core.github.issues import gh_issue_list_by_label
 from core.priority import parse_severity_priority_map
 
 from security.alerts.models import Alert
-from security.constants import LOGGING_PREFIX, MIN_SEVERITY_DEFAULT
+from security.constants import LABEL_TYPE_AQUASEC, LOGGING_PREFIX, MIN_SEVERITY_DEFAULT
 from security.issues.sync import SyncResult, sync_alerts_and_issues
 from security.config import SecurityConfig
 
@@ -48,12 +48,12 @@ class IssueSyncer:
         config = self.config
         repo = config.repo
 
-        issues = gh_issue_list_by_label(repo, config.security_label)
+        issues = gh_issue_list_by_label(repo, LABEL_TYPE_AQUASEC)
         logger.info(
             "%sLoaded %d existing security issues for sync (label %s)",
             LOGGING_PREFIX,
             len(issues),
-            config.security_label,
+            LABEL_TYPE_AQUASEC,
         )
 
         spm = parse_severity_priority_map(config.severity_priority_map)
@@ -70,7 +70,6 @@ class IssueSyncer:
         result = sync_alerts_and_issues(
             open_alerts,
             issues,
-            repo=repo,  # MIGRATION-PHASE-2-REMOVE: only consumed by the label migration sweep.
             dry_run=dry_run,
             severity_priority_map=spm,
             project_number=config.project_number,

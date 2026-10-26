@@ -103,7 +103,8 @@ The Caller workflow lives in a consumer repository and invokes the Reusable work
 - The pipeline only manages issues that carry Secmeta; everything else is left alone.
 - Only the pipeline's own labels are managed; Waiver labels are human-owned.
 - Every run must be safe to repeat: re-running with the same scan produces no changes.
-- `type:tech-debt` is deprecated in favor of `type:aquasec`; its migration code is tagged `MIGRATION-PHASE-2-REMOVE` and is to be deleted.
+- Existing issues are fetched by the `type:aquasec` label alone, then narrowed by Secmeta. `scope:security` is a human-facing classification, not part of the machine identity.
+- Labels are applied when an Issue is created and never re-stamped afterward.
 
 ## Example dialogue
 

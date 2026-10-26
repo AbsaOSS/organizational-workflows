@@ -75,7 +75,8 @@ def _make_alert_context(**overrides: Any) -> AlertContext:
     defaults = dict(
         alert=Alert(),
         alert_number=1,
-        fingerprint="fp_test_123",
+        identity_key="fp_test_123",
+        alert_hash="hash_test_123",
         repo="test-org/test-repo",
         tool="AquaSec",
         rule_id="CVE-2026-1234",
@@ -89,6 +90,15 @@ def _make_alert_context(**overrides: Any) -> AlertContext:
     )
     defaults.update(overrides)
     return AlertContext(**defaults)
+
+
+def _patch_gh_calls(mocker: MockerFixture) -> Any:
+    """Patch the GitHub CLI wrappers used by ``ensure_issue`` and return the body-edit mock."""
+    mocker.patch("security.issues.sync.gh_issue_create", return_value=999)
+    mocker.patch("security.issues.sync.gh_issue_edit_title", return_value=True)
+    mocker.patch("security.issues.sync.gh_issue_get_sub_issue_numbers", return_value=set())
+    mocker.patch("security.issues.sync.gh_issue_add_sub_issue_by_number", return_value=True)
+    return mocker.patch("security.issues.sync.gh_issue_edit_body", return_value=True)
 
 
 def _make_sync_context(
@@ -130,7 +140,7 @@ def test_indexes_parent_by_rule_id() -> None:
     assert idx.parent_by_rule_id["CVE-2026-1234"] is parent
 
 
-def test_indexes_child_by_fingerprint() -> None:
+def test_indexes_child_by_identity_key() -> None:
     child = _issue_with_secmeta(2, {
         "type": "child",
         "fingerprint": "fp_abc123",
@@ -138,11 +148,11 @@ def test_indexes_child_by_fingerprint() -> None:
     })
     issues = {2: child}
     idx = build_issue_index(issues)
-    assert "fp_abc123" in idx.child_by_fingerprint
-    assert idx.child_by_fingerprint["fp_abc123"] is child
+    assert "fp_abc123" in idx.child_by_identity_key
+    assert idx.child_by_identity_key["fp_abc123"] is child
 
 
-def test_parent_not_in_fingerprint_index() -> None:
+def test_parent_not_in_identity_key_index() -> None:
     parent = _issue_with_secmeta(1, {
         "type": "parent",
         "rule_id": "CVE-2026-1234",
@@ -150,14 +160,14 @@ def test_parent_not_in_fingerprint_index() -> None:
     })
     issues = {1: parent}
     idx = build_issue_index(issues)
-    assert "fp_parent" not in idx.child_by_fingerprint
+    assert "fp_parent" not in idx.child_by_identity_key
 
 
 def test_lowest_number_child_wins_regardless_of_order() -> None:
     c1 = _issue_with_secmeta(10, {"type": "child", "fingerprint": "shared_fp"})
     c2 = _issue_with_secmeta(20, {"type": "child", "fingerprint": "shared_fp"})
     idx = build_issue_index({20: c2, 10: c1})
-    assert idx.child_by_fingerprint["shared_fp"].number == 10
+    assert idx.child_by_identity_key["shared_fp"].number == 10
 
 
 def test_lowest_number_parent_wins_regardless_of_order() -> None:
@@ -173,21 +183,31 @@ def test_mixed_issues() -> None:
     issues = {1: parent, 2: child}
     idx = build_issue_index(issues)
     assert "R1" in idx.parent_by_rule_id
-    assert "fp1" in idx.child_by_fingerprint
+    assert "fp1" in idx.child_by_identity_key
 
 
 def test_empty() -> None:
     idx = build_issue_index({})
-    assert idx.child_by_fingerprint == {}
+    assert idx.child_by_identity_key == {}
     assert idx.parent_by_rule_id == {}
 
 
-def test_alert_hash_fallback() -> None:
-    """Fingerprint falls back to alert_hash when fingerprint is absent."""
+def test_alert_hash_indexed_in_legacy_map() -> None:
+    """A child issue's stored alert_hash lands in the lookup-only child_by_alert_hash map."""
     child = _issue_with_secmeta(5, {"type": "child", "alert_hash": "hash_123"})
     issues = {5: child}
     idx = build_issue_index(issues)
-    assert "hash_123" in idx.child_by_fingerprint
+    assert "hash_123" in idx.child_by_alert_hash
+    assert "hash_123" not in idx.child_by_identity_key
+
+
+def test_both_keys_indexed_separately() -> None:
+    """A child issue carrying both keys appears once in each map."""
+    child = _issue_with_secmeta(7, {"type": "child", "fingerprint": "fp_new", "alert_hash": "hash_old"})
+    idx = build_issue_index({7: child})
+    assert idx.child_by_identity_key["fp_new"].number == 7
+    assert idx.child_by_alert_hash["hash_old"].number == 7
+    assert "hash_old" not in idx.child_by_identity_key
 
 
 def test_no_secmeta_skipped() -> None:
@@ -195,7 +215,7 @@ def test_no_secmeta_skipped() -> None:
     issue = Issue(number=99, state="open", title="No meta", body="Plain body\n")
     issues = {99: issue}
     idx = build_issue_index(issues)
-    assert idx.child_by_fingerprint == {}
+    assert idx.child_by_identity_key == {}
     assert idx.parent_by_rule_id == {}
 
 
@@ -207,14 +227,42 @@ def test_no_secmeta_skipped() -> None:
 def test_find_issue_found() -> None:
     child = _issue_with_secmeta(2, {"type": "child", "fingerprint": "fp_abc"})
     idx = build_issue_index({2: child})
-    result = find_issue_in_index(idx, fingerprint="fp_abc")
+    result = find_issue_in_index(idx, identity_key="fp_abc")
     assert result is not None
     assert result.number == 2
 
 
 def test_find_issue_not_found() -> None:
     idx = build_issue_index({})
-    assert find_issue_in_index(idx, fingerprint="missing") is None
+    assert find_issue_in_index(idx, identity_key="missing") is None
+
+
+def test_find_issue_by_legacy_hash_in_primary_map() -> None:
+    """A pre-change issue storing its result hash under `fingerprint` is found via the legacy key."""
+    child = _issue_with_secmeta(3, {"type": "child", "fingerprint": "hash_old"})
+    idx = build_issue_index({3: child})
+    result = find_issue_in_index(idx, identity_key="fp_new", legacy_hash="hash_old")
+    assert result is not None
+    assert result.number == 3
+
+
+def test_find_issue_by_legacy_hash_in_legacy_map() -> None:
+    """An issue carrying both keys is found when only the legacy hash matches."""
+    child = _issue_with_secmeta(4, {"type": "child", "fingerprint": "fp_other", "alert_hash": "hash_old"})
+    idx = build_issue_index({4: child})
+    result = find_issue_in_index(idx, identity_key="fp_new", legacy_hash="hash_old")
+    assert result is not None
+    assert result.number == 4
+
+
+def test_find_issue_prefers_identity_over_legacy() -> None:
+    """The Finding Identity wins when both keys resolve to different issues."""
+    primary = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_new"})
+    legacy = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_x", "alert_hash": "hash_old"})
+    idx = build_issue_index({10: primary, 20: legacy})
+    result = find_issue_in_index(idx, identity_key="fp_new", legacy_hash="hash_old")
+    assert result is not None
+    assert result.number == 10
 
 
 # =====================================================================
@@ -341,21 +389,21 @@ def test_merge_removes_gh_alert_numbers() -> None:
         "fingerprint": "fp1",
         "gh_alert_numbers": '["100"]',
     })
-    ctx = _make_alert_context(alert_number=200, fingerprint="fp1")
+    ctx = _make_alert_context(alert_number=200, identity_key="fp1")
     secmeta = _merge_child_secmeta(ctx=ctx, child_issue=child)
     assert "gh_alert_numbers" not in secmeta
 
 
-def test_merge_removes_alert_hash() -> None:
-    """Legacy alert_hash key is dropped during merge."""
+def test_merge_preserves_alert_hash() -> None:
+    """The legacy alert_hash key is persisted during merge, carrying the fallback forward."""
     child = _issue_with_secmeta(1, {
         "type": "child",
         "alert_hash": "old_hash",
         "fingerprint": "fp1",
     })
-    ctx = _make_alert_context(fingerprint="fp1")
+    ctx = _make_alert_context(identity_key="fp1", alert_hash="new_hash")
     secmeta = _merge_child_secmeta(ctx=ctx, child_issue=child)
-    assert "alert_hash" not in secmeta
+    assert "new_hash" == secmeta["alert_hash"]
 
 
 def test_merge_strips_legacy_secmeta_keys() -> None:
@@ -376,9 +424,9 @@ def test_merge_strips_legacy_secmeta_keys() -> None:
         "source": "code_scanning",
         "tool": "AquaSec",
     })
-    ctx = _make_alert_context(alert_number=200, fingerprint="fp1")
+    ctx = _make_alert_context(alert_number=200, identity_key="fp1")
     secmeta = _merge_child_secmeta(ctx=ctx, child_issue=child)
-    expected_keys = {"type", "fingerprint", "repo", "rule_id", "severity"}
+    expected_keys = {"type", "fingerprint", "alert_hash", "repo", "rule_id", "severity"}
     assert expected_keys == set(secmeta.keys())
 
 
@@ -521,7 +569,7 @@ def test_sync_title_drift_corrected(mocker: MockerFixture) -> None:
     """Title is updated when it drifts from the expected format."""
     mock_title = mocker.patch("security.issues.sync.gh_issue_edit_title", return_value=True)
     issue = Issue(number=1, state="open", title="Wrong title", body="b")
-    ctx = _make_alert_context(rule_name="sast", rule_id="CVE-2026-1234", fingerprint="fp_test_123")
+    ctx = _make_alert_context(rule_name="sast", rule_id="CVE-2026-1234", identity_key="fp_test_123")
     sync = _make_sync_context()
     _sync_child_title(ctx=ctx, sync=sync, child_issue=issue)
     mock_title.assert_called_once()
@@ -532,7 +580,7 @@ def test_sync_title_already_correct(mocker: MockerFixture) -> None:
     mock_title = mocker.patch("security.issues.sync.gh_issue_edit_title", return_value=True)
     title = build_issue_title("Test finding description", "fp_test_123", "high")
     issue = Issue(number=1, state="open", title=title, body="b")
-    ctx = _make_alert_context(rule_name="sast", rule_id="CVE-2026-1234", fingerprint="fp_test_123")
+    ctx = _make_alert_context(rule_name="sast", rule_id="CVE-2026-1234", identity_key="fp_test_123")
     sync = _make_sync_context()
     _sync_child_title(ctx=ctx, sync=sync, child_issue=issue)
     mock_title.assert_not_called()
@@ -556,12 +604,12 @@ def test_handle_new_child_creates_issue(mocker: MockerFixture, sast_alert: Alert
     mock_create = mocker.patch("security.issues.sync.gh_issue_create", return_value=42)
     ctx = _make_alert_context(alert=sast_alert, rule_name="sast")
     issues: dict[int, Issue] = {}
-    issue_index = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
     sync = _make_sync_context(issues=issues, issue_index=issue_index, issue_changes=[])
     _handle_new_child_issue(ctx=ctx, sync=sync, parent_issue=None)
     mock_create.assert_called_once()
     assert 42 in issues
-    assert ctx.fingerprint in issue_index.child_by_fingerprint
+    assert ctx.identity_key in issue_index.child_by_identity_key
     assert len(sync.issue_changes) == 1
     assert sync.issue_changes[0].state == "new"
     assert {"high": 1} == sync.stats.children_created_by_severity
@@ -584,7 +632,7 @@ def test_handle_new_child_dry_run_indexes_the_issue_for_posture(sast_alert: Aler
 
     _handle_new_child_issue(ctx=ctx, sync=sync, parent_issue=None)
 
-    assert ctx.fingerprint in sync.issue_index.child_by_fingerprint
+    assert ctx.identity_key in sync.issue_index.child_by_identity_key
     assert {"high": 1} == _count_open_child_issues_by_severity(sync.issue_index)
 
 
@@ -630,7 +678,7 @@ def test_handle_new_child_create_fails(mocker: MockerFixture, sast_alert: Alert)
     ctx = _make_alert_context(alert=sast_alert)
     sync = _make_sync_context(issue_changes=[])
     _handle_new_child_issue(ctx=ctx, sync=sync, parent_issue=None)
-    assert ctx.fingerprint not in sync.issue_index.child_by_fingerprint
+    assert ctx.identity_key not in sync.issue_index.child_by_identity_key
 
 
 # =====================================================================
@@ -688,8 +736,8 @@ def test_ensure_child_linked_cache_populated(mocker: MockerFixture) -> None:
     parent = Issue(number=1, state="open", title="P", body="pb")
     child_a = Issue(number=5, state="open", title="A", body="ab")
     child_b = Issue(number=6, state="open", title="B", body="bb")
-    ctx_a = _make_alert_context(fingerprint="fp_a")
-    ctx_b = _make_alert_context(fingerprint="fp_b")
+    ctx_a = _make_alert_context(identity_key="fp_a")
+    ctx_b = _make_alert_context(identity_key="fp_b")
     sync = _make_sync_context()
     _ensure_child_linked_to_parent(ctx=ctx_a, sync=sync, child_issue=child_a, parent_issue=parent)
     _ensure_child_linked_to_parent(ctx=ctx_b, sync=sync, child_issue=child_b, parent_issue=parent)
@@ -720,7 +768,7 @@ def test_ensure_parent_creates_new(mocker: MockerFixture, sast_alert: Alert) -> 
     """Creates a parent issue when none exists for the rule_id."""
     mock_create = mocker.patch("security.issues.sync.gh_issue_create", return_value=99)
     issues: dict[int, Issue] = {}
-    issue_index = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
     result = ensure_parent_issue(
         sast_alert, issues, issue_index, dry_run=False, parent_original_bodies={}, stats=SyncStats(),
     )
@@ -733,7 +781,7 @@ def test_ensure_parent_creates_new(mocker: MockerFixture, sast_alert: Alert) -> 
 def test_ensure_parent_dry_run(sast_alert: Alert) -> None:
     """Dry-run returns a placeholder issue, registers it in the issue_index, and bumps severity."""
     issues: dict[int, Issue] = {}
-    issue_index = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
     stats = SyncStats()
     result = ensure_parent_issue(
         sast_alert, issues, issue_index, dry_run=True, parent_original_bodies={}, stats=stats,
@@ -764,7 +812,7 @@ def test_ensure_parent_no_rule_id() -> None:
     """Returns None when alert has no rule_id."""
     alert = Alert.from_dict({"metadata": {"rule_id": ""}, "alert_details": {}, "rule_details": {}})
     issues: dict[int, Issue] = {}
-    issue_index = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
     assert ensure_parent_issue(
         alert, issues, issue_index, dry_run=False, parent_original_bodies={}, stats=SyncStats(),
     ) is None
@@ -774,7 +822,7 @@ def test_ensure_parent_create_fails(mocker: MockerFixture, sast_alert: Alert) ->
     """Returns None if gh_issue_create fails."""
     mocker.patch("security.issues.sync.gh_issue_create", return_value=None)
     issues: dict[int, Issue] = {}
-    issue_index = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
     result = ensure_parent_issue(
         sast_alert, issues, issue_index, dry_run=False, parent_original_bodies={}, stats=SyncStats(),
     )
@@ -863,7 +911,7 @@ def test_ensure_parent_title_drift_dry_run(sast_alert: Alert) -> None:
 def test_ensure_parent_dry_run_create_not_inflated(sast_alert: Alert) -> None:
     """Dry-run counts parent creation once even when same rule_id is processed twice."""
     issues: dict[int, Issue] = {}
-    issue_index = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
     stats = SyncStats()
     bods: ParentOriginalBodies = {}
     kwargs: dict = dict(
@@ -981,6 +1029,42 @@ def test_close_resolved_child_skips_closed_issues() -> None:
     assert 0 == stats.children_closed
 
 
+def test_close_resolved_child_matched_via_legacy_hash(mocker: MockerFixture) -> None:
+    """A pre-change issue whose stored hash still matches the scan is not closed."""
+    mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state")
+    child = _issue_with_secmeta(1, {
+        "type": "child", "fingerprint": "hash_old", "repo": "org/repo", "severity": "high",
+    })
+    issue_index = build_issue_index({1: child})
+    alerts = {
+        100: Alert.from_dict({
+            "metadata": {"state": "open"},
+            "alert_details": {"alert_hash": "hash_old", "identity_key": "fp_new"},
+            "rule_details": {},
+        }),
+    }
+    stats = SyncStats()
+    _close_resolved_child_issues(alerts, issue_index, dry_run=False, stats=stats)
+    mock_edit.assert_not_called()
+    assert 0 == stats.children_closed
+
+
+def test_close_resolved_child_reachable_under_both_keys_closes_once(mocker: MockerFixture) -> None:
+    """An issue reachable under both keys is closed once and counted once."""
+    mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    child = _issue_with_secmeta(1, {
+        "type": "child", "fingerprint": "fp_orphan", "alert_hash": "hash_orphan",
+        "repo": "org/repo", "severity": "high",
+    })
+    issue_index = build_issue_index({1: child})
+    stats = SyncStats()
+    issue_changes: list[IssueChange] = []
+    _close_resolved_child_issues({}, issue_index, dry_run=False, stats=stats, issue_changes=issue_changes)
+    mock_edit.assert_called_once_with("org/repo", 1, "closed")
+    assert 1 == stats.children_closed
+    assert 1 == len(issue_changes)
+
+
 def test_close_resolved_child_no_repo_in_secmeta(mocker: MockerFixture) -> None:
     """Skips closure if no repo in secmeta."""
     mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state")
@@ -1065,12 +1149,66 @@ def test_close_resolved_parent_skips_open_child(mocker: MockerFixture) -> None:
 def test_ensure_issue_dry_run(sast_alert: Alert) -> None:
     """Dry-run: no gh calls, notification with issue_number=0."""
     issues: dict[int, Issue] = {}
-    issue_index = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
     issue_changes: list[IssueChange] = []
     sync = _make_sync_context(issues=issues, issue_index=issue_index, dry_run=True, issue_changes=issue_changes)
     ensure_issue(sast_alert, sync)
     assert len(issue_changes) == 1
     assert issue_changes[0].issue_number == 0
+
+
+def test_ensure_issue_migrates_pre_change_child_in_place(mocker: MockerFixture, sast_alert: Alert) -> None:
+    """A pre-change child issue is matched via its legacy hash and gains both keys."""
+    mock_body = _patch_gh_calls(mocker)
+    sast_alert.alert_details.identity_key = "fp_stable_0"
+    legacy_hash = sast_alert.alert_details.alert_hash
+    child = _issue_with_secmeta(7, {
+        "type": "child", "fingerprint": legacy_hash, "repo": "test-org/test-repo", "severity": "high",
+    })
+    issues = {7: child}
+    sync = _make_sync_context(issues=issues)
+
+    ensure_issue(sast_alert, sync)
+
+    mock_body.assert_called_once()
+    assert 0 == sync.stats.children_created
+    secmeta = load_secmeta(child.body)
+    assert "fp_stable_0" == secmeta["fingerprint"]
+    assert legacy_hash == secmeta["alert_hash"]
+
+
+def test_ensure_issue_line_shift_maps_to_same_child(mocker: MockerFixture, sast_alert: Alert) -> None:
+    """A SAST finding whose result hash churns on a line shift keeps its child issue."""
+    _patch_gh_calls(mocker)
+    child = _issue_with_secmeta(8, {
+        "type": "child", "fingerprint": "fp_stable_0", "alert_hash": "hash_before_shift",
+        "repo": "test-org/test-repo", "severity": "high",
+    })
+    sast_alert.alert_details.identity_key = "fp_stable_0"
+    sast_alert.alert_details.alert_hash = "hash_after_shift"
+    sync = _make_sync_context(issues={8: child})
+
+    ensure_issue(sast_alert, sync)
+
+    assert 0 == sync.stats.children_created
+    assert "hash_after_shift" == load_secmeta(child.body)["alert_hash"]
+
+
+def test_ensure_issue_without_aquasec_fingerprint_keys_off_result_hash(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    """A finding with no AquaSec fingerprint still matches on its result hash."""
+    _patch_gh_calls(mocker)
+    sast_alert.alert_details.identity_key = sast_alert.alert_details.alert_hash
+    child = _issue_with_secmeta(9, {
+        "type": "child", "fingerprint": sast_alert.alert_details.alert_hash,
+        "repo": "test-org/test-repo", "severity": "high",
+    })
+    sync = _make_sync_context(issues={9: child})
+
+    ensure_issue(sast_alert, sync)
+
+    assert 0 == sync.stats.children_created
 
 
 def test_ensure_issue_missing_alert_hash_raises() -> None:
@@ -1081,7 +1219,7 @@ def test_ensure_issue_missing_alert_hash_raises() -> None:
         "rule_details": {},
     }, repo="org/repo")
     issues: dict[int, Issue] = {}
-    issue_index = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
     with pytest.raises(SystemExit, match="alert_hash"):
         ensure_issue(alert, _make_sync_context(issues=issues, issue_index=issue_index, dry_run=True))
 
@@ -1094,7 +1232,7 @@ def test_ensure_issue_missing_alert_details_raises() -> None:
         "rule_details": {},
     }, repo="org/repo")
     issues: dict[int, Issue] = {}
-    issue_index = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
+    issue_index = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
     with pytest.raises(SystemExit, match="alert_hash"):
         ensure_issue(alert, _make_sync_context(issues=issues, issue_index=issue_index, dry_run=True))
 
@@ -1162,12 +1300,12 @@ def test_sync_reopened_child_prevents_parent_close(mocker: MockerFixture, sast_a
     """Reopened child keeps parent open - resolved-parent check must not re-close it."""
     mocker.patch("security.issues.sync.gh_issue_get_sub_issue_numbers", return_value=set())
     rule_id = sast_alert.metadata.rule_id
-    fingerprint = sast_alert.alert_details.alert_hash
+    identity_key = sast_alert.alert_details.alert_hash
     parent = _issue_with_secmeta(169, {
         "type": "parent", "rule_id": rule_id, "repo": "test-org/test-repo",
     }, state="closed")
     child = _issue_with_secmeta(170, {
-        "type": "child", "rule_id": rule_id, "fingerprint": fingerprint, "repo": "test-org/test-repo",
+        "type": "child", "rule_id": rule_id, "fingerprint": identity_key, "repo": "test-org/test-repo",
     }, state="closed")
     issues = {169: parent, 170: child}
 

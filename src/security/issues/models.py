@@ -29,10 +29,21 @@ ParentOriginalBodies = dict[int, IssueBodySnapshot]  # Maps issue number → bod
 
 @dataclass
 class IssueIndex:
-    """Lookup maps over the repository's security issues, split by issue kind."""
+    """Lookup maps over the repository's security issues, split by issue kind.
 
-    child_by_fingerprint: dict[str, Issue]
+    `child_by_identity_key` is the main map - every child issue lives here exactly once, keyed by its
+    **Finding Identity** (AquaSec Fingerprint for `sast`, Result Hash for every other category). It's
+    the only map allowed to be looped over, counted, or used to decide what to close.
+
+    `child_by_alert_hash` is a **lookup-only backup**, keyed by each issue's Result Hash - never looped
+    over, only checked one key at a time. For `vulnerabilities` it just duplicates the main map (same
+    value). Its real job is `sast`: catching issues created **before this fix**, when only the Result
+    Hash was ever recorded, so they won't match the new Fingerprint without it.
+    """
+
     parent_by_rule_id: dict[str, Issue]
+    child_by_identity_key: dict[str, Issue]
+    child_by_alert_hash: dict[str, Issue] = field(default_factory=dict)
 
 
 @dataclass
@@ -104,7 +115,8 @@ class AlertContext:
 
     alert: Alert
     alert_number: int
-    fingerprint: str
+    identity_key: str
+    alert_hash: str
     repo: str
     tool: str
     rule_id: str

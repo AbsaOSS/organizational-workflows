@@ -78,6 +78,7 @@ def render_secmeta(secmeta: dict[str, str]) -> str:
     preferred_order = [
         "type",
         "fingerprint",
+        "alert_hash",
         "repo",
         "rule_id",
         "severity",

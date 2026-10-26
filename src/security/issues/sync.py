@@ -74,11 +74,17 @@ from .templates import PARENT_BODY_TEMPLATE
 
 
 def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
-    """Build the child-by-fingerprint and parent-by-rule lookup maps from existing issues.
+    """Build the child and parent lookup maps from existing issues.
+
+    Child issues are indexed twice under distinct roles: by their stored Finding Identity in the
+    primary map, and by their stored Result Hash in the lookup-only fallback map. The Result Hash
+    is the Finding Identity itself for every Finding Category except ``sast`` — it only becomes a
+    historical fallback for ``sast`` issues created before the AquaSec Fingerprint was adopted.
 
     When duplicates exist, the oldest (lowest-numbered) issue wins.
     """
-    child_by_fingerprint: dict[str, Issue] = {}
+    child_by_identity_key: dict[str, Issue] = {}
+    child_by_alert_hash: dict[str, Issue] = {}
     parent_by_rule_id: dict[str, Issue] = {}
 
     for issue in issues.values():
@@ -90,26 +96,44 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
                 existing_parent = parent_by_rule_id.get(rule_id)
                 if existing_parent is None or issue.number < existing_parent.number:
                     parent_by_rule_id[rule_id] = issue
+            continue
 
-        fp = secmeta.get("fingerprint", "").strip() or secmeta.get("alert_hash", "").strip()
-        if fp and secmeta_type != SECMETA_TYPE_PARENT:
-            existing_child = child_by_fingerprint.get(fp)
+        identity_key = secmeta.get("fingerprint", "").strip()
+        if identity_key:
+            existing_child = child_by_identity_key.get(identity_key)
             if existing_child is None or issue.number < existing_child.number:
-                child_by_fingerprint[fp] = issue
+                child_by_identity_key[identity_key] = issue
+
+        alert_hash = secmeta.get("alert_hash", "").strip()
+        if alert_hash:
+            existing_by_alert_hash = child_by_alert_hash.get(alert_hash)
+            if existing_by_alert_hash is None or issue.number < existing_by_alert_hash.number:
+                child_by_alert_hash[alert_hash] = issue
 
     return IssueIndex(
-        child_by_fingerprint=child_by_fingerprint,
         parent_by_rule_id=parent_by_rule_id,
+        child_by_identity_key=child_by_identity_key,
+        child_by_alert_hash=child_by_alert_hash,
     )
 
 
 def find_issue_in_index(
     issue_index: IssueIndex,
     *,
-    fingerprint: str,
+    identity_key: str,
+    legacy_hash: str = "",
 ) -> Issue | None:
-    """Return the child issue matching *fingerprint*, or ``None``."""
-    return issue_index.child_by_fingerprint.get(fingerprint)
+    """Return the child issue matching the Finding Identity, falling back to the Result Hash.
+
+    Issues created before the Finding Identity was adopted store their Result Hash in the
+    ``fingerprint`` secmeta key, so the legacy value is tried against the primary map first.
+    """
+    found = issue_index.child_by_identity_key.get(identity_key)
+    if found is not None:
+        return found
+    if legacy_hash:
+        return issue_index.child_by_identity_key.get(legacy_hash) or issue_index.child_by_alert_hash.get(legacy_hash)
+    return None
 
 
 def find_parent_issue(issue_index: IssueIndex, *, rule_id: str) -> Issue | None:
@@ -365,7 +389,7 @@ def _handle_new_child_issue(
     """Create a new child issue for an alert that has no matching issue yet."""
     secmeta: dict[str, str] = {
         "type": SECMETA_TYPE_CHILD,
-        "fingerprint": ctx.fingerprint,
+        "fingerprint": ctx.identity_key,
         "repo": ctx.repo,
         "rule_id": ctx.rule_id,
         "severity": ctx.severity,
@@ -373,13 +397,13 @@ def _handle_new_child_issue(
 
     human_body = build_child_issue_body(ctx.alert)
     body = render_secmeta(secmeta) + "\n\n" + human_body
-    title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
+    title = build_issue_title(ctx.rule_description, ctx.identity_key, ctx.severity)
 
     if sync.dry_run:
         logging.info(
             "%sWould create child issue for alert FP=%s (rule: %s, severity: %s)",
             DRY_RUN_PREFIX,
-            ctx.fingerprint[:8],
+            ctx.identity_key[:8],
             ctx.rule_id,
             ctx.severity,
         )
@@ -389,7 +413,7 @@ def _handle_new_child_issue(
         bump_severity(sync.stats.children_created_by_severity, ctx.severity)
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             logging.debug(
-                "%sWould create child issue for alert FP=%s with body:\n%s", DRY_RUN_PREFIX, ctx.fingerprint[:8], body
+                "%sWould create child issue for alert FP=%s with body:\n%s", DRY_RUN_PREFIX, ctx.identity_key[:8], body
             )
 
         _record_for_notification(
@@ -401,7 +425,7 @@ def _handle_new_child_issue(
             state="new",
         )
         # Mirror the real path so the run's posture count includes this issue.
-        sync.issue_index.child_by_fingerprint[ctx.fingerprint] = Issue(number=0, state="open", title=title, body=body)
+        sync.issue_index.child_by_identity_key[ctx.identity_key] = Issue(number=0, state="open", title=title, body=body)
         if sync.priority_sync is not None:
             sync.priority_sync.enqueue(ctx.repo, 0, ctx.severity, sync.severity_priority_map)
         return
@@ -410,12 +434,12 @@ def _handle_new_child_issue(
     if num is None:
         return
 
-    logging.info("%sCreated child issue #%d for alert FP=%s", LOGGING_PREFIX, num, ctx.fingerprint[:8])
+    logging.info("%sCreated child issue #%d for alert FP=%s", LOGGING_PREFIX, num, ctx.identity_key[:8])
     sync.stats.children_created += 1
     bump_severity(sync.stats.children_created_by_severity, ctx.severity)
     created = Issue(number=num, state="open", title=title, body=body)
     sync.issues[num] = created
-    sync.issue_index.child_by_fingerprint[ctx.fingerprint] = created
+    sync.issue_index.child_by_identity_key[ctx.identity_key] = created
 
     _record_for_notification(
         sync.issue_changes,
@@ -437,14 +461,14 @@ def _handle_new_child_issue(
         )
         if gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num):
             logging.debug(
-                "Added link child issue #%d to parent #%d (alert FP=%s)", num, parent_issue.number, ctx.fingerprint[:8]
+                "Added link child issue #%d to parent #%d (alert FP=%s)", num, parent_issue.number, ctx.identity_key[:8]
             )
         else:
             logging.warning(
                 "Failed to link child issue #%d to parent #%d (alert FP=%s)",
                 num,
                 parent_issue.number,
-                ctx.fingerprint[:8],
+                ctx.identity_key[:8],
             )
 
     if sync.priority_sync is not None:
@@ -513,7 +537,8 @@ def _merge_child_secmeta(
     secmeta.update(
         {
             "type": SECMETA_TYPE_CHILD,
-            "fingerprint": ctx.fingerprint,
+            "fingerprint": ctx.identity_key,
+            "alert_hash": ctx.alert_hash,
             "repo": ctx.repo,
             "rule_id": ctx.rule_id or secmeta.get("rule_id", ""),
             "severity": ctx.severity,
@@ -559,7 +584,7 @@ def _sync_child_title(
     child_issue: Issue,
 ) -> None:
     """Fix title drift and ensure the priority on the child issue."""
-    expected_title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
+    expected_title = build_issue_title(ctx.rule_description, ctx.identity_key, ctx.severity)
     if expected_title != (child_issue.title or ""):
         if sync.dry_run:
             logging.info("%sWould update child issue #%d title", DRY_RUN_PREFIX, child_issue.number)
@@ -601,7 +626,7 @@ def _ensure_child_linked_to_parent(
             DRY_RUN_PREFIX,
             child_issue.number,
             parent_issue.number,
-            ctx.fingerprint[:8],
+            ctx.identity_key[:8],
         )
         cache[parent_issue.number].add(child_issue.number)
         sync.stats.children_relinked += 1
@@ -613,7 +638,7 @@ def _ensure_child_linked_to_parent(
             LOGGING_PREFIX,
             child_issue.number,
             parent_issue.number,
-            ctx.fingerprint[:8],
+            ctx.identity_key[:8],
         )
         cache[parent_issue.number].add(child_issue.number)
         sync.stats.children_relinked += 1
@@ -622,7 +647,7 @@ def _ensure_child_linked_to_parent(
             "Failed to relink child issue #%d to parent #%d (alert FP=%s)",
             child_issue.number,
             parent_issue.number,
-            ctx.fingerprint[:8],
+            ctx.identity_key[:8],
         )
 
 
@@ -659,9 +684,10 @@ def ensure_issue(
     end_line = alert.metadata.end_line
     commit_sha = alert.metadata.commit_sha
 
-    fingerprint = alert.alert_details.alert_hash
+    identity_key = alert.alert_details.identity_key
+    alert_hash = alert.alert_details.alert_hash
 
-    if not fingerprint:
+    if not identity_key:
         raise SystemExit(
             f"ERROR: missing 'alert_hash' in alert_details for alert_number={alert_number}. "
             "Ensure the collector/scanner includes an 'Alert hash: ...' line."
@@ -681,13 +707,15 @@ def ensure_issue(
     )
     matched_issue = find_issue_in_index(
         sync.issue_index,
-        fingerprint=fingerprint,
+        identity_key=identity_key,
+        legacy_hash=alert_hash,
     )
 
     ctx = AlertContext(
         alert=alert,
         alert_number=alert_number,
-        fingerprint=fingerprint,
+        identity_key=identity_key,
+        alert_hash=alert_hash,
         repo=repo_full,
         tool=alert.metadata.tool,
         rule_id=rule_id,
@@ -783,25 +811,32 @@ def _close_resolved_child_issues(
     issue_changes: list[IssueChange] | None = None,
 ) -> None:
     """Close open child issues whose alert is no longer present in the scan results."""
-    alert_fingerprints: set[str] = set()
+    present_values: set[str] = set()
     for alert in alerts.values():
-        fp = alert.alert_details.alert_hash
-        if fp:
-            alert_fingerprints.add(fp)
+        for value in (alert.alert_details.identity_key, alert.alert_details.alert_hash):
+            if value:
+                present_values.add(value)
 
-    open_issue_fps = {
-        fp for fp, child_issue in issue_index.child_by_fingerprint.items() if child_issue.state.lower() == "open"
-    }
-    unmatched_fps = open_issue_fps - alert_fingerprints
+    # Resolve by issue number so an issue reachable under both values is never processed twice.
+    matched_numbers: set[int] = set()
+    for value in present_values:
+        matched_issue = find_issue_in_index(issue_index, identity_key=value, legacy_hash=value)
+        if matched_issue is not None:
+            matched_numbers.add(matched_issue.number)
 
-    if not unmatched_fps:
+    to_close = [
+        child_issue
+        for child_issue in issue_index.child_by_identity_key.values()
+        if child_issue.state.lower() == "open" and child_issue.number not in matched_numbers
+    ]
+
+    if not to_close:
         logging.debug("No unmatched child issues – skipping resolved-alert closure")
         return
 
-    logging.info("%sDetected %d child issue/s with no matching alert", LOGGING_PREFIX, len(unmatched_fps))
+    logging.info("%sDetected %d child issue/s with no matching alert", LOGGING_PREFIX, len(to_close))
 
-    for fp in unmatched_fps:
-        child_issue = issue_index.child_by_fingerprint[fp]
+    for child_issue in to_close:
         secmeta = load_secmeta(child_issue.body)
         repo = secmeta.get("repo", "")
         if not repo:
@@ -858,7 +893,7 @@ def _count_open_child_issues_by_severity(issue_index: IssueIndex) -> dict[str, i
     Runs after the sync so closures made during this run are already reflected.
     """
     counts: dict[str, int] = {}
-    for child_issue in issue_index.child_by_fingerprint.values():
+    for child_issue in issue_index.child_by_identity_key.values():
         if child_issue.state.lower() != "open":
             continue
         bump_severity(counts, load_secmeta(child_issue.body).get("severity"))

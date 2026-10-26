@@ -29,7 +29,6 @@ def _make_args(**kwargs) -> argparse.Namespace:
         "repo": "my-org/my-repo",
         "dry_run": False,
         "verbose": False,
-        "issue_label": "scope:security",
         "severity_priority_map": "",
         "project_number": "",
         "project_org": "",

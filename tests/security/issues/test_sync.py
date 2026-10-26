@@ -32,17 +32,14 @@ from security.issues.sync import (
     _count_open_child_issues_by_severity,
     _ensure_child_linked_to_parent,
     _flush_parent_body_updates,
-    _handle_existing_child_issue,
     _handle_new_child_issue,
     _init_priority_sync,
     _log_sync_summary,
     _maybe_reopen_child,
     _meets_min_severity,
     _merge_child_secmeta,
-    _migrate_all_security_issue_labels,
-    _migrate_issue_labels,
     _rebuild_and_apply_child_body,
-    _sync_child_title_and_labels,
+    _sync_child_title,
     build_issue_index,
     ensure_issue,
     ensure_parent_issue,
@@ -52,6 +49,7 @@ from security.issues.sync import (
     sync_alerts_and_issues,
 )
 from security.alerts.models import Alert
+from security.issues.builder import build_issue_title
 from security.issues.models import (
     AlertContext,
     IssueIndex,
@@ -61,7 +59,6 @@ from security.issues.models import (
     SyncStats,
 )
 from security.issues.secmeta import load_secmeta, render_secmeta
-from security.issues.summary import LabelMigrationSummary
 
 
 # =====================================================================
@@ -516,187 +513,29 @@ def test_rebuild_body_dry_run(sast_alert: Alert) -> None:
 
 
 # =====================================================================
-# _migrate_issue_labels
-# MIGRATION-PHASE-2-REMOVE: tests for the migration-only label helper.
-# =====================================================================
-
-
-def test_migrate_labels_adds_and_removes_tech_debt(
-    mocker: MockerFixture, caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Stamps only the missing labels, strips type:tech-debt, and accumulates the summary."""
-    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
-    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
-    issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security", "type:tech-debt"])
-    label_summary = LabelMigrationSummary()
-    with caplog.at_level("INFO"):
-        result = _migrate_issue_labels(
-            "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False, label_summary=label_summary,
-        )
-    assert result is True
-    mock_add.assert_called_once_with("org/repo", 7, ["type:aquasec"])
-    mock_remove.assert_called_once_with("org/repo", 7, ["type:tech-debt"])
-    assert ["scope:security", "type:aquasec"] == issue.labels
-    assert 1 == label_summary.issues_migrated
-    assert 1 == label_summary.labels_added
-    assert 1 == label_summary.labels_removed
-    # MIGRATION-PHASE-2-REMOVE
-    assert "Migrating labels on issue #7 (add: type:aquasec, remove: type:tech-debt)" in caplog.text
-
-
-def test_migrate_labels_already_migrated_makes_no_calls(
-    mocker: MockerFixture, caplog: pytest.LogCaptureFixture,
-) -> None:
-    """An already-migrated issue costs zero API calls and does not touch the summary."""
-    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
-    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
-    issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security", "type:aquasec"])
-    label_summary = LabelMigrationSummary()
-    with caplog.at_level("INFO"):
-        result = _migrate_issue_labels(
-            "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False, label_summary=label_summary,
-        )
-    assert result is False
-    mock_add.assert_not_called()
-    mock_remove.assert_not_called()
-    assert 0 == label_summary.issues_migrated
-    # MIGRATION-PHASE-2-REMOVE
-    assert "Migrating labels" not in caplog.text
-
-
-def test_migrate_labels_skips_removal_when_absent(
-    mocker: MockerFixture, caplog: pytest.LogCaptureFixture,
-) -> None:
-    """No removal call when the issue has no type:tech-debt label; summary reflects only the add."""
-    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
-    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
-    issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security"])
-    label_summary = LabelMigrationSummary()
-    with caplog.at_level("INFO"):
-        _migrate_issue_labels(
-            "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False, label_summary=label_summary,
-        )
-    mock_add.assert_called_once_with("org/repo", 7, ["type:aquasec"])
-    mock_remove.assert_not_called()
-    assert 1 == label_summary.issues_migrated
-    assert 1 == label_summary.labels_added
-    assert 0 == label_summary.labels_removed
-    # MIGRATION-PHASE-2-REMOVE
-    assert "Migrating labels on issue #7 (add: type:aquasec)" in caplog.text
-
-
-def test_migrate_labels_keeps_tech_debt_without_scope_security(mocker: MockerFixture) -> None:
-    """Defensive: never strip type:tech-debt from an issue lacking scope:security."""
-    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
-    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
-    issue = Issue(number=7, state="open", title="t", body="b", labels=["type:tech-debt"])
-    _migrate_issue_labels("org/repo", issue, ["scope:security", "type:aquasec"], dry_run=False)
-    mock_add.assert_called_once()
-    mock_remove.assert_not_called()
-    assert "type:tech-debt" in issue.labels
-
-
-def test_migrate_labels_dry_run_no_calls(mocker: MockerFixture, caplog: pytest.LogCaptureFixture) -> None:
-    """Dry-run performs no GitHub calls but still accumulates the summary."""
-    mock_add = mocker.patch("security.issues.sync.gh_issue_add_labels")
-    mock_remove = mocker.patch("security.issues.sync.gh_issue_remove_labels")
-    issue = Issue(number=7, state="open", title="t", body="b", labels=["scope:security", "type:tech-debt"])
-    label_summary = LabelMigrationSummary()
-    with caplog.at_level("INFO"):
-        _migrate_issue_labels(
-            "org/repo", issue, ["scope:security", "type:aquasec"], dry_run=True, label_summary=label_summary,
-        )
-    mock_add.assert_not_called()
-    mock_remove.assert_not_called()
-    assert 1 == label_summary.issues_migrated
-    assert 1 == label_summary.labels_added
-    assert 1 == label_summary.labels_removed
-    # MIGRATION-PHASE-2-REMOVE: delete this assertion once the label migration sweep
-    # is retired.
-    assert "Would migrate labels on issue #7 (add: type:aquasec, remove: type:tech-debt)" in caplog.text
-
-
-# =====================================================================
-# _migrate_all_security_issue_labels
-# MIGRATION-PHASE-2-REMOVE: tests for the migration-only sweep.
-# =====================================================================
-
-
-def _secmeta_body(secmeta_type: str) -> str:
-    return f"<!--secmeta\ntype={secmeta_type}\nrepo=org/repo\nrule_id=X\nseverity=high\n-->\n\nbody"
-
-
-def test_sweep_migrates_open_and_closed_aquasec_issues(mocker: MockerFixture) -> None:
-    """Sweep migrates parent + child issues regardless of state."""
-    mock_migrate = mocker.patch("security.issues.sync._migrate_issue_labels")
-    issues = {
-        1: Issue(number=1, state="open", title="child", body=_secmeta_body("child"), labels=["scope:security"]),
-        2: Issue(number=2, state="closed", title="parent", body=_secmeta_body("parent"), labels=["scope:security"]),
-    }
-    _migrate_all_security_issue_labels("org/repo", issues, dry_run=False)
-    assert mock_migrate.call_count == 2
-
-
-def test_sweep_ignores_non_aquasec_issues(mocker: MockerFixture) -> None:
-    """Issues without a parent/child secmeta block are never touched and the summary stays at zero."""
-    mock_migrate = mocker.patch("security.issues.sync._migrate_issue_labels")
-    issues = {
-        1: Issue(number=1, state="open", title="manual", body="no secmeta here", labels=["scope:security"]),
-    }
-    label_summary = _migrate_all_security_issue_labels("org/repo", issues, dry_run=False)
-    mock_migrate.assert_not_called()
-    assert 0 == label_summary.issues_migrated
-    assert 0 == label_summary.labels_added
-    assert 0 == label_summary.labels_removed
-
-
-def test_sweep_aggregates_label_summary_across_issues(mocker: MockerFixture) -> None:
-    """Without mocking _migrate_issue_labels, the sweep's returned summary aggregates real per-issue counts."""
-    mocker.patch("security.issues.sync.gh_issue_add_labels")
-    mocker.patch("security.issues.sync.gh_issue_remove_labels")
-    issues = {
-        1: Issue(
-            number=1, state="open", title="child", body=_secmeta_body("child"),
-            labels=["scope:security", "type:tech-debt"],
-        ),
-        2: Issue(
-            number=2, state="closed", title="parent", body=_secmeta_body("parent"),
-            labels=["scope:security", "type:aquasec"],
-        ),
-    }
-    label_summary = _migrate_all_security_issue_labels("org/repo", issues, dry_run=False)
-    assert 1 == label_summary.issues_migrated
-    assert 1 == label_summary.labels_added
-    assert 1 == label_summary.labels_removed
-
-
-# =====================================================================
-# _sync_child_title_and_labels
+# _sync_child_title
 # =====================================================================
 
 
 def test_sync_title_drift_corrected(mocker: MockerFixture) -> None:
     """Title is updated when it drifts from the expected format."""
     mock_title = mocker.patch("security.issues.sync.gh_issue_edit_title", return_value=True)
-    mock_labels = mocker.patch("security.issues.sync.gh_issue_add_labels")
     issue = Issue(number=1, state="open", title="Wrong title", body="b")
     ctx = _make_alert_context(rule_name="sast", rule_id="CVE-2026-1234", fingerprint="fp_test_123")
     sync = _make_sync_context()
-    _sync_child_title_and_labels(ctx=ctx, sync=sync, child_issue=issue)
+    _sync_child_title(ctx=ctx, sync=sync, child_issue=issue)
     mock_title.assert_called_once()
-    mock_labels.assert_called_once()
 
 
 def test_sync_title_already_correct(mocker: MockerFixture) -> None:
     """Title is not updated when it matches the expected format."""
-    mock_labels = mocker.patch("security.issues.sync.gh_issue_add_labels")
-    from security.issues.builder import build_issue_title
+    mock_title = mocker.patch("security.issues.sync.gh_issue_edit_title", return_value=True)
     title = build_issue_title("Test finding description", "fp_test_123", "high")
     issue = Issue(number=1, state="open", title=title, body="b")
     ctx = _make_alert_context(rule_name="sast", rule_id="CVE-2026-1234", fingerprint="fp_test_123")
     sync = _make_sync_context()
-    _sync_child_title_and_labels(ctx=ctx, sync=sync, child_issue=issue)
-    mock_labels.assert_called_once()
+    _sync_child_title(ctx=ctx, sync=sync, child_issue=issue)
+    mock_title.assert_not_called()
 
 
 def test_sync_title_dry_run() -> None:
@@ -704,7 +543,7 @@ def test_sync_title_dry_run() -> None:
     issue = Issue(number=1, state="open", title="Wrong", body="b")
     ctx = _make_alert_context()
     sync = _make_sync_context(dry_run=True)
-    _sync_child_title_and_labels(ctx=ctx, sync=sync, child_issue=issue)
+    _sync_child_title(ctx=ctx, sync=sync, child_issue=issue)
 
 
 # =====================================================================
@@ -986,8 +825,6 @@ def test_ensure_parent_strips_legacy_secmeta_keys(sast_alert: Alert) -> None:
 def test_ensure_parent_title_drift_corrected(mocker: MockerFixture, sast_alert: Alert) -> None:
     """Title is updated when it drifts from the expected format."""
     mock_title = mocker.patch("security.issues.sync.gh_issue_edit_title", return_value=True)
-    mocker.patch("security.issues.sync.gh_issue_add_labels")
-    mocker.patch("security.issues.sync.gh_issue_remove_labels")
     parent = _issue_with_secmeta(10, {
         "type": "parent",
         "rule_id": sast_alert.metadata.rule_id,
@@ -1393,16 +1230,14 @@ def test_init_priority_sync_field_lookup_fails(mocker: MockerFixture) -> None:
     (True, "Security [DRY-RUN] - "),
 ])
 def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefix: str) -> None:
-    """Summary emits exactly one log record with the right prefix on every line, grouped table, and label section."""
-    # Empty stats and no label activity → single "no changes" record with the right prefix
+    """Summary emits exactly one log record with the right prefix on every line and a grouped table."""
+    # Empty stats → single "no changes" record with the right prefix
     with caplog.at_level(logging.INFO):
-        _log_sync_summary(SyncStats(), LabelMigrationSummary(), dry_run=dry_run)
+        _log_sync_summary(SyncStats(), dry_run=dry_run)
     assert len(caplog.records) == 1
     message = caplog.records[0].message
     assert message.startswith(prefix)
     assert "no changes" in message
-    # MIGRATION-PHASE-2-REMOVE
-    assert "no repository label action needed" not in message
     caplog.clear()
 
     # Full stats + label activity → grouped table with severity breakdowns; zero groups omitted
@@ -1414,9 +1249,8 @@ def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefi
         children_title_updated=2, children_body_updated=3,
         children_relinked=1,
     )
-    label_summary = LabelMigrationSummary(issues_migrated=4, labels_added=5, labels_removed=2)
     with caplog.at_level(logging.INFO):
-        _log_sync_summary(stats, label_summary, dry_run=dry_run)
+        _log_sync_summary(stats, dry_run=dry_run)
     assert len(caplog.records) == 1
     message = caplog.records[0].message
     lines = message.split("\n")
@@ -1425,10 +1259,7 @@ def test_log_sync_summary(caplog: pytest.LogCaptureFixture, dry_run: bool, prefi
     assert "Parent issues" in message and "created: 2 (high: 2)" in message and "title updated: 1" in message
     assert "Child issues" in message and "created: 15 (high: 15)" in message and "reopened: 1" in message
     assert "title updated: 2" in message and "body updated: 3" in message and "relinked: 1" in message
-    # MIGRATION-PHASE-2-REMOVE: delete this assertion once the label migration sweep is retired.
-    assert "issue(s) migrated: 4" in message
-    assert "type:aquasec added: 5" in message
-    assert "type:tech-debt removed: 2" in message
+    assert "Labels" not in message
 
 
 # =====================================================================

@@ -30,7 +30,6 @@ from core.github.issues import (
     _gh_with_retry,
     _is_not_found_error,
     _not_found_hint,
-    gh_issue_add_labels,
     gh_issue_add_sub_issue,
     gh_issue_add_sub_issue_by_number,
     gh_issue_comment,
@@ -41,7 +40,6 @@ from core.github.issues import (
     gh_issue_get_rest_id,
     gh_issue_get_sub_issue_numbers,
     gh_issue_list_by_label,
-    gh_issue_remove_labels,
     gh_label_create,
 )
 
@@ -312,45 +310,6 @@ def test_edit_body_not_found_hint(mocker: MockerFixture, caplog) -> None:
         result = gh_issue_edit_body("org/repo", 1, "new body")
     assert result is False
     assert any("deleted or transferred" in r.message for r in caplog.records)
-
-
-def test_add_labels_success(mocker: MockerFixture) -> None:
-    mock_run = mocker.patch("core.github.issues.run_gh", return_value=_ok())
-    gh_issue_add_labels("org/repo", 1, ["bug", "security"])
-    mock_run.assert_called_once()
-
-def test_add_labels_no_labels_skips_call(mocker: MockerFixture) -> None:
-    mock_run = mocker.patch("core.github.issues.run_gh")
-    gh_issue_add_labels("org/repo", 1, [])
-    mock_run.assert_not_called()
-
-def test_add_labels_not_found_hint(mocker: MockerFixture, caplog) -> None:
-    mocker.patch("core.github.issues.run_gh", return_value=_not_found())
-    with caplog.at_level(logging.WARNING, logger="root"):
-        gh_issue_add_labels("org/repo", 1, ["bug"])
-    assert any("deleted or transferred" in r.message for r in caplog.records)
-
-
-# gh_issue_remove_labels
-# MIGRATION-PHASE-2-REMOVE: tests for the migration-only remove-labels helper.
-
-def test_remove_labels_success(mocker: MockerFixture) -> None:
-    mock_run = mocker.patch("core.github.issues.run_gh", return_value=_ok())
-    gh_issue_remove_labels("org/repo", 1, ["type:tech-debt"])
-    mock_run.assert_called_once()
-    args = mock_run.call_args.args[0]
-    assert "--remove-label" in args and "type:tech-debt" in args
-
-def test_remove_labels_no_labels_skips_call(mocker: MockerFixture) -> None:
-    mock_run = mocker.patch("core.github.issues.run_gh")
-    gh_issue_remove_labels("org/repo", 1, [])
-    mock_run.assert_not_called()
-
-def test_remove_labels_failure_warns(mocker: MockerFixture, caplog) -> None:
-    mocker.patch("core.github.issues.run_gh", return_value=_err("boom"))
-    with caplog.at_level(logging.WARNING, logger="root"):
-        gh_issue_remove_labels("org/repo", 1, ["type:tech-debt"])
-    assert any("Failed to remove labels" in r.message for r in caplog.records)
 
 
 # gh_label_create

@@ -24,9 +24,6 @@ LABEL_EPIC = "epic"
 LABEL_SEC_SUPPRESSION = "sec:suppression"
 LABEL_SEC_FALSE_POSITIVE = "sec:false-positive"
 
-# MIGRATION-PHASE-2-REMOVE: deprecated tech-debt label, replaced by type:aquasec.
-LABEL_TYPE_TECH_DEBT = "type:tech-debt"
-
 
 @dataclass(frozen=True)
 class LabelSpec:

@@ -69,7 +69,6 @@ def _mock_pipeline(mocker: MockerFixture):
 def test_parse_args_defaults():
     args = parse_args(["--repo", REPO])
     assert args.repo == REPO
-    assert args.issue_label == "scope:security"
     assert args.dry_run is False
     assert args.verbose is False
     assert args.scan_output == ""
@@ -78,7 +77,6 @@ def test_parse_args_defaults():
 def test_parse_args_all_flags():
     args = parse_args([
         "--repo", REPO,
-        "--issue-label", "custom-label",
         "--severity-priority-map", "Critical=Blocker",
         "--project-number", "42",
         "--project-org", "other-org",
@@ -88,7 +86,6 @@ def test_parse_args_all_flags():
         "--verbose",
     ])
     assert args.repo == REPO
-    assert args.issue_label == "custom-label"
     assert args.severity_priority_map == "Critical=Blocker"
     assert args.project_number == "42"
     assert args.project_org == "other-org"

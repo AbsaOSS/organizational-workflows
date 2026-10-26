@@ -32,7 +32,6 @@ def config():
         aqua_group_id="g",
         aqua_repository_id="00000000-0000-0000-0000-000000000000",
         repo="org/repo",
-        security_label="scope:security",
         severity_priority_map="Critical=P0",
         project_number=42,
         project_org="org",
@@ -52,6 +51,18 @@ def test_sync_calls_sync_alerts_and_issues(mocker, config):
     syncer.sync({}, dry_run=False)
 
     mock_sync.assert_called_once()
+
+
+def test_sync_fetches_issues_by_aquasec_label(mocker, config):
+    """The fetch is narrowed to type:aquasec, so unrelated scope:security issues are never loaded."""
+    mock_list = mocker.patch("security.services.issue_syncer.gh_issue_list_by_label", return_value={})
+    mocker.patch(
+        "security.services.issue_syncer.sync_alerts_and_issues", return_value=MagicMock(issue_changes=[])
+    )
+
+    IssueSyncer(config).sync({}, dry_run=False)
+
+    mock_list.assert_called_once_with("org/repo", "type:aquasec")
 
 
 def test_sync_passes_dry_run(mocker, config):

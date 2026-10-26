@@ -24,7 +24,7 @@ SERVER = "https://github.com"
 
 
 def _build(**overrides: str) -> NotificationLinks:
-    params = {"repo": REPO, "security_label": "scope:security", "server_url": SERVER, "run_id": "12345"}
+    params = {"repo": REPO, "server_url": SERVER, "run_id": "12345"}
     params.update(overrides)
     return NotificationLinks.build(**params)
 
@@ -41,12 +41,12 @@ def test_build_creates_run_and_repo_links() -> None:
 
 
 def test_build_encodes_the_issue_search_query() -> None:
-    """The label filter contains spaces and colons, which must survive as a query value."""
+    """The query ANDs both labels and contains spaces and colons, which must survive as a query value."""
     links = _build()
 
     assert links.repo_url.startswith(f"{SERVER}/{REPO}/issues?q=")
     assert " " not in links.repo_url
-    assert "is%3Aissue%20is%3Aopen%20label%3Ascope%3Asecurity" in links.repo_url
+    assert "is%3Aissue%20is%3Aopen%20label%3Ascope%3Asecurity%20label%3Atype%3Aaquasec" in links.repo_url
 
 
 def test_build_omits_run_link_without_run_id() -> None:

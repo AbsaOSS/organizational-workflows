@@ -130,10 +130,22 @@ def find_issue_in_index(
 ) -> Issue | None:
     """Return the child issue matching the Finding Identity, falling back to the Result Hash.
 
+    When AquaSec supplies a real Fingerprint (``sast`` only, recognizable by the Finding Identity
+    differing from the Result Hash), an exact Result Hash match on a *different* issue outranks the
+    Finding Identity. A Fingerprint ordinal is reused when an earlier occurrence in the same file is
+    removed, so the identity can point at the removed occurrence's issue while the Result Hash still
+    identifies the surviving finding unambiguously.
+
     Issues created before the Finding Identity was adopted store their Result Hash in the
     ``fingerprint`` secmeta key, so the legacy value is tried against the primary map first.
     """
     found = issue_index.child_by_identity_key.get(identity_key)
+
+    if found is not None and legacy_hash and legacy_hash != identity_key:
+        by_alert_hash = issue_index.child_by_alert_hash.get(legacy_hash)
+        if by_alert_hash is not None and by_alert_hash.number != found.number:
+            return by_alert_hash
+
     if found is not None:
         return found
     if legacy_hash:
@@ -822,16 +834,17 @@ def _close_resolved_child_issues(
     issue_changes: list[IssueChange] | None = None,
 ) -> None:
     """Close open child issues whose alert is no longer present in the scan results."""
-    present_values: set[str] = set()
-    for alert in alerts.values():
-        for value in (alert.alert_details.identity_key, alert.alert_details.alert_hash):
-            if value:
-                present_values.add(value)
-
-    # Resolve by issue number so an issue reachable under both values is never processed twice.
+    # Resolve one match per alert, through the same precedence ensure_issue() uses, so a reused
+    # Fingerprint ordinal cannot rescue the issue of a finding that is genuinely gone. Probing each
+    # identifier independently would match both the removed and the surviving occurrence.
+    # Every alert is considered, including those below min-severity, so their issues stay open.
     matched_numbers: set[int] = set()
-    for value in present_values:
-        matched_issue = find_issue_in_index(issue_index, identity_key=value, legacy_hash=value)
+    for alert in alerts.values():
+        matched_issue = find_issue_in_index(
+            issue_index,
+            identity_key=alert.alert_details.identity_key,
+            legacy_hash=alert.alert_details.alert_hash,
+        )
         if matched_issue is not None:
             matched_numbers.add(matched_issue.number)
 

@@ -255,12 +255,32 @@ def test_find_issue_by_legacy_hash_in_legacy_map() -> None:
     assert result.number == 4
 
 
-def test_find_issue_prefers_identity_over_legacy() -> None:
-    """The Finding Identity wins when both keys resolve to different issues."""
-    primary = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_new"})
-    legacy = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_x", "alert_hash": "hash_old"})
-    idx = build_issue_index({10: primary, 20: legacy})
+def test_find_issue_prefers_exact_result_hash_over_reused_ordinal() -> None:
+    """An exact Result Hash on another issue outranks a reused AquaSec Fingerprint ordinal."""
+    reused_ordinal = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_new"})
+    exact_hash = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_x", "alert_hash": "hash_old"})
+    idx = build_issue_index({10: reused_ordinal, 20: exact_hash})
     result = find_issue_in_index(idx, identity_key="fp_new", legacy_hash="hash_old")
+    assert result is not None
+    assert result.number == 20
+
+
+def test_find_issue_prefers_identity_when_result_hash_matches_nothing() -> None:
+    """A line shift churns the Result Hash only, so the Finding Identity still decides."""
+    shifted = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_new", "alert_hash": "hash_before_shift"})
+    unrelated = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_x", "alert_hash": "hash_other"})
+    idx = build_issue_index({10: shifted, 20: unrelated})
+    result = find_issue_in_index(idx, identity_key="fp_new", legacy_hash="hash_after_shift")
+    assert result is not None
+    assert result.number == 10
+
+
+def test_find_issue_identity_wins_without_aquasec_fingerprint() -> None:
+    """Without an AquaSec Fingerprint both values are equal, so the Result Hash cannot override."""
+    matched = _issue_with_secmeta(10, {"type": "child", "fingerprint": "hash_same"})
+    other = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_x", "alert_hash": "hash_same"})
+    idx = build_issue_index({10: matched, 20: other})
+    result = find_issue_in_index(idx, identity_key="hash_same", legacy_hash="hash_same")
     assert result is not None
     assert result.number == 10
 
@@ -1340,6 +1360,36 @@ def test_sync_reopened_child_prevents_parent_close(mocker: MockerFixture, sast_a
     assert "open" == child.state
     assert len(result.issue_changes) == 1
     assert result.issue_changes[0].state == "reopen"
+
+
+def test_sync_matches_renumbered_finding_by_result_hash(mocker: MockerFixture, sast_alert: Alert) -> None:
+    """A matching old Result Hash must disambiguate a reused SAST ordinal."""
+    _patch_gh_calls(mocker)
+    mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    sast_alert.alert_details.identity_key = "fp_base_0"
+    sast_alert.alert_details.alert_hash = "hash_survivor"
+    removed_occurrence = _issue_with_secmeta(10, {
+        "type": "child",
+        "fingerprint": "fp_base_0",
+        "alert_hash": "hash_removed",
+        "repo": "test-org/test-repo",
+        "rule_id": sast_alert.metadata.rule_id,
+        "severity": "high",
+    })
+    surviving_occurrence = _issue_with_secmeta(20, {
+        "type": "child",
+        "fingerprint": "fp_base_1",
+        "alert_hash": "hash_survivor",
+        "repo": "test-org/test-repo",
+        "rule_id": sast_alert.metadata.rule_id,
+        "severity": "high",
+    })
+
+    sync_alerts_and_issues({303: sast_alert}, {10: removed_occurrence, 20: surviving_occurrence})
+
+    assert removed_occurrence.state == "closed"
+    assert surviving_occurrence.state == "open"
+    assert load_secmeta(surviving_occurrence.body)["fingerprint"] == "fp_base_0"
 
 
 # =====================================================================

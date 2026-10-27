@@ -129,7 +129,7 @@ After a successful run, findings appear as a GitHub Issues with defined body str
 <!--secmeta
 type=child
 fingerprint=a1b2c3d4e5f6789012345678abcdef01
-alert_hash=0f1e2d3c4b5a69788796a5b4c3d2e1f0
+alert_hash=a1b2c3d4e5f6789012345678abcdef01
 repo=my-org/my-service
 rule_id=CVE-2024-99999
 severity=critical
@@ -141,7 +141,7 @@ severity=critical
 - **Title:** requests: Improper certificate verification allows MITM attacks
 - **Category:** vulnerabilities
 - **Rule:** CVE-2024-99999
-- **Alert hash:** 0f1e2d3c4b5a69788796a5b4c3d2e1f0
+- **Alert hash:** a1b2c3d4e5f6789012345678abcdef01
 - **First seen:** 2026-01-15
 
 ## Description
@@ -164,6 +164,10 @@ man-in-the-middle attacker to intercept HTTPS traffic. Fixed in requests 2.32.0.
 - **Fixed version:** 2.32.0
 - **Reachable:** True
 ```
+
+> **Note:** `fingerprint` holds the Finding Identity and `alert_hash` the Result Hash. They carry the
+> same value for every Finding Category except `sast`, where AquaSec supplies a line-independent
+> Fingerprint of its own and the two keys therefore differ.
 
 ### Rule Issue (Epic)
 

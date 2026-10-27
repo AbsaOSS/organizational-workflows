@@ -1579,6 +1579,36 @@ def test_sync_conflicting_owners_preserves_exact_result_hash(mocker: MockerFixtu
     assert [(10, "closed")] == [(change.issue_number, change.state) for change in result.issue_changes]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="An issue left open by a failed closure passes to a new finding that takes over its ordinal",
+)
+def test_sync_failed_closure_does_not_hand_issue_to_new_occurrence(mocker: MockerFixture, sast_alert: Alert) -> None:
+    """An issue left open by a failed closure must not pass to a new finding that takes over its ordinal."""
+    _patch_gh_calls(mocker)
+    mocker.patch("security.issues.sync.gh_issue_edit_state", side_effect=[False, True, True, True])
+    rule_id = sast_alert.metadata.rule_id
+    parent = _issue_with_secmeta(1, {
+        "type": "parent", "rule_id": rule_id, "repo": "test-org/test-repo", "severity": "high",
+    })
+    removed = _issue_with_secmeta(10, {
+        "type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_removed",
+        "repo": "test-org/test-repo", "rule_id": rule_id, "severity": "high",
+    })
+    removed.labels = ["sec:suppression"]
+    issues = {1: parent, 10: removed}
+
+    sync_alerts_and_issues({}, issues)  # the finding is fixed, but closing #10 fails
+    sast_alert.alert_details.identity_key = "fp_base_0"  # a new finding of the same Rule takes over its ordinal
+    sast_alert.alert_details.alert_hash = "hash_new_finding"
+    result = sync_alerts_and_issues({303: sast_alert}, issues)
+
+    assert "hash_removed" == load_secmeta(removed.body)["alert_hash"]
+    assert [(10, "closed"), (999, "new")] == sorted(
+        (change.issue_number, change.state) for change in result.issue_changes
+    )
+
+
 def test_sync_renumbered_survivor_still_counted_on_next_run(mocker: MockerFixture, sast_alert: Alert) -> None:
     """The migrated survivor shares its identity with the closed issue, yet the next run must still count it."""
     _patch_gh_calls(mocker)

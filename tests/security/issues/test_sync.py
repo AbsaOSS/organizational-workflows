@@ -1926,35 +1926,43 @@ def test_sync_below_threshold_does_not_refresh_closed_child(mocker: MockerFixtur
     mock_state.assert_not_called()
 
 
-def test_sync_below_threshold_identity_write_failure_stops_closure_and_retries(
+def test_sync_below_threshold_identity_write_failure_keeps_processing_other_alerts(
     mocker: MockerFixture, sast_alert: Alert
 ) -> None:
+    """A failed bookkeeping write on one frozen issue must not drop the rest of the scan."""
     mock_body = _patch_gh_calls(mocker)
-    mock_body.side_effect = [False, True]
+    mock_body.return_value = False
     mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
-    mock_close_children = mocker.patch(
-        "security.issues.sync._close_resolved_child_issues", wraps=_close_resolved_child_issues
-    )
-    mock_close_parents = mocker.patch(
-        "security.issues.sync._close_resolved_parent_issues", wraps=_close_resolved_parent_issues
-    )
-    issues, survivor = _renumbered_sast_issues(sast_alert)
+    issues, _ = _renumbered_sast_issues(sast_alert)
     sast_alert.metadata.severity = "medium"
-    original_body = survivor.body
+    unrelated = copy.deepcopy(sast_alert)
+    unrelated.metadata.alert_number = 304
+    unrelated.metadata.severity = "high"
+    unrelated.alert_details.identity_key = "fp_other_0"
+    unrelated.alert_details.alert_hash = "hash_other"
 
-    with pytest.raises(RuntimeError, match="issue #20 in test-org/test-repo"):
-        sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
+    result = sync_alerts_and_issues({303: sast_alert, 304: unrelated}, issues, min_severity="high")
 
-    assert original_body == survivor.body
-    assert all("open" == issue.state for issue in issues.values())
-    mock_close_children.assert_not_called()
-    mock_close_parents.assert_not_called()
+    assert (999, "new") in [(change.issue_number, change.state) for change in result.issue_changes]
 
-    result = sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
 
-    assert "fp_base_0" == load_secmeta(survivor.body)["fingerprint"]
-    assert "open" == survivor.state
-    assert [(10, "closed")] == [(change.issue_number, change.state) for change in result.issue_changes]
+def test_sync_identity_write_failure_handled_same_below_and_above_threshold(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    """A failed identity write is tolerated above min-severity, so it must be tolerated below it too."""
+    mock_body = _patch_gh_calls(mocker)
+    mock_body.return_value = False
+    mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+
+    outcomes = {}
+    for severity in ("high", "medium"):
+        alert = copy.deepcopy(sast_alert)
+        alert.metadata.severity = severity
+        issues, survivor = _renumbered_sast_issues(alert)
+        result = sync_alerts_and_issues({303: alert}, issues, min_severity="high")
+        outcomes[severity] = ([(change.issue_number, change.state) for change in result.issue_changes], survivor.state)
+
+    assert outcomes["high"] == outcomes["medium"]
 
 
 def test_sync_unknown_severity_passes_at_min_low(

@@ -1050,10 +1050,9 @@ def _refresh_child_identity(alert: Alert, child_issue: Issue | None, sync: SyncC
     if sync.dry_run:
         logging.info("%sWould update child issue #%d identity bookkeeping", DRY_RUN_PREFIX, child_issue.number)
     elif not gh_issue_edit_body(alert.repo, child_issue.number, new_body):
-        raise RuntimeError(
-            f"Security - Failed to update Finding Identity for issue #{child_issue.number} in {alert.repo}; "
-            "aborting before issue closure"
-        )
+        # This run's matching stands without the write; the next run matches the issue again and retries.
+        logging.warning("Failed to update Finding Identity for issue #%d in %s", child_issue.number, alert.repo)
+        return
     else:
         logging.info("%sUpdated child issue #%d identity bookkeeping", LOGGING_PREFIX, child_issue.number)
 

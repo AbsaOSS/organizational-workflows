@@ -112,7 +112,7 @@ The Caller workflow lives in a consumer repository and invokes the Reusable work
 
 - **Create**: an Alert with no matching Child Issue, at or above `min-severity`, creates one and links it to the Parent Issue (created if missing).
 - **Update**: a matching open Child Issue has its body, title, and labels refreshed.
-- **Below `min-severity`**: a matching open Child Issue updates only its Finding Identity and Result Hash in Secmeta when they change. Other metadata values, human-readable content, title, labels, and parent/project relationships stay frozen. Unmatched Alerts create nothing, and closed Child Issues are not reopened. Failure to persist necessary identity bookkeeping stops the run before Child or Parent closure.
+- **Below `min-severity`**: a matching open Child Issue updates only its Finding Identity and Result Hash in Secmeta when they change. Other metadata values, human-readable content, title, labels, and parent/project relationships stay frozen. Unmatched Alerts create nothing, and closed Child Issues are not reopened. A failed identity write is logged and retried on the next run, as it is above `min-severity`; it does not stop the sync.
 - **Reopen**: a matching closed Child Issue is reopened, and so is its Parent Issue.
 - **Close**: an open Child Issue that no Alert in the scan claimed during Matching is closed, including a duplicate sharing a key with a claimed one; a Parent Issue whose known Children are all closed is closed.
 - **Counting**: the Notification counts open Child Issues, not AquaSec result rows, and never counts Parent Issues. It cannot be expected to equal the AquaSec platform figure.

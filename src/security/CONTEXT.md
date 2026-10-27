@@ -56,7 +56,10 @@ A hidden HTML-comment block at the top of every Issue body, holding machine-read
 _Avoid_: metadata block, frontmatter
 
 **Issue Index**:
-The in-memory lookup built from existing issues at the start of a sync. Child Issue by Finding Identity is the primary map, used for enumeration, counting and closure; Child Issue by Result Hash is a lookup-only fallback for Issues written before the Finding Identity change. Parent Issue is looked up by Rule ID. When duplicates share a key, the lowest issue number wins, so each Issue appears exactly once in the primary map.
+The in-memory lookup built from existing issues at the start of a sync. Every Child Issue is listed exactly once, and only that list is used for enumeration, counting and closure. Two lookup-only maps sit beside it: Child Issue by Finding Identity, and Child Issue by Result Hash, which also reaches Issues written before the Finding Identity change. Several Child Issues can share a key, so each map keeps one per key: an open Issue before a closed one, then the lowest issue number. Parent Issue is looked up by Rule ID, lowest issue number winning.
+
+**Matching**:
+Resolving every Alert of a scan to at most one existing Child Issue, before anything is written. An exact Result Hash match is tried first for every Alert, then the Finding Identity for those still unmatched. Each Child Issue can be claimed by one Alert only, so the outcome never depends on the order of the scan results.
 
 **Resolved Alert**:
 An Alert that no longer appears in the current scan results. Its Child Issue is closed automatically (there is no intermediate "ready to close" state).
@@ -86,7 +89,7 @@ The Caller workflow lives in a consumer repository and invokes the Reusable work
 ## Relationships
 
 - One **Rule** has one **Parent Issue** and many **Child Issues**.
-- One **Alert** maps to at most one **Child Issue**, matched by **Finding Identity**.
+- One **Alert** maps to at most one **Child Issue**, and one **Child Issue** to at most one **Alert**, decided by **Matching**.
 - A **Child Issue** is attached to its **Parent Issue** as a **Sub-issue**.
 - A **Waiver** attaches to a **Child Issue** and is never touched by the pipeline.
 - A **Finding Category** determines whether an **AquaSec Fingerprint** exists, and therefore whether the **Finding Identity** survives a line shift.
@@ -110,8 +113,8 @@ The Caller workflow lives in a consumer repository and invokes the Reusable work
 - **Create**: an Alert with no matching Child Issue, at or above `min-severity`, creates one and links it to the Parent Issue (created if missing).
 - **Update**: a matching open Child Issue has its body, title, and labels refreshed.
 - **Reopen**: a matching closed Child Issue is reopened, and so is its Parent Issue.
-- **Close**: an open Child Issue whose Finding Identity is absent from the scan is closed; a Parent Issue whose known Children are all closed is closed.
-- **Counting**: the Notification counts open Child Issues per Finding Identity, not per AquaSec result row, and never counts Parent Issues. It cannot be expected to equal the AquaSec platform figure.
+- **Close**: an open Child Issue that no Alert in the scan claimed during Matching is closed, including a duplicate sharing a key with a claimed one; a Parent Issue whose known Children are all closed is closed.
+- **Counting**: the Notification counts open Child Issues, not AquaSec result rows, and never counts Parent Issues. It cannot be expected to equal the AquaSec platform figure.
 
 ## Invariants
 
@@ -124,7 +127,7 @@ The Caller workflow lives in a consumer repository and invokes the Reusable work
 ## Example dialogue
 
 > **Dev:** "A finding came in with `result_hash=abc123`. Do we already have an issue for it?"
-> **Domain expert:** "Resolve its Finding Identity first — for `sast` that's the AquaSec Fingerprint, otherwise the Result Hash. Look that up in the Issue Index; if it matches a Child Issue, update it. If not, try the Result Hash against the fallback map. Only if both miss do you create a new Child Issue and link it to the Parent Issue for that Rule."
+> **Domain expert:** "Match the whole scan first. Try its Result Hash against the Issue Index; if no Child Issue carries it, try its Finding Identity — for `sast` that's the AquaSec Fingerprint, otherwise the Result Hash. A Child Issue already claimed by another Alert is off limits. If it matches, update that Child Issue. Only if nothing matches do you create a new Child Issue and link it to the Parent Issue for that Rule."
 
 ## Flagged ambiguities
 
@@ -147,4 +150,4 @@ Finding Identity stability differs per Finding Category:
 | `secrets` | Result Hash | **no** |
 
 - **`pipelineMisconfigurations`, `iacMisconfigurations` and `secrets` stay line-fragile.** They carry line numbers that feed the Result Hash and receive no AquaSec Fingerprint, so an unrelated edit that shifts a Finding still closes its Child Issue and opens a new one. AquaSec exposes no other discriminator — within one Rule and file, the line number is the only field that differs, and `message` and `scm_link` merely embed it. Any invented line-independent key would collapse genuinely distinct Findings into one Issue, which is worse. Closing that gap requires an upstream change.
-- **The AquaSec Fingerprint carries an ordinal.** It is shaped `<base>_<ordinal>`, so deleting an earlier occurrence of the same Rule in the same file renumbers the later ones. When the surviving Finding keeps its line, its Result Hash is unchanged, and an exact Result Hash match on another Child Issue outranks the reused ordinal, so the Issue is preserved and its Finding Identity migrated. Only when the Result Hash changed in the same scan — the Finding both renumbered and shifted lines — is there no discriminator left, and the Child Issue churns once. Accepted, not worked around.
+- **The AquaSec Fingerprint carries an ordinal.** It is shaped `<base>_<ordinal>`, so removing an earlier occurrence of the same Rule in the same file renumbers the later ones, and inserting one ahead of them takes over their ordinals. A Finding that keeps its line keeps its Result Hash, and Matching tries exact Result Hashes before Finding Identities and lets each Child Issue be claimed once. So the Finding keeps its own Issue (its Finding Identity is migrated), the removed occurrence's Issue closes, and an inserted occurrence gets a new Issue. Only when a Finding is renumbered **and** shifts lines in the same scan is there no discriminator left: it is matched by the reused ordinal alone, so it takes over the Issue — history and Waivers included — that previously tracked that ordinal, and its own Issue closes. Accepted, not worked around.

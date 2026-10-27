@@ -73,22 +73,46 @@ from .summary import render_sync_summary
 from .templates import PARENT_BODY_TEMPLATE
 
 
+def _is_preferred_child(candidate: Issue, current: Issue | None) -> bool:
+    """Return True if *candidate* should replace *current* under a shared lookup key.
+
+    An open issue beats a closed one, so an issue whose Finding Identity was migrated onto a reused
+    AquaSec Fingerprint ordinal is not shadowed by the closed issue of the removed occurrence. Among
+    equally open issues the oldest (lowest-numbered) wins.
+    """
+    if current is None:
+        return True
+    candidate_closed = candidate.state.lower() == "closed"
+    current_closed = current.state.lower() == "closed"
+    if candidate_closed != current_closed:
+        return not candidate_closed
+    return candidate.number < current.number
+
+
+def _index_child_issue(issue_index: IssueIndex, issue: Issue, *, identity_key: str, alert_hash: str) -> None:
+    """Register a child issue for enumeration and under each of its lookup keys."""
+    issue_index.children.append(issue)
+    if identity_key and _is_preferred_child(issue, issue_index.child_by_identity_key.get(identity_key)):
+        issue_index.child_by_identity_key[identity_key] = issue
+    if alert_hash and _is_preferred_child(issue, issue_index.child_by_alert_hash.get(alert_hash)):
+        issue_index.child_by_alert_hash[alert_hash] = issue
+
+
 def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
     """Build the child and parent lookup maps from existing issues.
 
-    Child issues are indexed twice under distinct roles: by their stored Finding Identity in the
-    primary map, and by their stored Result Hash in the lookup-only fallback map. The Result Hash
-    is the Finding Identity itself for every Finding Category except ``sast`` — it only becomes a
-    historical fallback for ``sast`` issues created before the AquaSec Fingerprint was adopted.
+    Every child issue is listed once in ``children`` and keyed in two lookup-only maps: by its stored
+    Finding Identity and by its stored Result Hash. The Result Hash is the Finding Identity itself for
+    every Finding Category except ``sast`` — there it also catches issues created before the AquaSec
+    Fingerprint was adopted.
 
-    A child issue that stores no Finding Identity is keyed in the primary map by its Result Hash, so
-    that counting and closure still reach it.
+    A child issue that stores no Finding Identity is keyed in the identity map by its Result Hash.
 
-    When duplicates exist, the oldest (lowest-numbered) issue wins.
+    When several child issues share a key, an open issue wins over a closed one, then the oldest
+    (lowest-numbered). For parent issues the oldest wins.
     """
-    child_by_identity_key: dict[str, Issue] = {}
-    child_by_alert_hash: dict[str, Issue] = {}
-    parent_by_rule_id: dict[str, Issue] = {}
+    issue_index = IssueIndex(parent_by_rule_id={}, child_by_identity_key={})
+    parent_by_rule_id = issue_index.parent_by_rule_id
 
     for issue in issues.values():
         secmeta = load_secmeta(issue.body)
@@ -101,56 +125,56 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
                     parent_by_rule_id[rule_id] = issue
             continue
 
-        # Fall back to the Result Hash so a child issue written without a Finding Identity still
-        # lands in the primary map, where counting and closure can reach it.
-        identity_key = secmeta.get("fingerprint", "").strip() or secmeta.get("alert_hash", "").strip()
-        if identity_key:
-            existing_child = child_by_identity_key.get(identity_key)
-            if existing_child is None or issue.number < existing_child.number:
-                child_by_identity_key[identity_key] = issue
-
         alert_hash = secmeta.get("alert_hash", "").strip()
-        if alert_hash:
-            existing_by_alert_hash = child_by_alert_hash.get(alert_hash)
-            if existing_by_alert_hash is None or issue.number < existing_by_alert_hash.number:
-                child_by_alert_hash[alert_hash] = issue
+        # Fall back to the Result Hash so a child issue written without a Finding Identity is still
+        # reachable through the identity map.
+        identity_key = secmeta.get("fingerprint", "").strip() or alert_hash
+        if not identity_key:
+            continue
+        _index_child_issue(issue_index, issue, identity_key=identity_key, alert_hash=alert_hash)
 
-    return IssueIndex(
-        parent_by_rule_id=parent_by_rule_id,
-        child_by_identity_key=child_by_identity_key,
-        child_by_alert_hash=child_by_alert_hash,
-    )
+    return issue_index
 
 
-def find_issue_in_index(
-    issue_index: IssueIndex,
-    *,
-    identity_key: str,
-    legacy_hash: str = "",
-) -> Issue | None:
-    """Return the child issue matching the Finding Identity, falling back to the Result Hash.
+def resolve_child_matches(alerts: dict[int, Alert], issue_index: IssueIndex) -> dict[int, Issue]:
+    """Match every alert of the scan to at most one existing child issue, each issue claimed once.
 
-    When AquaSec supplies a real Fingerprint (``sast`` only, recognizable by the Finding Identity
-    differing from the Result Hash), an exact Result Hash match on a *different* issue outranks the
-    Finding Identity. A Fingerprint ordinal is reused when an earlier occurrence in the same file is
-    removed, so the identity can point at the removed occurrence's issue while the Result Hash still
-    identifies the surviving finding unambiguously.
+    Returns the matched issue per key of *alerts*; an alert without an entry needs a new issue.
 
-    Issues created before the Finding Identity was adopted store their Result Hash in the
-    ``fingerprint`` secmeta key, so the legacy value is tried against the primary map first.
+    Matching runs over the whole scan in two passes, so the strongest evidence wins regardless of
+    alert order:
+
+    1. **Exact Result Hash** — the same finding on the same line. Tried against the identity map
+       first, where issues created before the Finding Identity was adopted store it, then against
+       the Result Hash map.
+    2. **Finding Identity** — for alerts still unmatched, e.g. a ``sast`` finding whose line shifted.
+
+    An AquaSec Fingerprint ordinal is reused when an earlier occurrence of the same Rule in the same
+    file is removed or a new one is inserted ahead of it. Claiming each issue only once, after exact
+    Result Hash matches, keeps a reused ordinal from handing one finding's issue — with its history
+    and Waivers — to another finding.
     """
-    found = issue_index.child_by_identity_key.get(identity_key)
+    matches: dict[int, Issue] = {}
+    claimed: set[int] = set()  # id() of claimed issues - dry-run placeholders all share number 0
 
-    if found is not None and legacy_hash and legacy_hash != identity_key:
-        by_alert_hash = issue_index.child_by_alert_hash.get(legacy_hash)
-        if by_alert_hash is not None and by_alert_hash.number != found.number:
-            return by_alert_hash
+    def _claim(alert_key: int, candidate: Issue | None) -> bool:
+        if candidate is None or id(candidate) in claimed:
+            return False
+        matches[alert_key] = candidate
+        claimed.add(id(candidate))
+        return True
 
-    if found is not None:
-        return found
-    if legacy_hash:
-        return issue_index.child_by_identity_key.get(legacy_hash) or issue_index.child_by_alert_hash.get(legacy_hash)
-    return None
+    for alert_key, alert in alerts.items():
+        alert_hash = alert.alert_details.alert_hash
+        if alert_hash and not _claim(alert_key, issue_index.child_by_identity_key.get(alert_hash)):
+            _claim(alert_key, issue_index.child_by_alert_hash.get(alert_hash))
+
+    for alert_key, alert in alerts.items():
+        identity_key = alert.alert_details.identity_key
+        if alert_key not in matches and identity_key:
+            _claim(alert_key, issue_index.child_by_identity_key.get(identity_key))
+
+    return matches
 
 
 def find_parent_issue(issue_index: IssueIndex, *, rule_id: str) -> Issue | None:
@@ -444,9 +468,7 @@ def _handle_new_child_issue(
         )
         # Mirror the real path so the run's posture count includes this issue.
         mirrored = Issue(number=0, state="open", title=title, body=body)
-        sync.issue_index.child_by_identity_key[ctx.identity_key] = mirrored
-        if ctx.alert_hash:
-            sync.issue_index.child_by_alert_hash[ctx.alert_hash] = mirrored
+        _index_child_issue(sync.issue_index, mirrored, identity_key=ctx.identity_key, alert_hash=ctx.alert_hash)
         if sync.priority_sync is not None:
             sync.priority_sync.enqueue(ctx.repo, 0, ctx.severity, sync.severity_priority_map)
         return
@@ -460,9 +482,7 @@ def _handle_new_child_issue(
     bump_severity(sync.stats.children_created_by_severity, ctx.severity)
     created = Issue(number=num, state="open", title=title, body=body)
     sync.issues[num] = created
-    sync.issue_index.child_by_identity_key[ctx.identity_key] = created
-    if ctx.alert_hash:
-        sync.issue_index.child_by_alert_hash[ctx.alert_hash] = created
+    _index_child_issue(sync.issue_index, created, identity_key=ctx.identity_key, alert_hash=ctx.alert_hash)
 
     _record_for_notification(
         sync.issue_changes,
@@ -697,8 +717,14 @@ def _handle_existing_child_issue(
 def ensure_issue(
     alert: Alert,
     sync: SyncContext,
+    *,
+    matched_issue: Issue | None,
 ) -> None:
-    """Process a single alert: create or update its child issue and parent."""
+    """Process a single alert: create or update its child issue and parent.
+
+    *matched_issue* is the alert's existing child issue as resolved by ``resolve_child_matches``
+    over the whole scan, or ``None`` when a new child issue is needed.
+    """
     alert_number = alert.metadata.alert_number
     rule_id = alert.metadata.rule_id
 
@@ -727,11 +753,6 @@ def ensure_issue(
         priority_sync=sync.priority_sync,
         parent_original_bodies=sync.parent_original_bodies,
         stats=sync.stats,
-    )
-    matched_issue = find_issue_in_index(
-        sync.issue_index,
-        identity_key=identity_key,
-        legacy_hash=alert_hash,
     )
 
     ctx = AlertContext(
@@ -826,32 +847,24 @@ def _flush_parent_body_updates(
 
 
 def _close_resolved_child_issues(
-    alerts: dict[int, Alert],
-    issue_index: IssueIndex,
+    child_issues: list[Issue],
+    matched_issues: list[Issue],
     *,
     dry_run: bool,
     stats: SyncStats,
     issue_changes: list[IssueChange] | None = None,
 ) -> None:
-    """Close open child issues whose alert is no longer present in the scan results."""
-    # Resolve one match per alert, through the same precedence ensure_issue() uses, so a reused
-    # Fingerprint ordinal cannot rescue the issue of a finding that is genuinely gone. Probing each
-    # identifier independently would match both the removed and the surviving occurrence.
-    # Every alert is considered, including those below min-severity, so their issues stay open.
-    matched_numbers: set[int] = set()
-    for alert in alerts.values():
-        matched_issue = find_issue_in_index(
-            issue_index,
-            identity_key=alert.alert_details.identity_key,
-            legacy_hash=alert.alert_details.alert_hash,
-        )
-        if matched_issue is not None:
-            matched_numbers.add(matched_issue.number)
+    """Close open child issues that no alert in the scan results matched.
 
+    *child_issues* are the child issues that existed before the run and *matched_issues* those
+    claimed by ``resolve_child_matches``. Every alert is matched, including those below
+    min-severity, so their issues stay open.
+    """
+    matched_ids = {id(issue) for issue in matched_issues}
     to_close = [
         child_issue
-        for child_issue in issue_index.child_by_identity_key.values()
-        if child_issue.state.lower() == "open" and child_issue.number not in matched_numbers
+        for child_issue in child_issues
+        if child_issue.state.lower() == "open" and id(child_issue) not in matched_ids
     ]
 
     if not to_close:
@@ -917,7 +930,7 @@ def _count_open_child_issues_by_severity(issue_index: IssueIndex) -> dict[str, i
     Runs after the sync so closures made during this run are already reflected.
     """
     counts: dict[str, int] = {}
-    for child_issue in issue_index.child_by_identity_key.values():
+    for child_issue in issue_index.children:
         if child_issue.state.lower() != "open":
             continue
         bump_severity(counts, load_secmeta(child_issue.body).get("severity"))
@@ -969,20 +982,30 @@ def sync_alerts_and_issues(
         priority_sync=priority_sync,
     )
 
-    for alert in alerts.values():
+    # Resolve the whole scan before any write, so each existing issue is claimed by one alert at most.
+    child_matches = resolve_child_matches(alerts, issue_index)
+    existing_children = list(issue_index.children)
+
+    for alert_key, alert in alerts.items():
         if not _meets_min_severity(alert.metadata.severity, min_severity):
             # Below threshold: skip issue creation, update, and reopen for this alert.
             # Existing open issues for this finding are intentionally left frozen — they
             # will only be closed by resolved-alert logic if the finding later disappears.
             continue
-        ensure_issue(alert, sync)
+        ensure_issue(alert, sync, matched_issue=child_matches.get(alert_key))
 
     _flush_parent_body_updates(sync.parent_original_bodies, issues, dry_run=dry_run, stats=sync.stats)
 
     if priority_sync is not None:
         priority_sync.flush()
 
-    _close_resolved_child_issues(alerts, issue_index, dry_run=dry_run, stats=sync.stats, issue_changes=issue_changes)
+    _close_resolved_child_issues(
+        existing_children,
+        list(child_matches.values()),
+        dry_run=dry_run,
+        stats=sync.stats,
+        issue_changes=issue_changes,
+    )
     _close_resolved_parent_issues(issues, issue_index, dry_run=dry_run, stats=sync.stats)
 
     _log_sync_summary(sync.stats, dry_run=dry_run)

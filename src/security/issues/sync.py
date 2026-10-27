@@ -23,6 +23,7 @@ This is the main business-logic module that ties together all other
 """
 
 import logging
+import re
 
 from core.helpers import normalize_path
 from core.github.issues import (
@@ -71,6 +72,14 @@ from .models import (
 from .secmeta import load_secmeta, render_secmeta
 from .summary import render_sync_summary
 from .templates import PARENT_BODY_TEMPLATE
+
+_FINGERPRINT_ORDINAL_RE = re.compile(r"^(.+)_(\d+)$")
+
+
+def _fingerprint_base(identity_key: str) -> str | None:
+    """Return the ``<base>`` of an AquaSec Fingerprint shaped ``<base>_<ordinal>``, or ``None``."""
+    found = _FINGERPRINT_ORDINAL_RE.match(identity_key)
+    return found.group(1) if found else None
 
 
 def _is_preferred_child(candidate: Issue, current: Issue | None) -> bool:
@@ -136,43 +145,101 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
     return issue_index
 
 
+def _is_open(issue: Issue) -> bool:
+    """Return True if *issue* is open."""
+    return issue.state.lower() == "open"
+
+
+def _alert_fingerprint_base(alert: Alert) -> str | None:
+    """Return the AquaSec Fingerprint base of a ``sast`` alert, or ``None`` for every other Category."""
+    details = alert.alert_details
+    if details.identity_key == details.alert_hash:
+        return None
+    return _fingerprint_base(details.identity_key)
+
+
+def _stable_fingerprint_bases(
+    alerts: dict[int, Alert],
+    issue_index: IssueIndex,
+    unmatched_keys: list[int],
+    claimed: set[int],
+) -> set[str]:
+    """Return the AquaSec Fingerprint bases whose occurrence set is unchanged since the last run.
+
+    A base is stable when the Finding Identities of its still-unmatched alerts equal those of its
+    still-unclaimed open child issues. Otherwise, an occurrence was added or removed, every later
+    ordinal may have been reused, and the Finding Identity no longer tells the occurrences apart.
+    """
+    alert_ids: dict[str, set[str]] = {}
+    for alert_key in unmatched_keys:
+        alert = alerts[alert_key]
+        base = _alert_fingerprint_base(alert)
+        if base is not None:
+            alert_ids.setdefault(base, set()).add(alert.alert_details.identity_key)
+
+    issue_ids: dict[str, set[str]] = {}
+    for identity_key, issue in issue_index.child_by_identity_key.items():
+        base = _fingerprint_base(identity_key)
+        if base is not None and base in alert_ids and _is_open(issue) and id(issue) not in claimed:
+            issue_ids.setdefault(base, set()).add(identity_key)
+
+    return {base for base, ids in alert_ids.items() if ids == issue_ids.get(base, set())}
+
+
 def resolve_child_matches(alerts: dict[int, Alert], issue_index: IssueIndex) -> dict[int, Issue]:
     """Match every alert of the scan to at most one existing child issue, each issue claimed once.
 
     Returns the matched issue per key of *alerts*; an alert without an entry needs a new issue.
 
-    Matching runs over the whole scan in two passes, so the strongest evidence wins regardless of
+    Matching runs over the whole scan in three passes, so the strongest evidence wins regardless of
     alert order:
 
-    1. **Exact Result Hash** — the same finding on the same line. Tried against the identity map
-       first, where issues created before the Finding Identity was adopted store it, then against
-       the Result Hash map.
+    1. **Exact Result Hash on an open issue** — the same finding on the same line. Tried against the
+       identity map first, where issues created before the Finding Identity was adopted store it,
+       then against the Result Hash map.
     2. **Finding Identity** — for alerts still unmatched, e.g. a ``sast`` finding whose line shifted.
+       For ``sast`` it applies only while the alert's AquaSec Fingerprint base kept the same set of
+       occurrences; see ``_stable_fingerprint_bases``.
+    3. **Exact Result Hash on a closed issue** — a resolved finding that reappeared on its old line.
 
     An AquaSec Fingerprint ordinal is reused when an earlier occurrence of the same Rule in the same
-    file is removed or a new one is inserted ahead of it. Claiming each issue only once, after exact
-    Result Hash matches, keeps a reused ordinal from handing one finding's issue — with its history
-    and Waivers — to another finding.
+    file is removed or a new one is inserted ahead of it. Exact Result Hashes first, single claims,
+    and the stable-base guard keep a reused ordinal from handing one finding's issue — with its
+    history and Waivers — to another finding. When the guard refuses, the finding gets a new issue
+    and the unclaimed one closes.
     """
     matches: dict[int, Issue] = {}
     claimed: set[int] = set()  # id() of claimed issues - dry-run placeholders all share number 0
 
-    def _claim(alert_key: int, candidate: Issue | None) -> bool:
+    def _claim(alert_key: int, candidate: Issue | None, *, want_open: bool | None = None) -> bool:
         if candidate is None or id(candidate) in claimed:
+            return False
+        if want_open is not None and _is_open(candidate) != want_open:
             return False
         matches[alert_key] = candidate
         claimed.add(id(candidate))
         return True
 
-    for alert_key, alert in alerts.items():
-        alert_hash = alert.alert_details.alert_hash
-        if alert_hash and not _claim(alert_key, issue_index.child_by_identity_key.get(alert_hash)):
-            _claim(alert_key, issue_index.child_by_alert_hash.get(alert_hash))
+    def _claim_by_result_hash(*, want_open: bool) -> None:
+        for alert_key, alert in alerts.items():
+            alert_hash = alert.alert_details.alert_hash
+            if alert_key in matches or not alert_hash:
+                continue
+            if not _claim(alert_key, issue_index.child_by_identity_key.get(alert_hash), want_open=want_open):
+                _claim(alert_key, issue_index.child_by_alert_hash.get(alert_hash), want_open=want_open)
 
-    for alert_key, alert in alerts.items():
+    _claim_by_result_hash(want_open=True)
+
+    unmatched_keys = [alert_key for alert_key in alerts if alert_key not in matches]
+    stable_bases = _stable_fingerprint_bases(alerts, issue_index, unmatched_keys, claimed)
+    for alert_key in unmatched_keys:
+        alert = alerts[alert_key]
         identity_key = alert.alert_details.identity_key
-        if alert_key not in matches and identity_key:
+        base = _alert_fingerprint_base(alert)
+        if identity_key and (base is None or base in stable_bases):
             _claim(alert_key, issue_index.child_by_identity_key.get(identity_key))
+
+    _claim_by_result_hash(want_open=False)
 
     return matches
 

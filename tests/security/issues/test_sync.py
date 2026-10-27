@@ -299,6 +299,48 @@ def test_resolve_matches_claims_each_issue_once() -> None:
     assert {2: child} == resolve_child_matches(alerts, idx)
 
 
+def test_resolve_matches_open_identity_beats_closed_exact_hash() -> None:
+    """A closed legacy issue whose old hash reappears must not take the finding from its open issue."""
+    closed_legacy = _issue_with_secmeta(5, {"type": "child", "fingerprint": "hash_old"}, state="closed")
+    open_owner = _issue_with_secmeta(9, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_new"})
+    idx = build_issue_index({5: closed_legacy, 9: open_owner})
+    assert {1: open_owner} == resolve_child_matches({1: _alert_with_keys("fp_base_0", "hash_old")}, idx)
+
+
+def test_resolve_matches_reopens_closed_issue_by_exact_hash() -> None:
+    """A resolved finding reappearing on its old line is matched to its closed issue."""
+    closed = _issue_with_secmeta(
+        5, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_a"}, state="closed"
+    )
+    idx = build_issue_index({5: closed})
+    assert {1: closed} == resolve_child_matches({1: _alert_with_keys("fp_base_0", "hash_a")}, idx)
+
+
+@pytest.mark.parametrize("issue_keys, alert_keys", [
+    ([("fp_base_0", "hash_a"), ("fp_base_1", "hash_b")], [("fp_base_0", "hash_b_shifted")]),
+    ([("fp_base_0", "hash_a")], [("fp_base_0", "hash_new_shifted"), ("fp_base_1", "hash_a_shifted")]),
+], ids=["removed_and_shifted", "inserted_and_shifted"])
+def test_resolve_matches_reused_ordinal_with_line_shift_matches_nothing(
+    issue_keys: list[tuple[str, str]], alert_keys: list[tuple[str, str]]
+) -> None:
+    """When the occurrence set changed and lines shifted, a reused ordinal must not transfer an issue."""
+    issues = {
+        10 + i: _issue_with_secmeta(10 + i, {"type": "child", "fingerprint": fp, "alert_hash": h})
+        for i, (fp, h) in enumerate(issue_keys)
+    }
+    alerts = {i + 1: _alert_with_keys(fp, h) for i, (fp, h) in enumerate(alert_keys)}
+    assert {} == resolve_child_matches(alerts, build_issue_index(issues))
+
+
+def test_resolve_matches_shift_of_all_occurrences_keeps_issues() -> None:
+    """A pure line shift of every occurrence keeps the occurrence set, so identities still match."""
+    first = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_a"})
+    second = _issue_with_secmeta(11, {"type": "child", "fingerprint": "fp_base_1", "alert_hash": "hash_b"})
+    idx = build_issue_index({10: first, 11: second})
+    alerts = {1: _alert_with_keys("fp_base_1", "hash_b2"), 2: _alert_with_keys("fp_base_0", "hash_a2")}
+    assert {1: second, 2: first} == resolve_child_matches(alerts, idx)
+
+
 # =====================================================================
 # find_parent_issue
 # =====================================================================
@@ -1490,6 +1532,24 @@ def test_sync_inserted_sast_occurrence_gets_own_issue(
     secmeta = load_secmeta(existing_issue.body)
     assert "fp_base_1" == secmeta["fingerprint"]
     assert "hash_existing" == secmeta["alert_hash"]
+
+
+def test_sync_closes_duplicate_child_and_keeps_oldest_open(mocker: MockerFixture, sast_alert: Alert) -> None:
+    """Pre-existing duplicates sharing a key are closed once, the oldest open issue keeps the finding."""
+    _patch_gh_calls(mocker)
+    mock_state = mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    meta = {
+        "type": "child", "fingerprint": sast_alert.alert_details.alert_hash,
+        "repo": "test-org/test-repo", "rule_id": sast_alert.metadata.rule_id, "severity": "high",
+    }
+    oldest = _issue_with_secmeta(5, meta)
+    duplicate = _issue_with_secmeta(9, meta)
+
+    result = sync_alerts_and_issues({303: sast_alert}, {5: oldest, 9: duplicate})
+
+    mock_state.assert_called_once_with("test-org/test-repo", 9, "closed")
+    assert "open" == oldest.state
+    assert {"high": 1} == result.open_child_issues_by_severity
 
 
 # =====================================================================

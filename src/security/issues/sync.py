@@ -167,8 +167,10 @@ def _stable_fingerprint_bases(
     """Return the AquaSec Fingerprint bases whose occurrence set is unchanged since the last run.
 
     A base is stable when the Finding Identities of its still-unmatched alerts equal those of its
-    still-unclaimed open child issues, with no conflicting open owners of an identity. Otherwise,
-    an ordinal may have been reused and the Finding Identity no longer tells the occurrences apart.
+    still-unclaimed open child issues, with no conflicting open owners of an identity. An identity
+    whose owner is already claimed by an exact Result Hash is settled and takes no part in either
+    check. Otherwise, an ordinal may have been reused and the Finding Identity no longer tells the
+    occurrences apart.
     """
     alert_ids: dict[str, set[str]] = {}
     for alert_key in unmatched_keys:
@@ -193,11 +195,12 @@ def _stable_fingerprint_bases(
     issue_ids: dict[str, set[str]] = {}
     conflicting_bases: set[str] = set()
     for (base, identity_key), owners in owners_by_identity.items():
+        # A claimed owner settles the identity; its duplicates are not another available occurrence.
+        if any(id(owner) in claimed for owner in owners):
+            continue
         if len({load_secmeta(owner.body).get("alert_hash", "").strip() for owner in owners}) > 1:
             conflicting_bases.add(base)
-        # A duplicate of a claimed finding is not another available occurrence.
-        if not any(id(owner) in claimed for owner in owners):
-            issue_ids.setdefault(base, set()).add(identity_key)
+        issue_ids.setdefault(base, set()).add(identity_key)
 
     return {base for base, ids in alert_ids.items() if ids == issue_ids.get(base, set())} - conflicting_bases
 

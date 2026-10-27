@@ -69,7 +69,7 @@ from .models import (
     SyncStats,
     bump_severity,
 )
-from .secmeta import load_secmeta, render_secmeta
+from .secmeta import load_secmeta, render_secmeta, replace_secmeta
 from .summary import render_sync_summary
 from .templates import PARENT_BODY_TEMPLATE
 
@@ -167,8 +167,8 @@ def _stable_fingerprint_bases(
     """Return the AquaSec Fingerprint bases whose occurrence set is unchanged since the last run.
 
     A base is stable when the Finding Identities of its still-unmatched alerts equal those of its
-    still-unclaimed open child issues. Otherwise, an occurrence was added or removed, every later
-    ordinal may have been reused, and the Finding Identity no longer tells the occurrences apart.
+    still-unclaimed open child issues, with no conflicting open owners of an identity. Otherwise,
+    an ordinal may have been reused and the Finding Identity no longer tells the occurrences apart.
     """
     alert_ids: dict[str, set[str]] = {}
     for alert_key in unmatched_keys:
@@ -177,13 +177,29 @@ def _stable_fingerprint_bases(
         if base is not None:
             alert_ids.setdefault(base, set()).add(alert.alert_details.identity_key)
 
-    issue_ids: dict[str, set[str]] = {}
-    for identity_key, issue in issue_index.child_by_identity_key.items():
+    if not alert_ids:
+        return set()
+
+    owners_by_identity: dict[tuple[str, str], list[Issue]] = {}
+    for issue in issue_index.children:
+        if not _is_open(issue):
+            continue
+        secmeta = load_secmeta(issue.body)
+        identity_key = secmeta.get("fingerprint", "").strip() or secmeta.get("alert_hash", "").strip()
         base = _fingerprint_base(identity_key)
-        if base is not None and base in alert_ids and _is_open(issue) and id(issue) not in claimed:
+        if base is not None and base in alert_ids:
+            owners_by_identity.setdefault((base, identity_key), []).append(issue)
+
+    issue_ids: dict[str, set[str]] = {}
+    conflicting_bases: set[str] = set()
+    for (base, identity_key), owners in owners_by_identity.items():
+        if len({load_secmeta(owner.body).get("alert_hash", "").strip() for owner in owners}) > 1:
+            conflicting_bases.add(base)
+        # A duplicate of a claimed finding is not another available occurrence.
+        if not any(id(owner) in claimed for owner in owners):
             issue_ids.setdefault(base, set()).add(identity_key)
 
-    return {base for base, ids in alert_ids.items() if ids == issue_ids.get(base, set())}
+    return {base for base, ids in alert_ids.items() if ids == issue_ids.get(base, set())} - conflicting_bases
 
 
 def resolve_child_matches(alerts: dict[int, Alert], issue_index: IssueIndex) -> dict[int, Issue]:
@@ -1016,6 +1032,36 @@ def _meets_min_severity(severity: str, min_severity: str) -> bool:
     return SEVERITY_ORDER.get(severity.lower(), 0) >= SEVERITY_ORDER[min_severity]
 
 
+def _refresh_child_identity(alert: Alert, child_issue: Issue | None, sync: SyncContext) -> None:
+    """Persist only identity bookkeeping on a matched open child below min-severity."""
+    if child_issue is None or not _is_open(child_issue):
+        return
+
+    secmeta = load_secmeta(child_issue.body)
+    identity_values = {
+        "fingerprint": alert.alert_details.identity_key,
+        "alert_hash": alert.alert_details.alert_hash,
+    }
+    if all(secmeta.get(key) == value for key, value in identity_values.items()):
+        return
+
+    secmeta.update(identity_values)
+    new_body = replace_secmeta(child_issue.body, secmeta)
+    if sync.dry_run:
+        logging.info("%sWould update child issue #%d identity bookkeeping", DRY_RUN_PREFIX, child_issue.number)
+    elif not gh_issue_edit_body(alert.repo, child_issue.number, new_body):
+        raise RuntimeError(
+            f"Security - Failed to update Finding Identity for issue #{child_issue.number} in {alert.repo}; "
+            "aborting before issue closure"
+        )
+    else:
+        logging.info("%sUpdated child issue #%d identity bookkeeping", LOGGING_PREFIX, child_issue.number)
+
+    child_issue.body = new_body
+    sync.stats.children_body_updated += 1
+    bump_severity(sync.stats.children_body_updated_by_severity, secmeta.get("severity"))
+
+
 def sync_alerts_and_issues(
     alerts: dict[int, Alert],
     issues: dict[int, Issue],
@@ -1055,9 +1101,8 @@ def sync_alerts_and_issues(
 
     for alert_key, alert in alerts.items():
         if not _meets_min_severity(alert.metadata.severity, min_severity):
-            # Below threshold: skip issue creation, update, and reopen for this alert.
-            # Existing open issues for this finding are intentionally left frozen — they
-            # will only be closed by resolved-alert logic if the finding later disappears.
+            # Keep frozen issues matchable without promoting or refreshing their content.
+            _refresh_child_identity(alert, child_matches.get(alert_key), sync)
             continue
         ensure_issue(alert, sync, matched_issue=child_matches.get(alert_key))
 

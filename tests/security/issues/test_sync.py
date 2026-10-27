@@ -341,6 +341,44 @@ def test_resolve_matches_shift_of_all_occurrences_keeps_issues() -> None:
     assert {1: second, 2: first} == resolve_child_matches(alerts, idx)
 
 
+@pytest.mark.parametrize("other_hash, other_state", [
+    ("hash_before_shift", "open"),
+    ("hash_removed", "closed"),
+], ids=["same_finding_duplicate", "closed_historical_owner"])
+def test_resolve_matches_line_shift_with_nonconflicting_owners(other_hash: str, other_state: str) -> None:
+    owner = _issue_with_secmeta(10, {
+        "type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_before_shift",
+    })
+    other = _issue_with_secmeta(20, {
+        "type": "child", "fingerprint": "fp_base_0", "alert_hash": other_hash,
+    }, state=other_state)
+    alerts = {1: _alert_with_keys("fp_base_0", "hash_after_shift")}
+
+    assert {1: owner} == resolve_child_matches(alerts, build_issue_index({20: other, 10: owner}))
+
+
+@pytest.mark.parametrize("first_hash, owner_number", [
+    ("hash_existing", 10),
+    ("hash_removed", 20),
+], ids=["duplicate_of_claimed_finding", "conflicting_claimed_owner"])
+@pytest.mark.parametrize("inserted_first", [True, False])
+def test_resolve_matches_does_not_reuse_another_open_owner(
+    first_hash: str, owner_number: int, inserted_first: bool
+) -> None:
+    first = _issue_with_secmeta(10, {
+        "type": "child", "fingerprint": "fp_base_0", "alert_hash": first_hash,
+    })
+    second = _issue_with_secmeta(20, {
+        "type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_existing",
+    })
+    existing = _alert_with_keys("fp_base_1", "hash_existing")
+    inserted = _alert_with_keys("fp_base_0", "hash_inserted")
+    alerts = {2: inserted, 1: existing} if inserted_first else {1: existing, 2: inserted}
+    issues = {10: first, 20: second}
+
+    assert {1: issues[owner_number]} == resolve_child_matches(alerts, build_issue_index(issues))
+
+
 # =====================================================================
 # find_parent_issue
 # =====================================================================
@@ -1474,6 +1512,54 @@ def _renumbered_sast_issues(sast_alert: Alert) -> tuple[dict[int, Issue], Issue]
     return {1: parent, 10: removed_occurrence, 20: surviving_occurrence}, surviving_occurrence
 
 
+@pytest.mark.parametrize("reverse_issue_order", [False, True])
+def test_sync_failed_closure_then_line_shift_refuses_reused_identity(
+    mocker: MockerFixture, sast_alert: Alert, reverse_issue_order: bool
+) -> None:
+    mock_body = _patch_gh_calls(mocker)
+    mocker.patch("security.issues.sync.gh_issue_edit_state", side_effect=[False, True, True])
+    issues, survivor = _renumbered_sast_issues(sast_alert)
+    if reverse_issue_order:
+        issues = dict(reversed(list(issues.items())))
+    removed = issues[10]
+    removed.labels = ["sec:suppression"]
+    original_removed_body = removed.body
+    original_removed_title = removed.title
+
+    sync_alerts_and_issues({303: sast_alert}, issues)
+
+    assert "open" == removed.state
+    assert "fp_base_0" == load_secmeta(survivor.body)["fingerprint"]
+    survivor_body = survivor.body
+    mock_body.reset_mock()
+    sast_alert.alert_details.alert_hash = "hash_after_shift"
+
+    result = sync_alerts_and_issues({303: sast_alert}, issues)
+
+    assert original_removed_body == removed.body
+    assert original_removed_title == removed.title
+    assert ["sec:suppression"] == removed.labels
+    assert survivor_body == survivor.body
+    assert [(10, "closed"), (20, "closed"), (999, "new")] == sorted(
+        (change.issue_number, change.state) for change in result.issue_changes
+    )
+    assert "hash_after_shift" == load_secmeta(issues[999].body)["alert_hash"]
+    assert all(call.args[1] not in {10, 20} for call in mock_body.call_args_list)
+
+
+def test_sync_conflicting_owners_preserves_exact_result_hash(mocker: MockerFixture, sast_alert: Alert) -> None:
+    _patch_gh_calls(mocker)
+    mock_state = mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    issues, survivor = _renumbered_sast_issues(sast_alert)
+    survivor.body = survivor.body.replace("fingerprint=fp_base_1", "fingerprint=fp_base_0")
+
+    result = sync_alerts_and_issues({303: sast_alert}, issues)
+
+    mock_state.assert_called_once_with("test-org/test-repo", 10, "closed")
+    assert "open" == survivor.state
+    assert [(10, "closed")] == [(change.issue_number, change.state) for change in result.issue_changes]
+
+
 def test_sync_renumbered_survivor_still_counted_on_next_run(mocker: MockerFixture, sast_alert: Alert) -> None:
     """The migrated survivor shares its identity with the closed issue, yet the next run must still count it."""
     _patch_gh_calls(mocker)
@@ -1729,7 +1815,8 @@ def test_sync_resolved_close_still_runs_for_below_threshold_alerts(
 
     existing_child = _issue_with_secmeta(
         99,
-        {"type": "child", "fingerprint": fp, "repo": "test-org/test-repo", "rule_id": "r1", "severity": "low"},
+        {"type": "child", "fingerprint": fp, "alert_hash": fp,
+         "repo": "test-org/test-repo", "rule_id": "r1", "severity": "low"},
     )
     mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state")
 
@@ -1739,6 +1826,135 @@ def test_sync_resolved_close_still_runs_for_below_threshold_alerts(
 
     # The alert is still active, so the issue must NOT have been closed.
     mock_edit.assert_not_called()
+
+
+def test_sync_below_threshold_retains_renumbered_survivor_across_line_shift(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    mock_body = _patch_gh_calls(mocker)
+    mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    mock_ensure = mocker.patch("security.issues.sync.ensure_issue")
+    issues, survivor = _renumbered_sast_issues(sast_alert)
+    sast_alert.metadata.severity = "medium"
+    survivor.body = survivor.body.replace("\n-->", "\ncustom=preserved\n-->")
+    survivor.labels = ["sec:false-positive"]
+    original_body = survivor.body
+    original_title = survivor.title
+
+    sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
+    assert "fp_base_0" == load_secmeta(survivor.body)["fingerprint"]
+    sast_alert.alert_details.alert_hash = "hash_after_shift"
+    shifted = sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
+    repeated = sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
+
+    assert "open" == survivor.state
+    assert original_body.replace("fingerprint=fp_base_1", "fingerprint=fp_base_0").replace(
+        "alert_hash=hash_survivor", "alert_hash=hash_after_shift"
+    ) == survivor.body
+    assert original_title == survivor.title
+    assert ["sec:false-positive"] == survivor.labels
+    assert [20, 20] == [call.args[1] for call in mock_body.call_args_list]
+    assert [] == shifted.issue_changes == repeated.issue_changes
+    mock_ensure.assert_not_called()
+
+    resolved = sync_alerts_and_issues({}, issues, min_severity="high")
+
+    assert "closed" == survivor.state
+    assert "closed" == issues[1].state
+    assert [(20, "closed")] == [(change.issue_number, change.state) for change in resolved.issue_changes]
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_sync_below_threshold_migrates_legacy_identity_only(
+    mocker: MockerFixture, sast_alert: Alert, dry_run: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    mock_body = _patch_gh_calls(mocker)
+    mock_state = mocker.patch("security.issues.sync.gh_issue_edit_state")
+    mock_ensure = mocker.patch("security.issues.sync.ensure_issue")
+    sast_alert.metadata.severity = "medium"
+    sast_alert.alert_details.identity_key = "fp_base_0"
+    child = _issue_with_secmeta(7, {
+        "type": "child", "fingerprint": sast_alert.alert_details.alert_hash,
+        "repo": "test-org/test-repo", "severity": "high", "custom": "preserved",
+    })
+    child.labels = ["sec:suppression"]
+    original_title = child.title
+    original_secmeta = load_secmeta(child.body)
+    original_notes = child.body[child.body.index("-->") + 3:]
+
+    with caplog.at_level(logging.INFO):
+        result = sync_alerts_and_issues({303: sast_alert}, {7: child}, dry_run=dry_run, min_severity="high")
+
+    expected_secmeta = {
+        **original_secmeta,
+        "fingerprint": "fp_base_0",
+        "alert_hash": sast_alert.alert_details.alert_hash,
+    }
+    assert render_secmeta(expected_secmeta) + original_notes == child.body
+    assert original_title == child.title
+    assert ["sec:suppression"] == child.labels
+    assert [] == result.issue_changes
+    mock_ensure.assert_not_called()
+    mock_state.assert_not_called()
+    if dry_run:
+        mock_body.assert_not_called()
+        assert "Security [DRY-RUN] - Would update child issue #7 identity bookkeeping" in caplog.text
+    else:
+        mock_body.assert_called_once_with("test-org/test-repo", 7, child.body)
+
+    sync_alerts_and_issues({303: sast_alert}, {7: child}, dry_run=dry_run, min_severity="high")
+
+    assert (0 if dry_run else 1) == mock_body.call_count
+
+
+def test_sync_below_threshold_does_not_refresh_closed_child(mocker: MockerFixture, sast_alert: Alert) -> None:
+    mock_body = _patch_gh_calls(mocker)
+    mock_state = mocker.patch("security.issues.sync.gh_issue_edit_state")
+    sast_alert.metadata.severity = "medium"
+    child = _issue_with_secmeta(7, {
+        "type": "child", "fingerprint": sast_alert.alert_details.alert_hash,
+        "repo": "test-org/test-repo", "severity": "high",
+    }, state="closed")
+    original_body = child.body
+
+    result = sync_alerts_and_issues({303: sast_alert}, {7: child}, min_severity="high")
+
+    assert original_body == child.body
+    assert "closed" == child.state
+    assert [] == result.issue_changes
+    mock_body.assert_not_called()
+    mock_state.assert_not_called()
+
+
+def test_sync_below_threshold_identity_write_failure_stops_closure_and_retries(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    mock_body = _patch_gh_calls(mocker)
+    mock_body.side_effect = [False, True]
+    mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    mock_close_children = mocker.patch(
+        "security.issues.sync._close_resolved_child_issues", wraps=_close_resolved_child_issues
+    )
+    mock_close_parents = mocker.patch(
+        "security.issues.sync._close_resolved_parent_issues", wraps=_close_resolved_parent_issues
+    )
+    issues, survivor = _renumbered_sast_issues(sast_alert)
+    sast_alert.metadata.severity = "medium"
+    original_body = survivor.body
+
+    with pytest.raises(RuntimeError, match="issue #20 in test-org/test-repo"):
+        sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
+
+    assert original_body == survivor.body
+    assert all("open" == issue.state for issue in issues.values())
+    mock_close_children.assert_not_called()
+    mock_close_parents.assert_not_called()
+
+    result = sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
+
+    assert "fp_base_0" == load_secmeta(survivor.body)["fingerprint"]
+    assert "open" == survivor.state
+    assert [(10, "closed")] == [(change.issue_number, change.state) for change in result.issue_changes]
 
 
 def test_sync_unknown_severity_passes_at_min_low(

@@ -196,7 +196,7 @@ def _stable_fingerprint_bases(
     conflicting_bases: set[str] = set()
     for (base, identity_key), owners in owners_by_identity.items():
         # A claimed owner settles the identity; its duplicates are not another available occurrence.
-        if any(id(owner) in claimed for owner in owners):
+        if any(owner.number in claimed for owner in owners):
             continue
         if len({load_secmeta(owner.body).get("alert_hash", "").strip() for owner in owners}) > 1:
             conflicting_bases.add(base)
@@ -228,15 +228,15 @@ def resolve_child_matches(alerts: dict[int, Alert], issue_index: IssueIndex) -> 
     and the unclaimed one closes.
     """
     matches: dict[int, Issue] = {}
-    claimed: set[int] = set()  # id() of claimed issues - dry-run placeholders all share number 0
+    claimed: set[int] = set()  # issue numbers; matching runs before any issue is created
 
     def _claim(alert_key: int, candidate: Issue | None, *, want_open: bool | None = None) -> bool:
-        if candidate is None or id(candidate) in claimed:
+        if candidate is None or candidate.number in claimed:
             return False
         if want_open is not None and _is_open(candidate) != want_open:
             return False
         matches[alert_key] = candidate
-        claimed.add(id(candidate))
+        claimed.add(candidate.number)
         return True
 
     def _claim_by_result_hash(*, want_open: bool) -> None:
@@ -946,11 +946,11 @@ def _close_resolved_child_issues(
     claimed by ``resolve_child_matches``. Every alert is matched, including those below
     min-severity, so their issues stay open.
     """
-    matched_ids = {id(issue) for issue in matched_issues}
+    matched_numbers = {issue.number for issue in matched_issues}
     to_close = [
         child_issue
         for child_issue in child_issues
-        if child_issue.state.lower() == "open" and id(child_issue) not in matched_ids
+        if child_issue.state.lower() == "open" and child_issue.number not in matched_numbers
     ]
 
     if not to_close:

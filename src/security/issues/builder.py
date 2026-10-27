@@ -24,7 +24,7 @@ from core.rendering import render_markdown_template, strip_na_sections
 
 from security.constants import NOT_AVAILABLE, SECMETA_TYPE_PARENT, SECURITY_FINDING_DEFAULT, GITHUB_BASE_URL
 
-from security.alerts.models import Alert
+from security.alerts.models import Alert, split_aquasec_fingerprint
 from security.issues.secmeta import render_secmeta
 from security.issues.templates import CHILD_BODY_TEMPLATE, PARENT_BODY_TEMPLATE
 
@@ -132,8 +132,17 @@ def build_issue_title(
     identity_key: str,
     severity: str = "",
 ) -> str:
-    """Build the title string for a child issue."""
-    prefix = identity_key[:8] if identity_key else NOT_AVAILABLE
+    """Build the title string for a child issue.
+
+    Occurrences of one Rule in one file share the AquaSec Fingerprint base, so the ordinal is kept
+    in the title to tell their issues apart.
+    """
+    fingerprint_parts = split_aquasec_fingerprint(identity_key)
+    if fingerprint_parts is not None:
+        base, ordinal = fingerprint_parts
+        prefix = f"{base[:8]}_{ordinal}"
+    else:
+        prefix = identity_key[:8] if identity_key else NOT_AVAILABLE
     sev_tag = f":{severity.upper()}" if severity else ""
     summary = (rule_description or SECURITY_FINDING_DEFAULT).strip()
     return f"[SEC{sev_tag}][FP={prefix}] {summary}"

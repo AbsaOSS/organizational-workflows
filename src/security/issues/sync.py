@@ -23,7 +23,6 @@ This is the main business-logic module that ties together all other
 """
 
 import logging
-import re
 
 from core.helpers import normalize_path
 from core.github.issues import (
@@ -38,7 +37,7 @@ from core.github.projects import ProjectPrioritySync, gh_project_get_priority_fi
 from core.models import Issue
 from core.rendering import render_markdown_template, strip_na_sections
 
-from security.alerts.models import Alert
+from security.alerts.models import Alert, split_aquasec_fingerprint
 from security.constants import (
     DRY_RUN_PREFIX,
     LABEL_EPIC,
@@ -73,13 +72,11 @@ from .secmeta import load_secmeta, render_secmeta, replace_secmeta
 from .summary import render_sync_summary
 from .templates import PARENT_BODY_TEMPLATE
 
-_FINGERPRINT_ORDINAL_RE = re.compile(r"^(.+)_(\d+)$")
-
 
 def _fingerprint_base(identity_key: str) -> str | None:
     """Return the ``<base>`` of an AquaSec Fingerprint shaped ``<base>_<ordinal>``, or ``None``."""
-    found = _FINGERPRINT_ORDINAL_RE.match(identity_key)
-    return found.group(1) if found else None
+    fingerprint_parts = split_aquasec_fingerprint(identity_key)
+    return fingerprint_parts[0] if fingerprint_parts is not None else None
 
 
 def _is_preferred_child(candidate: Issue, current: Issue | None) -> bool:

@@ -229,6 +229,17 @@ def test_build_issue_title(
     assert expected == build_issue_title(description, identity_key, severity)
 
 
+def test_build_issue_title_tells_occurrences_of_one_fingerprint_base_apart() -> None:
+    """Occurrences of one Rule in one file share the Fingerprint base, so the ordinal must reach the title."""
+    base = "67529c72212987bef9797e0c8e343fcb09a89e6455493c93a8419620c2a735cc"
+    titles = {build_issue_title("A description", f"{base}_{ordinal}", "high") for ordinal in range(3)}
+    assert {
+        "[SEC:HIGH][FP=67529c72_0] A description",
+        "[SEC:HIGH][FP=67529c72_1] A description",
+        "[SEC:HIGH][FP=67529c72_2] A description",
+    } == titles
+
+
 # =====================================================================
 # build_child_issue_body
 # =====================================================================

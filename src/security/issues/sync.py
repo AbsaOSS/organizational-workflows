@@ -23,7 +23,6 @@ This is the main business-logic module that ties together all other
 """
 
 import logging
-import re
 
 from core.helpers import normalize_path
 from core.github.issues import (
@@ -38,7 +37,7 @@ from core.github.projects import ProjectPrioritySync, gh_project_get_priority_fi
 from core.models import Issue
 from core.rendering import render_markdown_template, strip_na_sections
 
-from security.alerts.models import Alert
+from security.alerts.models import Alert, split_aquasec_fingerprint
 from security.constants import (
     DRY_RUN_PREFIX,
     LABEL_EPIC,
@@ -73,13 +72,11 @@ from .secmeta import load_secmeta, render_secmeta, replace_secmeta
 from .summary import render_sync_summary
 from .templates import PARENT_BODY_TEMPLATE
 
-_FINGERPRINT_ORDINAL_RE = re.compile(r"^(.+)_(\d+)$")
-
 
 def _fingerprint_base(identity_key: str) -> str | None:
     """Return the ``<base>`` of an AquaSec Fingerprint shaped ``<base>_<ordinal>``, or ``None``."""
-    found = _FINGERPRINT_ORDINAL_RE.match(identity_key)
-    return found.group(1) if found else None
+    fingerprint_parts = split_aquasec_fingerprint(identity_key)
+    return fingerprint_parts[0] if fingerprint_parts is not None else None
 
 
 def _is_preferred_child(candidate: Issue, current: Issue | None) -> bool:
@@ -167,8 +164,10 @@ def _stable_fingerprint_bases(
     """Return the AquaSec Fingerprint bases whose occurrence set is unchanged since the last run.
 
     A base is stable when the Finding Identities of its still-unmatched alerts equal those of its
-    still-unclaimed open child issues, with no conflicting open owners of an identity. Otherwise,
-    an ordinal may have been reused and the Finding Identity no longer tells the occurrences apart.
+    still-unclaimed open child issues, with no conflicting open owners of an identity. An identity
+    whose owner is already claimed by an exact Result Hash is settled and takes no part in either
+    check. Otherwise, an ordinal may have been reused and the Finding Identity no longer tells the
+    occurrences apart.
     """
     alert_ids: dict[str, set[str]] = {}
     for alert_key in unmatched_keys:
@@ -193,11 +192,12 @@ def _stable_fingerprint_bases(
     issue_ids: dict[str, set[str]] = {}
     conflicting_bases: set[str] = set()
     for (base, identity_key), owners in owners_by_identity.items():
+        # A claimed owner settles the identity; its duplicates are not another available occurrence.
+        if any(owner.number in claimed for owner in owners):
+            continue
         if len({load_secmeta(owner.body).get("alert_hash", "").strip() for owner in owners}) > 1:
             conflicting_bases.add(base)
-        # A duplicate of a claimed finding is not another available occurrence.
-        if not any(id(owner) in claimed for owner in owners):
-            issue_ids.setdefault(base, set()).add(identity_key)
+        issue_ids.setdefault(base, set()).add(identity_key)
 
     return {base for base, ids in alert_ids.items() if ids == issue_ids.get(base, set())} - conflicting_bases
 
@@ -225,15 +225,15 @@ def resolve_child_matches(alerts: dict[int, Alert], issue_index: IssueIndex) -> 
     and the unclaimed one closes.
     """
     matches: dict[int, Issue] = {}
-    claimed: set[int] = set()  # id() of claimed issues - dry-run placeholders all share number 0
+    claimed: set[int] = set()  # issue numbers; matching runs before any issue is created
 
     def _claim(alert_key: int, candidate: Issue | None, *, want_open: bool | None = None) -> bool:
-        if candidate is None or id(candidate) in claimed:
+        if candidate is None or candidate.number in claimed:
             return False
         if want_open is not None and _is_open(candidate) != want_open:
             return False
         matches[alert_key] = candidate
-        claimed.add(id(candidate))
+        claimed.add(candidate.number)
         return True
 
     def _claim_by_result_hash(*, want_open: bool) -> None:
@@ -943,11 +943,11 @@ def _close_resolved_child_issues(
     claimed by ``resolve_child_matches``. Every alert is matched, including those below
     min-severity, so their issues stay open.
     """
-    matched_ids = {id(issue) for issue in matched_issues}
+    matched_numbers = {issue.number for issue in matched_issues}
     to_close = [
         child_issue
         for child_issue in child_issues
-        if child_issue.state.lower() == "open" and id(child_issue) not in matched_ids
+        if child_issue.state.lower() == "open" and child_issue.number not in matched_numbers
     ]
 
     if not to_close:
@@ -1050,10 +1050,9 @@ def _refresh_child_identity(alert: Alert, child_issue: Issue | None, sync: SyncC
     if sync.dry_run:
         logging.info("%sWould update child issue #%d identity bookkeeping", DRY_RUN_PREFIX, child_issue.number)
     elif not gh_issue_edit_body(alert.repo, child_issue.number, new_body):
-        raise RuntimeError(
-            f"Security - Failed to update Finding Identity for issue #{child_issue.number} in {alert.repo}; "
-            "aborting before issue closure"
-        )
+        # This run's matching stands without the write; the next run matches the issue again and retries.
+        logging.warning("Failed to update Finding Identity for issue #%d in %s", child_issue.number, alert.repo)
+        return
     else:
         logging.info("%sUpdated child issue #%d identity bookkeeping", LOGGING_PREFIX, child_issue.number)
 

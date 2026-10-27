@@ -357,6 +357,25 @@ def test_resolve_matches_line_shift_with_nonconflicting_owners(other_hash: str, 
     assert {1: owner} == resolve_child_matches(alerts, build_issue_index({20: other, 10: owner}))
 
 
+def test_resolve_matches_conflict_settled_by_exact_hash_keeps_shifted_sibling() -> None:
+    """Once an exact Result Hash settles a conflicting identity, a sibling that only shifted keeps its issue.
+
+    An interrupted run left #10 (removed occurrence) and #20 (migrated survivor) both open on fp_base_0.
+    The survivor kept its line, so its exact Result Hash claims #20 and #10 is left to close. fp_base_1
+    only shifted lines - the base's occurrence set is unchanged - so it must keep #30.
+    """
+    removed = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_removed"})
+    survivor = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_survivor"})
+    sibling = _issue_with_secmeta(30, {"type": "child", "fingerprint": "fp_base_1", "alert_hash": "hash_sibling"})
+    idx = build_issue_index({10: removed, 20: survivor, 30: sibling})
+    alerts = {
+        1: _alert_with_keys("fp_base_0", "hash_survivor"),
+        2: _alert_with_keys("fp_base_1", "hash_sibling_shifted"),
+    }
+
+    assert {1: survivor, 2: sibling} == resolve_child_matches(alerts, idx)
+
+
 @pytest.mark.parametrize("first_hash, owner_number", [
     ("hash_existing", 10),
     ("hash_removed", 20),
@@ -1560,6 +1579,36 @@ def test_sync_conflicting_owners_preserves_exact_result_hash(mocker: MockerFixtu
     assert [(10, "closed")] == [(change.issue_number, change.state) for change in result.issue_changes]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="An issue left open by a failed closure passes to a new finding that takes over its ordinal",
+)
+def test_sync_failed_closure_does_not_hand_issue_to_new_occurrence(mocker: MockerFixture, sast_alert: Alert) -> None:
+    """An issue left open by a failed closure must not pass to a new finding that takes over its ordinal."""
+    _patch_gh_calls(mocker)
+    mocker.patch("security.issues.sync.gh_issue_edit_state", side_effect=[False, True, True, True])
+    rule_id = sast_alert.metadata.rule_id
+    parent = _issue_with_secmeta(1, {
+        "type": "parent", "rule_id": rule_id, "repo": "test-org/test-repo", "severity": "high",
+    })
+    removed = _issue_with_secmeta(10, {
+        "type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_removed",
+        "repo": "test-org/test-repo", "rule_id": rule_id, "severity": "high",
+    })
+    removed.labels = ["sec:suppression"]
+    issues = {1: parent, 10: removed}
+
+    sync_alerts_and_issues({}, issues)  # the finding is fixed, but closing #10 fails
+    sast_alert.alert_details.identity_key = "fp_base_0"  # a new finding of the same Rule takes over its ordinal
+    sast_alert.alert_details.alert_hash = "hash_new_finding"
+    result = sync_alerts_and_issues({303: sast_alert}, issues)
+
+    assert "hash_removed" == load_secmeta(removed.body)["alert_hash"]
+    assert [(10, "closed"), (999, "new")] == sorted(
+        (change.issue_number, change.state) for change in result.issue_changes
+    )
+
+
 def test_sync_renumbered_survivor_still_counted_on_next_run(mocker: MockerFixture, sast_alert: Alert) -> None:
     """The migrated survivor shares its identity with the closed issue, yet the next run must still count it."""
     _patch_gh_calls(mocker)
@@ -1926,35 +1975,43 @@ def test_sync_below_threshold_does_not_refresh_closed_child(mocker: MockerFixtur
     mock_state.assert_not_called()
 
 
-def test_sync_below_threshold_identity_write_failure_stops_closure_and_retries(
+def test_sync_below_threshold_identity_write_failure_keeps_processing_other_alerts(
     mocker: MockerFixture, sast_alert: Alert
 ) -> None:
+    """A failed bookkeeping write on one frozen issue must not drop the rest of the scan."""
     mock_body = _patch_gh_calls(mocker)
-    mock_body.side_effect = [False, True]
+    mock_body.return_value = False
     mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
-    mock_close_children = mocker.patch(
-        "security.issues.sync._close_resolved_child_issues", wraps=_close_resolved_child_issues
-    )
-    mock_close_parents = mocker.patch(
-        "security.issues.sync._close_resolved_parent_issues", wraps=_close_resolved_parent_issues
-    )
-    issues, survivor = _renumbered_sast_issues(sast_alert)
+    issues, _ = _renumbered_sast_issues(sast_alert)
     sast_alert.metadata.severity = "medium"
-    original_body = survivor.body
+    unrelated = copy.deepcopy(sast_alert)
+    unrelated.metadata.alert_number = 304
+    unrelated.metadata.severity = "high"
+    unrelated.alert_details.identity_key = "fp_other_0"
+    unrelated.alert_details.alert_hash = "hash_other"
 
-    with pytest.raises(RuntimeError, match="issue #20 in test-org/test-repo"):
-        sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
+    result = sync_alerts_and_issues({303: sast_alert, 304: unrelated}, issues, min_severity="high")
 
-    assert original_body == survivor.body
-    assert all("open" == issue.state for issue in issues.values())
-    mock_close_children.assert_not_called()
-    mock_close_parents.assert_not_called()
+    assert (999, "new") in [(change.issue_number, change.state) for change in result.issue_changes]
 
-    result = sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
 
-    assert "fp_base_0" == load_secmeta(survivor.body)["fingerprint"]
-    assert "open" == survivor.state
-    assert [(10, "closed")] == [(change.issue_number, change.state) for change in result.issue_changes]
+def test_sync_identity_write_failure_handled_same_below_and_above_threshold(
+    mocker: MockerFixture, sast_alert: Alert
+) -> None:
+    """A failed identity write is tolerated above min-severity, so it must be tolerated below it too."""
+    mock_body = _patch_gh_calls(mocker)
+    mock_body.return_value = False
+    mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+
+    outcomes = {}
+    for severity in ("high", "medium"):
+        alert = copy.deepcopy(sast_alert)
+        alert.metadata.severity = severity
+        issues, survivor = _renumbered_sast_issues(alert)
+        result = sync_alerts_and_issues({303: alert}, issues, min_severity="high")
+        outcomes[severity] = ([(change.issue_number, change.state) for change in result.issue_changes], survivor.state)
+
+    assert outcomes["high"] == outcomes["medium"]
 
 
 def test_sync_unknown_severity_passes_at_min_low(

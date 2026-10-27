@@ -16,10 +16,19 @@
 
 """Alert-specific data models."""
 
+import re
 from dataclasses import dataclass, field, fields
 from typing import Any
 
 from security.constants import NOT_AVAILABLE
+
+_FINGERPRINT_ORDINAL_RE = re.compile(r"^(.+)_(\d+)$")
+
+
+def split_aquasec_fingerprint(identity_key: str) -> tuple[str, str] | None:
+    """Split an AquaSec Fingerprint shaped ``<base>_<ordinal>`` into its parts, or return ``None``."""
+    found = _FINGERPRINT_ORDINAL_RE.match(identity_key)
+    return (found.group(1), found.group(2)) if found else None
 
 
 def _dataclass_field_names(dc: type) -> set[str]:

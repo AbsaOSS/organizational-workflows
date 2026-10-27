@@ -20,6 +20,9 @@ HTML-comment metadata block stored in issue bodies.
 
 import re
 
+_SECMETA_RE = re.compile(r"<!--\s*secmeta\r?\n(.*?)\r?\n-->", re.S)
+_LEGACY_SECMETA_RE = re.compile(r"```secmeta\r?\n(.*?)\r?\n```", re.S)
+
 
 def parse_kv_block(block: str) -> dict[str, str]:
     """Parse a ``key=value``-per-line block into a dict."""
@@ -36,11 +39,11 @@ def parse_kv_block(block: str) -> dict[str, str]:
 def load_secmeta(issue_body: str) -> dict[str, str]:
     """Extract the ``secmeta`` key-value block from an issue body."""
     body = issue_body or ""
-    match = re.compile(r"<!--\s*secmeta\r?\n(.*?)\r?\n-->", re.S).search(body)
+    match = _SECMETA_RE.search(body)
     if match:
         return parse_kv_block(match.group(1))
     # Back-compat for older issues created with a visible fenced block.
-    legacy = re.compile(r"```secmeta\r?\n(.*?)\r?\n```", re.S).search(body)
+    legacy = _LEGACY_SECMETA_RE.search(body)
     if legacy:
         return parse_kv_block(legacy.group(1))
     return {}
@@ -78,9 +81,18 @@ def render_secmeta(secmeta: dict[str, str]) -> str:
     preferred_order = [
         "type",
         "fingerprint",
+        "alert_hash",
         "repo",
         "rule_id",
         "severity",
     ]
     lines = render_kv_lines(secmeta, preferred_order)
     return "<!--secmeta\n" + "\n".join(lines) + "\n-->"
+
+
+def replace_secmeta(issue_body: str, secmeta: dict[str, str]) -> str:
+    """Replace the active Secmeta block without changing any surrounding content."""
+    match = _SECMETA_RE.search(issue_body) or _LEGACY_SECMETA_RE.search(issue_body)
+    if match is None:
+        raise ValueError("Cannot replace Secmeta: no existing block")
+    return issue_body[: match.start()] + render_secmeta(secmeta) + issue_body[match.end() :]

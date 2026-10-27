@@ -16,10 +16,13 @@
 
 """Unit tests for ``utils.secmeta``."""
 
+import pytest
+
 from security.issues.secmeta import (
     load_secmeta,
     parse_kv_block,
     render_secmeta,
+    replace_secmeta,
 )
 
 
@@ -132,3 +135,39 @@ def test_extra_keys_sorted() -> None:
     alpha_idx = next(i for i, l in enumerate(lines) if "alpha=" in l)
     zebra_idx = next(i for i, l in enumerate(lines) if "zebra=" in l)
     assert alpha_idx < zebra_idx
+
+
+# replace_secmeta
+
+
+@pytest.mark.parametrize("block", [
+    "<!--secmeta\nfingerprint=old\ncustom=preserved\n-->",
+    "```secmeta\nfingerprint=old\ncustom=preserved\n```",
+    "<!--secmeta\r\nfingerprint=old\r\ncustom=preserved\r\n-->",
+])
+def test_replace_secmeta_preserves_surrounding_content(block: str) -> None:
+    prefix = "Introduction\r\n\r\n"
+    suffix = "\r\n\r\nHuman-owned notes\nKeep this text.\r\n"
+    body = prefix + block + suffix
+    secmeta = load_secmeta(body)
+    secmeta.update({"fingerprint": "new", "alert_hash": "current"})
+
+    updated = replace_secmeta(body, secmeta)
+
+    assert prefix + render_secmeta(secmeta) + suffix == updated
+    assert {"fingerprint": "new", "alert_hash": "current", "custom": "preserved"} == load_secmeta(updated)
+
+
+def test_replace_secmeta_prefers_html_over_legacy() -> None:
+    legacy = "```secmeta\nfingerprint=legacy\n```"
+    body = legacy + "\n<!--secmeta\nfingerprint=old\n-->\nNotes"
+
+    updated = replace_secmeta(body, {"fingerprint": "new"})
+
+    assert legacy + "\n" + render_secmeta({"fingerprint": "new"}) + "\nNotes" == updated
+    assert {"fingerprint": "new"} == load_secmeta(updated)
+
+
+def test_replace_secmeta_rejects_missing_block() -> None:
+    with pytest.raises(ValueError, match="no existing block"):
+        replace_secmeta("Human-owned notes", {"fingerprint": "new"})

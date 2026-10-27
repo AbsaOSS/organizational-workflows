@@ -206,6 +206,7 @@ def test_parse_vulnerability_item() -> None:
     assert alert.metadata.help_uri == "https://nvd.nist.gov/vuln/detail/CVE-2026-33870"
 
     assert alert.alert_details.alert_hash == "4a692eb0032260a83dffe57ff99187c7"
+    assert alert.alert_details.identity_key == "4a692eb0032260a83dffe57ff99187c7"
     assert alert.alert_details.artifact == "shared-http-client/pom.xml"
     assert alert.alert_details.type == "vulnerabilities"
     assert alert.alert_details.vulnerability == "CVE-2026-33870"
@@ -230,8 +231,33 @@ def test_parse_sast_item() -> None:
     assert alert.metadata.end_line == 29
 
     assert alert.alert_details.alert_hash == "9837b494fe9d15ff6152d6291c2da860"
+    assert alert.alert_details.identity_key == "67529c72212987bef9797e0c8e343fcb09a89e6455493c93a8419620c2a735cc"
     assert "- A03:2017 - Sensitive Data Exposure" in alert.rule_details.owasp
     assert "- A07:2021 - Identification and Authentication Failures" in alert.rule_details.owasp
+
+
+@pytest.mark.parametrize("category, fingerprint, expected_identity", [
+    ("sast", "fp_base_0", "fp_base_0"),
+    ("sast", "  fp_base_1  ", "fp_base_1"),
+    ("vulnerabilities", "", "4a692eb0032260a83dffe57ff99187c7"),
+    ("pipelineMisconfigurations", None, "4a692eb0032260a83dffe57ff99187c7"),
+    ("iacMisconfigurations", "   ", "4a692eb0032260a83dffe57ff99187c7"),
+    ("secrets", "", "4a692eb0032260a83dffe57ff99187c7"),
+], ids=["sast", "sast_whitespace", "vulnerabilities", "pipeline_absent", "iac_blank", "secrets"])
+def test_parse_item_identity_key_per_category(
+    category: str, fingerprint: str | None, expected_identity: str
+) -> None:
+    """The Finding Identity prefers the AquaSec fingerprint and falls back to the result hash."""
+    item = {**_VULN_ITEM, "category": category}
+    if fingerprint is None:
+        item.pop("fingerprint")
+    else:
+        item["fingerprint"] = fingerprint
+
+    alert = _parse_item(item, "org/repo")
+
+    assert expected_identity == alert.alert_details.identity_key
+    assert "4a692eb0032260a83dffe57ff99187c7" == alert.alert_details.alert_hash
 
 
 def test_parse_item_empty_extra_data() -> None:

@@ -129,11 +129,11 @@ def build_parent_issue_body(alert: Alert) -> str:
 
 def build_issue_title(
     rule_description: str | None,
-    fingerprint: str,
+    identity_key: str,
     severity: str = "",
 ) -> str:
     """Build the title string for a child issue."""
-    prefix = fingerprint[:8] if fingerprint else NOT_AVAILABLE
+    prefix = identity_key[:8] if identity_key else NOT_AVAILABLE
     sev_tag = f":{severity.upper()}" if severity else ""
     summary = (rule_description or SECURITY_FINDING_DEFAULT).strip()
     return f"[SEC{sev_tag}][FP={prefix}] {summary}"

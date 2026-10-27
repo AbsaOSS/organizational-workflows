@@ -68,6 +68,7 @@ class AlertDetails:
     """Parsed from the ``alert_details`` section of a raw alert entry."""
 
     alert_hash: str = ""
+    identity_key: str = ""
     artifact: str = ""
     type: str = ""
     vulnerability: str = ""
@@ -84,6 +85,8 @@ class AlertDetails:
 
     def __post_init__(self) -> None:
         self.alert_hash = self.alert_hash.strip()
+        # The Finding Identity degrades to the Result Hash whenever AquaSec gives no fingerprint.
+        self.identity_key = self.identity_key.strip() or self.alert_hash
         # Normalize optional display fields; callers never need to supply NOT_AVAILABLE defaults.
         for _f in ("repository", "scm_file", "message", "installed_version", "reachable"):
             if not getattr(self, _f):

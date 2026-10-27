@@ -23,6 +23,7 @@ This is the main business-logic module that ties together all other
 """
 
 import logging
+import re
 
 from core.helpers import normalize_path
 from core.github.issues import (
@@ -68,18 +69,59 @@ from .models import (
     SyncStats,
     bump_severity,
 )
-from .secmeta import load_secmeta, render_secmeta
+from .secmeta import load_secmeta, render_secmeta, replace_secmeta
 from .summary import render_sync_summary
 from .templates import PARENT_BODY_TEMPLATE
 
+_FINGERPRINT_ORDINAL_RE = re.compile(r"^(.+)_(\d+)$")
+
+
+def _fingerprint_base(identity_key: str) -> str | None:
+    """Return the ``<base>`` of an AquaSec Fingerprint shaped ``<base>_<ordinal>``, or ``None``."""
+    found = _FINGERPRINT_ORDINAL_RE.match(identity_key)
+    return found.group(1) if found else None
+
+
+def _is_preferred_child(candidate: Issue, current: Issue | None) -> bool:
+    """Return True if *candidate* should replace *current* under a shared lookup key.
+
+    An open issue beats a closed one, so an issue whose Finding Identity was migrated onto a reused
+    AquaSec Fingerprint ordinal is not shadowed by the closed issue of the removed occurrence. Among
+    equally open issues the oldest (lowest-numbered) wins.
+    """
+    if current is None:
+        return True
+    candidate_closed = candidate.state.lower() == "closed"
+    current_closed = current.state.lower() == "closed"
+    if candidate_closed != current_closed:
+        return not candidate_closed
+    return candidate.number < current.number
+
+
+def _index_child_issue(issue_index: IssueIndex, issue: Issue, *, identity_key: str, alert_hash: str) -> None:
+    """Register a child issue for enumeration and under each of its lookup keys."""
+    issue_index.children.append(issue)
+    if identity_key and _is_preferred_child(issue, issue_index.child_by_identity_key.get(identity_key)):
+        issue_index.child_by_identity_key[identity_key] = issue
+    if alert_hash and _is_preferred_child(issue, issue_index.child_by_alert_hash.get(alert_hash)):
+        issue_index.child_by_alert_hash[alert_hash] = issue
+
 
 def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
-    """Build the child-by-fingerprint and parent-by-rule lookup maps from existing issues.
+    """Build the child and parent lookup maps from existing issues.
 
-    When duplicates exist, the oldest (lowest-numbered) issue wins.
+    Every child issue is listed once in ``children`` and keyed in two lookup-only maps: by its stored
+    Finding Identity and by its stored Result Hash. The Result Hash is the Finding Identity itself for
+    every Finding Category except ``sast`` — there it also catches issues created before the AquaSec
+    Fingerprint was adopted.
+
+    A child issue that stores no Finding Identity is keyed in the identity map by its Result Hash.
+
+    When several child issues share a key, an open issue wins over a closed one, then the oldest
+    (lowest-numbered). For parent issues the oldest wins.
     """
-    child_by_fingerprint: dict[str, Issue] = {}
-    parent_by_rule_id: dict[str, Issue] = {}
+    issue_index = IssueIndex(parent_by_rule_id={}, child_by_identity_key={})
+    parent_by_rule_id = issue_index.parent_by_rule_id
 
     for issue in issues.values():
         secmeta = load_secmeta(issue.body)
@@ -90,26 +132,132 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
                 existing_parent = parent_by_rule_id.get(rule_id)
                 if existing_parent is None or issue.number < existing_parent.number:
                     parent_by_rule_id[rule_id] = issue
+            continue
 
-        fp = secmeta.get("fingerprint", "").strip() or secmeta.get("alert_hash", "").strip()
-        if fp and secmeta_type != SECMETA_TYPE_PARENT:
-            existing_child = child_by_fingerprint.get(fp)
-            if existing_child is None or issue.number < existing_child.number:
-                child_by_fingerprint[fp] = issue
+        alert_hash = secmeta.get("alert_hash", "").strip()
+        # Fall back to the Result Hash so a child issue written without a Finding Identity is still
+        # reachable through the identity map.
+        identity_key = secmeta.get("fingerprint", "").strip() or alert_hash
+        if not identity_key:
+            continue
+        _index_child_issue(issue_index, issue, identity_key=identity_key, alert_hash=alert_hash)
 
-    return IssueIndex(
-        child_by_fingerprint=child_by_fingerprint,
-        parent_by_rule_id=parent_by_rule_id,
-    )
+    return issue_index
 
 
-def find_issue_in_index(
+def _is_open(issue: Issue) -> bool:
+    """Return True if *issue* is open."""
+    return issue.state.lower() == "open"
+
+
+def _alert_fingerprint_base(alert: Alert) -> str | None:
+    """Return the AquaSec Fingerprint base of a ``sast`` alert, or ``None`` for every other Category."""
+    details = alert.alert_details
+    if details.identity_key == details.alert_hash:
+        return None
+    return _fingerprint_base(details.identity_key)
+
+
+def _stable_fingerprint_bases(
+    alerts: dict[int, Alert],
     issue_index: IssueIndex,
-    *,
-    fingerprint: str,
-) -> Issue | None:
-    """Return the child issue matching *fingerprint*, or ``None``."""
-    return issue_index.child_by_fingerprint.get(fingerprint)
+    unmatched_keys: list[int],
+    claimed: set[int],
+) -> set[str]:
+    """Return the AquaSec Fingerprint bases whose occurrence set is unchanged since the last run.
+
+    A base is stable when the Finding Identities of its still-unmatched alerts equal those of its
+    still-unclaimed open child issues, with no conflicting open owners of an identity. Otherwise,
+    an ordinal may have been reused and the Finding Identity no longer tells the occurrences apart.
+    """
+    alert_ids: dict[str, set[str]] = {}
+    for alert_key in unmatched_keys:
+        alert = alerts[alert_key]
+        base = _alert_fingerprint_base(alert)
+        if base is not None:
+            alert_ids.setdefault(base, set()).add(alert.alert_details.identity_key)
+
+    if not alert_ids:
+        return set()
+
+    owners_by_identity: dict[tuple[str, str], list[Issue]] = {}
+    for issue in issue_index.children:
+        if not _is_open(issue):
+            continue
+        secmeta = load_secmeta(issue.body)
+        identity_key = secmeta.get("fingerprint", "").strip() or secmeta.get("alert_hash", "").strip()
+        base = _fingerprint_base(identity_key)
+        if base is not None and base in alert_ids:
+            owners_by_identity.setdefault((base, identity_key), []).append(issue)
+
+    issue_ids: dict[str, set[str]] = {}
+    conflicting_bases: set[str] = set()
+    for (base, identity_key), owners in owners_by_identity.items():
+        if len({load_secmeta(owner.body).get("alert_hash", "").strip() for owner in owners}) > 1:
+            conflicting_bases.add(base)
+        # A duplicate of a claimed finding is not another available occurrence.
+        if not any(id(owner) in claimed for owner in owners):
+            issue_ids.setdefault(base, set()).add(identity_key)
+
+    return {base for base, ids in alert_ids.items() if ids == issue_ids.get(base, set())} - conflicting_bases
+
+
+def resolve_child_matches(alerts: dict[int, Alert], issue_index: IssueIndex) -> dict[int, Issue]:
+    """Match every alert of the scan to at most one existing child issue, each issue claimed once.
+
+    Returns the matched issue per key of *alerts*; an alert without an entry needs a new issue.
+
+    Matching runs over the whole scan in three passes, so the strongest evidence wins regardless of
+    alert order:
+
+    1. **Exact Result Hash on an open issue** — the same finding on the same line. Tried against the
+       identity map first, where issues created before the Finding Identity was adopted store it,
+       then against the Result Hash map.
+    2. **Finding Identity** — for alerts still unmatched, e.g. a ``sast`` finding whose line shifted.
+       For ``sast`` it applies only while the alert's AquaSec Fingerprint base kept the same set of
+       occurrences; see ``_stable_fingerprint_bases``.
+    3. **Exact Result Hash on a closed issue** — a resolved finding that reappeared on its old line.
+
+    An AquaSec Fingerprint ordinal is reused when an earlier occurrence of the same Rule in the same
+    file is removed or a new one is inserted ahead of it. Exact Result Hashes first, single claims,
+    and the stable-base guard keep a reused ordinal from handing one finding's issue — with its
+    history and Waivers — to another finding. When the guard refuses, the finding gets a new issue
+    and the unclaimed one closes.
+    """
+    matches: dict[int, Issue] = {}
+    claimed: set[int] = set()  # id() of claimed issues - dry-run placeholders all share number 0
+
+    def _claim(alert_key: int, candidate: Issue | None, *, want_open: bool | None = None) -> bool:
+        if candidate is None or id(candidate) in claimed:
+            return False
+        if want_open is not None and _is_open(candidate) != want_open:
+            return False
+        matches[alert_key] = candidate
+        claimed.add(id(candidate))
+        return True
+
+    def _claim_by_result_hash(*, want_open: bool) -> None:
+        for alert_key, alert in alerts.items():
+            alert_hash = alert.alert_details.alert_hash
+            if alert_key in matches or not alert_hash:
+                continue
+            if not _claim(alert_key, issue_index.child_by_identity_key.get(alert_hash), want_open=want_open):
+                _claim(alert_key, issue_index.child_by_alert_hash.get(alert_hash), want_open=want_open)
+
+    _claim_by_result_hash(want_open=True)
+
+    unmatched_keys = [alert_key for alert_key in alerts if alert_key not in matches]
+    stable_bases = _stable_fingerprint_bases(alerts, issue_index, unmatched_keys, claimed)
+    for alert_key in unmatched_keys:
+        alert = alerts[alert_key]
+        identity_key = alert.alert_details.identity_key
+        base = _alert_fingerprint_base(alert)
+        if identity_key and (base is None or base in stable_bases):
+            _claim(alert_key, issue_index.child_by_identity_key.get(identity_key))
+
+    _claim_by_result_hash(want_open=False)
+
+    return matches
 
 
 def find_parent_issue(issue_index: IssueIndex, *, rule_id: str) -> Issue | None:
@@ -365,7 +513,8 @@ def _handle_new_child_issue(
     """Create a new child issue for an alert that has no matching issue yet."""
     secmeta: dict[str, str] = {
         "type": SECMETA_TYPE_CHILD,
-        "fingerprint": ctx.fingerprint,
+        "fingerprint": ctx.identity_key,
+        "alert_hash": ctx.alert_hash,
         "repo": ctx.repo,
         "rule_id": ctx.rule_id,
         "severity": ctx.severity,
@@ -373,13 +522,13 @@ def _handle_new_child_issue(
 
     human_body = build_child_issue_body(ctx.alert)
     body = render_secmeta(secmeta) + "\n\n" + human_body
-    title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
+    title = build_issue_title(ctx.rule_description, ctx.identity_key, ctx.severity)
 
     if sync.dry_run:
         logging.info(
             "%sWould create child issue for alert FP=%s (rule: %s, severity: %s)",
             DRY_RUN_PREFIX,
-            ctx.fingerprint[:8],
+            ctx.identity_key[:8],
             ctx.rule_id,
             ctx.severity,
         )
@@ -389,7 +538,7 @@ def _handle_new_child_issue(
         bump_severity(sync.stats.children_created_by_severity, ctx.severity)
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             logging.debug(
-                "%sWould create child issue for alert FP=%s with body:\n%s", DRY_RUN_PREFIX, ctx.fingerprint[:8], body
+                "%sWould create child issue for alert FP=%s with body:\n%s", DRY_RUN_PREFIX, ctx.identity_key[:8], body
             )
 
         _record_for_notification(
@@ -401,7 +550,8 @@ def _handle_new_child_issue(
             state="new",
         )
         # Mirror the real path so the run's posture count includes this issue.
-        sync.issue_index.child_by_fingerprint[ctx.fingerprint] = Issue(number=0, state="open", title=title, body=body)
+        mirrored = Issue(number=0, state="open", title=title, body=body)
+        _index_child_issue(sync.issue_index, mirrored, identity_key=ctx.identity_key, alert_hash=ctx.alert_hash)
         if sync.priority_sync is not None:
             sync.priority_sync.enqueue(ctx.repo, 0, ctx.severity, sync.severity_priority_map)
         return
@@ -410,12 +560,12 @@ def _handle_new_child_issue(
     if num is None:
         return
 
-    logging.info("%sCreated child issue #%d for alert FP=%s", LOGGING_PREFIX, num, ctx.fingerprint[:8])
+    logging.info("%sCreated child issue #%d for alert FP=%s", LOGGING_PREFIX, num, ctx.identity_key[:8])
     sync.stats.children_created += 1
     bump_severity(sync.stats.children_created_by_severity, ctx.severity)
     created = Issue(number=num, state="open", title=title, body=body)
     sync.issues[num] = created
-    sync.issue_index.child_by_fingerprint[ctx.fingerprint] = created
+    _index_child_issue(sync.issue_index, created, identity_key=ctx.identity_key, alert_hash=ctx.alert_hash)
 
     _record_for_notification(
         sync.issue_changes,
@@ -437,14 +587,14 @@ def _handle_new_child_issue(
         )
         if gh_issue_add_sub_issue_by_number(ctx.repo, parent_issue.number, num):
             logging.debug(
-                "Added link child issue #%d to parent #%d (alert FP=%s)", num, parent_issue.number, ctx.fingerprint[:8]
+                "Added link child issue #%d to parent #%d (alert FP=%s)", num, parent_issue.number, ctx.identity_key[:8]
             )
         else:
             logging.warning(
                 "Failed to link child issue #%d to parent #%d (alert FP=%s)",
                 num,
                 parent_issue.number,
-                ctx.fingerprint[:8],
+                ctx.identity_key[:8],
             )
 
     if sync.priority_sync is not None:
@@ -513,7 +663,8 @@ def _merge_child_secmeta(
     secmeta.update(
         {
             "type": SECMETA_TYPE_CHILD,
-            "fingerprint": ctx.fingerprint,
+            "fingerprint": ctx.identity_key,
+            "alert_hash": ctx.alert_hash,
             "repo": ctx.repo,
             "rule_id": ctx.rule_id or secmeta.get("rule_id", ""),
             "severity": ctx.severity,
@@ -559,7 +710,7 @@ def _sync_child_title(
     child_issue: Issue,
 ) -> None:
     """Fix title drift and ensure the priority on the child issue."""
-    expected_title = build_issue_title(ctx.rule_description, ctx.fingerprint, ctx.severity)
+    expected_title = build_issue_title(ctx.rule_description, ctx.identity_key, ctx.severity)
     if expected_title != (child_issue.title or ""):
         if sync.dry_run:
             logging.info("%sWould update child issue #%d title", DRY_RUN_PREFIX, child_issue.number)
@@ -601,7 +752,7 @@ def _ensure_child_linked_to_parent(
             DRY_RUN_PREFIX,
             child_issue.number,
             parent_issue.number,
-            ctx.fingerprint[:8],
+            ctx.identity_key[:8],
         )
         cache[parent_issue.number].add(child_issue.number)
         sync.stats.children_relinked += 1
@@ -613,7 +764,7 @@ def _ensure_child_linked_to_parent(
             LOGGING_PREFIX,
             child_issue.number,
             parent_issue.number,
-            ctx.fingerprint[:8],
+            ctx.identity_key[:8],
         )
         cache[parent_issue.number].add(child_issue.number)
         sync.stats.children_relinked += 1
@@ -622,7 +773,7 @@ def _ensure_child_linked_to_parent(
             "Failed to relink child issue #%d to parent #%d (alert FP=%s)",
             child_issue.number,
             parent_issue.number,
-            ctx.fingerprint[:8],
+            ctx.identity_key[:8],
         )
 
 
@@ -649,8 +800,14 @@ def _handle_existing_child_issue(
 def ensure_issue(
     alert: Alert,
     sync: SyncContext,
+    *,
+    matched_issue: Issue | None,
 ) -> None:
-    """Process a single alert: create or update its child issue and parent."""
+    """Process a single alert: create or update its child issue and parent.
+
+    *matched_issue* is the alert's existing child issue as resolved by ``resolve_child_matches``
+    over the whole scan, or ``None`` when a new child issue is needed.
+    """
     alert_number = alert.metadata.alert_number
     rule_id = alert.metadata.rule_id
 
@@ -659,12 +816,13 @@ def ensure_issue(
     end_line = alert.metadata.end_line
     commit_sha = alert.metadata.commit_sha
 
-    fingerprint = alert.alert_details.alert_hash
+    identity_key = alert.alert_details.identity_key
+    alert_hash = alert.alert_details.alert_hash
 
-    if not fingerprint:
+    if not identity_key:
         raise SystemExit(
-            f"ERROR: missing 'alert_hash' in alert_details for alert_number={alert_number}. "
-            "Ensure the collector/scanner includes an 'Alert hash: ...' line."
+            f"ERROR: missing Finding Identity in alert_details for alert_number={alert_number}. "
+            "Ensure the scan result carries an AquaSec 'fingerprint' or a 'result_hash'."
         )
 
     repo_full = alert.repo
@@ -679,15 +837,12 @@ def ensure_issue(
         parent_original_bodies=sync.parent_original_bodies,
         stats=sync.stats,
     )
-    matched_issue = find_issue_in_index(
-        sync.issue_index,
-        fingerprint=fingerprint,
-    )
 
     ctx = AlertContext(
         alert=alert,
         alert_number=alert_number,
-        fingerprint=fingerprint,
+        identity_key=identity_key,
+        alert_hash=alert_hash,
         repo=repo_full,
         tool=alert.metadata.tool,
         rule_id=rule_id,
@@ -775,33 +930,33 @@ def _flush_parent_body_updates(
 
 
 def _close_resolved_child_issues(
-    alerts: dict[int, Alert],
-    issue_index: IssueIndex,
+    child_issues: list[Issue],
+    matched_issues: list[Issue],
     *,
     dry_run: bool,
     stats: SyncStats,
     issue_changes: list[IssueChange] | None = None,
 ) -> None:
-    """Close open child issues whose alert is no longer present in the scan results."""
-    alert_fingerprints: set[str] = set()
-    for alert in alerts.values():
-        fp = alert.alert_details.alert_hash
-        if fp:
-            alert_fingerprints.add(fp)
+    """Close open child issues that no alert in the scan results matched.
 
-    open_issue_fps = {
-        fp for fp, child_issue in issue_index.child_by_fingerprint.items() if child_issue.state.lower() == "open"
-    }
-    unmatched_fps = open_issue_fps - alert_fingerprints
+    *child_issues* are the child issues that existed before the run and *matched_issues* those
+    claimed by ``resolve_child_matches``. Every alert is matched, including those below
+    min-severity, so their issues stay open.
+    """
+    matched_ids = {id(issue) for issue in matched_issues}
+    to_close = [
+        child_issue
+        for child_issue in child_issues
+        if child_issue.state.lower() == "open" and id(child_issue) not in matched_ids
+    ]
 
-    if not unmatched_fps:
+    if not to_close:
         logging.debug("No unmatched child issues – skipping resolved-alert closure")
         return
 
-    logging.info("%sDetected %d child issue/s with no matching alert", LOGGING_PREFIX, len(unmatched_fps))
+    logging.info("%sDetected %d child issue/s with no matching alert", LOGGING_PREFIX, len(to_close))
 
-    for fp in unmatched_fps:
-        child_issue = issue_index.child_by_fingerprint[fp]
+    for child_issue in to_close:
         secmeta = load_secmeta(child_issue.body)
         repo = secmeta.get("repo", "")
         if not repo:
@@ -858,7 +1013,7 @@ def _count_open_child_issues_by_severity(issue_index: IssueIndex) -> dict[str, i
     Runs after the sync so closures made during this run are already reflected.
     """
     counts: dict[str, int] = {}
-    for child_issue in issue_index.child_by_fingerprint.values():
+    for child_issue in issue_index.children:
         if child_issue.state.lower() != "open":
             continue
         bump_severity(counts, load_secmeta(child_issue.body).get("severity"))
@@ -875,6 +1030,36 @@ def _meets_min_severity(severity: str, min_severity: str) -> bool:
     if min_severity == "low":
         return True
     return SEVERITY_ORDER.get(severity.lower(), 0) >= SEVERITY_ORDER[min_severity]
+
+
+def _refresh_child_identity(alert: Alert, child_issue: Issue | None, sync: SyncContext) -> None:
+    """Persist only identity bookkeeping on a matched open child below min-severity."""
+    if child_issue is None or not _is_open(child_issue):
+        return
+
+    secmeta = load_secmeta(child_issue.body)
+    identity_values = {
+        "fingerprint": alert.alert_details.identity_key,
+        "alert_hash": alert.alert_details.alert_hash,
+    }
+    if all(secmeta.get(key) == value for key, value in identity_values.items()):
+        return
+
+    secmeta.update(identity_values)
+    new_body = replace_secmeta(child_issue.body, secmeta)
+    if sync.dry_run:
+        logging.info("%sWould update child issue #%d identity bookkeeping", DRY_RUN_PREFIX, child_issue.number)
+    elif not gh_issue_edit_body(alert.repo, child_issue.number, new_body):
+        raise RuntimeError(
+            f"Security - Failed to update Finding Identity for issue #{child_issue.number} in {alert.repo}; "
+            "aborting before issue closure"
+        )
+    else:
+        logging.info("%sUpdated child issue #%d identity bookkeeping", LOGGING_PREFIX, child_issue.number)
+
+    child_issue.body = new_body
+    sync.stats.children_body_updated += 1
+    bump_severity(sync.stats.children_body_updated_by_severity, secmeta.get("severity"))
 
 
 def sync_alerts_and_issues(
@@ -910,20 +1095,29 @@ def sync_alerts_and_issues(
         priority_sync=priority_sync,
     )
 
-    for alert in alerts.values():
+    # Resolve the whole scan before any write, so each existing issue is claimed by one alert at most.
+    child_matches = resolve_child_matches(alerts, issue_index)
+    existing_children = list(issue_index.children)
+
+    for alert_key, alert in alerts.items():
         if not _meets_min_severity(alert.metadata.severity, min_severity):
-            # Below threshold: skip issue creation, update, and reopen for this alert.
-            # Existing open issues for this finding are intentionally left frozen — they
-            # will only be closed by resolved-alert logic if the finding later disappears.
+            # Keep frozen issues matchable without promoting or refreshing their content.
+            _refresh_child_identity(alert, child_matches.get(alert_key), sync)
             continue
-        ensure_issue(alert, sync)
+        ensure_issue(alert, sync, matched_issue=child_matches.get(alert_key))
 
     _flush_parent_body_updates(sync.parent_original_bodies, issues, dry_run=dry_run, stats=sync.stats)
 
     if priority_sync is not None:
         priority_sync.flush()
 
-    _close_resolved_child_issues(alerts, issue_index, dry_run=dry_run, stats=sync.stats, issue_changes=issue_changes)
+    _close_resolved_child_issues(
+        existing_children,
+        list(child_matches.values()),
+        dry_run=dry_run,
+        stats=sync.stats,
+        issue_changes=issue_changes,
+    )
     _close_resolved_parent_issues(issues, issue_index, dry_run=dry_run, stats=sync.stats)
 
     _log_sync_summary(sync.stats, dry_run=dry_run)

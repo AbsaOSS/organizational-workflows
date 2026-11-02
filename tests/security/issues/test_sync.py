@@ -357,6 +357,25 @@ def test_resolve_matches_line_shift_with_nonconflicting_owners(other_hash: str, 
     assert {1: owner} == resolve_child_matches(alerts, build_issue_index({20: other, 10: owner}))
 
 
+def test_resolve_matches_conflict_settled_by_exact_hash_keeps_shifted_sibling() -> None:
+    """Once an exact Result Hash settles a conflicting identity, a sibling that only shifted keeps its issue.
+
+    An interrupted run left #10 (removed occurrence) and #20 (migrated survivor) both open on fp_base_0.
+    The survivor kept its line, so its exact Result Hash claims #20 and #10 is left to close. fp_base_1
+    only shifted lines - the base's occurrence set is unchanged - so it must keep #30.
+    """
+    removed = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_removed"})
+    survivor = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_survivor"})
+    sibling = _issue_with_secmeta(30, {"type": "child", "fingerprint": "fp_base_1", "alert_hash": "hash_sibling"})
+    idx = build_issue_index({10: removed, 20: survivor, 30: sibling})
+    alerts = {
+        1: _alert_with_keys("fp_base_0", "hash_survivor"),
+        2: _alert_with_keys("fp_base_1", "hash_sibling_shifted"),
+    }
+
+    assert {1: survivor, 2: sibling} == resolve_child_matches(alerts, idx)
+
+
 @pytest.mark.parametrize("first_hash, owner_number", [
     ("hash_existing", 10),
     ("hash_removed", 20),

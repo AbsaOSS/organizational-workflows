@@ -217,16 +217,16 @@ def test_parent_body_confidence(vuln_alert: Alert) -> None:
 # =====================================================================
 
 
-@pytest.mark.parametrize("description, fingerprint, severity, expected", [
+@pytest.mark.parametrize("description, identity_key, severity, expected", [
     ("A description", "a1b2c3d4e5f6", "high", "[SEC:HIGH][FP=a1b2c3d4] A description"),
     (None, "abcdef12", "medium", "[SEC:MEDIUM][FP=abcdef12] Security finding"),
     (None, "abcdef12", "", "[SEC][FP=abcdef12] Security finding"),
     ("A description", "", "critical", "[SEC:CRITICAL][FP=N/A] A description"),
 ], ids=["full_format", "no_description_fallback", "no_severity", "empty_fingerprint"])
 def test_build_issue_title(
-    description: str | None, fingerprint: str, severity: str, expected: str
+    description: str | None, identity_key: str, severity: str, expected: str
 ) -> None:
-    assert expected == build_issue_title(description, fingerprint, severity)
+    assert expected == build_issue_title(description, identity_key, severity)
 
 
 # =====================================================================

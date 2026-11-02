@@ -86,6 +86,7 @@ def _parse_item(item: dict[str, Any], repo: str) -> Alert:
 
     alert_details = AlertDetails(
         alert_hash=item.get("result_hash", ""),
+        identity_key=(item.get("fingerprint") or "").strip() or item.get("result_hash", ""),
         artifact=item.get("target_file", ""),
         type=item.get("category", ""),
         vulnerability=item.get("avd_id", ""),

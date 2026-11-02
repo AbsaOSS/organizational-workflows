@@ -77,7 +77,7 @@ flowchart TD
 
 1. **Authenticate with AquaSec**: The pipeline authenticates using HMAC-SHA256 signed credentials to obtain a bearer token from the AquaSec API.
 
-2. **Fetch and Normalise Findings**: Scan results are fetched directly from the AquaSec Code Security API (paginated), then parsed and normalised into a common format extracting severity, rule ID, affected file, and a stable fingerprint for matching.
+2. **Fetch and Normalise Findings**: Scan results are fetched directly from the AquaSec Code Security API (paginated), then parsed and normalised into a common format extracting severity, rule ID, affected file, and the identity used to match a finding to its issue.
 
 3. **Create / Update / Reopen Issues**: New findings become new GitHub Issues. Existing findings are updated with the latest occurrence data. Previously closed findings that reappear are automatically reopened. Parent issues (epics) group findings by rule and auto-close when all children are resolved.
 
@@ -129,6 +129,7 @@ After a successful run, findings appear as a GitHub Issues with defined body str
 <!--secmeta
 type=child
 fingerprint=a1b2c3d4e5f6789012345678abcdef01
+alert_hash=a1b2c3d4e5f6789012345678abcdef01
 repo=my-org/my-service
 rule_id=CVE-2024-99999
 severity=critical
@@ -163,6 +164,10 @@ man-in-the-middle attacker to intercept HTTPS traffic. Fixed in requests 2.32.0.
 - **Fixed version:** 2.32.0
 - **Reachable:** True
 ```
+
+> **Note:** `fingerprint` holds the Finding Identity and `alert_hash` the Result Hash. They carry the
+> same value for every Finding Category except `sast`, where AquaSec supplies a line-independent
+> Fingerprint of its own and the two keys therefore differ.
 
 ### Rule Issue (Epic)
 

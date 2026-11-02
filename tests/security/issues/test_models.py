@@ -66,14 +66,15 @@ def test_sync_result_creation() -> None:
 
 
 def test_issue_index_creation() -> None:
-    idx = IssueIndex(child_by_fingerprint={}, parent_by_rule_id={})
-    assert idx.child_by_fingerprint == {}
+    idx = IssueIndex(child_by_identity_key={}, parent_by_rule_id={})
+    assert idx.child_by_identity_key == {}
     assert idx.parent_by_rule_id == {}
+    assert idx.child_by_alert_hash == {}
 
 
 def test_alert_context_creation() -> None:
     ctx = AlertContext(
-        alert={}, alert_number=1, fingerprint="fp",
+        alert={}, alert_number=1, identity_key="fp", alert_hash="hash",
         repo="org/repo",
         tool="AquaSec", rule_id="R1", rule_name="sast",
         rule_description="Test finding description",

@@ -43,7 +43,7 @@ REQUIRED_LABEL_SPECS: tuple[LabelSpec, ...] = (
 )
 
 SECMETA_KEYS_PARENT = {"type", "repo", "rule_id", "severity"}
-SECMETA_KEYS_CHILD = {"type", "fingerprint", "repo", "rule_id", "severity"}
+SECMETA_KEYS_CHILD = {"type", "fingerprint", "alert_hash", "repo", "rule_id", "severity"}
 SECMETA_TYPE_PARENT = "parent"
 SECMETA_TYPE_CHILD = "child"
 

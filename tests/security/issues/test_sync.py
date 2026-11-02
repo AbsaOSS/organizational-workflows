@@ -1926,35 +1926,69 @@ def test_sync_below_threshold_does_not_refresh_closed_child(mocker: MockerFixtur
     mock_state.assert_not_called()
 
 
-def test_sync_below_threshold_identity_write_failure_stops_closure_and_retries(
+def test_sync_below_threshold_identity_write_failure_keeps_processing_other_alerts(
     mocker: MockerFixture, sast_alert: Alert
 ) -> None:
     mock_body = _patch_gh_calls(mocker)
-    mock_body.side_effect = [False, True]
+    mock_body.return_value = False
     mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
-    mock_close_children = mocker.patch(
-        "security.issues.sync._close_resolved_child_issues", wraps=_close_resolved_child_issues
-    )
-    mock_close_parents = mocker.patch(
-        "security.issues.sync._close_resolved_parent_issues", wraps=_close_resolved_parent_issues
+    priority_sync = mocker.patch("security.issues.sync._init_priority_sync").return_value
+    issues, _ = _renumbered_sast_issues(sast_alert)
+    sast_alert.metadata.severity = "medium"
+    unrelated = copy.deepcopy(sast_alert)
+    unrelated.metadata.alert_number = 304
+    unrelated.metadata.severity = "high"
+    unrelated.alert_details.identity_key = "fp_other_0"
+    unrelated.alert_details.alert_hash = "hash_other"
+
+    result = sync_alerts_and_issues({303: sast_alert, 304: unrelated}, issues, min_severity="high")
+
+    assert [(999, "new"), (10, "closed")] == [
+        (change.issue_number, change.state) for change in result.issue_changes
+    ]
+    mock_body.assert_any_call("test-org/test-repo", 1, issues[1].body)
+    priority_sync.flush.assert_called_once_with()
+
+
+@pytest.mark.parametrize("severity", ["high", "medium"])
+def test_sync_identity_write_failure_continues_closure_and_retries(
+    mocker: MockerFixture, sast_alert: Alert, severity: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    mock_body = _patch_gh_calls(mocker)
+    mock_body.return_value = False
+    mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    mock_summary = mocker.patch(
+        "security.issues.sync._log_sync_summary", wraps=_log_sync_summary
     )
     issues, survivor = _renumbered_sast_issues(sast_alert)
-    sast_alert.metadata.severity = "medium"
+    sast_alert.metadata.severity = severity
     original_body = survivor.body
 
-    with pytest.raises(RuntimeError, match="issue #20 in test-org/test-repo"):
-        sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
+    with caplog.at_level(logging.WARNING):
+        result = sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
 
     assert original_body == survivor.body
-    assert all("open" == issue.state for issue in issues.values())
-    mock_close_children.assert_not_called()
-    mock_close_parents.assert_not_called()
+    assert "open" == survivor.state
+    assert "open" == issues[1].state
+    assert "closed" == issues[10].state
+    assert [(10, "closed")] == [(change.issue_number, change.state) for change in result.issue_changes]
+    assert [20] == [call.args[1] for call in mock_body.call_args_list if call.args[1] == 20]
+    stats = mock_summary.call_args.args[0]
+    assert 0 == stats.children_body_updated
+    assert {} == stats.children_body_updated_by_severity
+    if severity == "medium":
+        assert "Security - Failed to update Finding Identity for issue #20 in test-org/test-repo" in caplog.text
+
+    mock_body.return_value = True
+    mock_body.reset_mock()
 
     result = sync_alerts_and_issues({303: sast_alert}, issues, min_severity="high")
 
     assert "fp_base_0" == load_secmeta(survivor.body)["fingerprint"]
     assert "open" == survivor.state
-    assert [(10, "closed")] == [(change.issue_number, change.state) for change in result.issue_changes]
+    assert [] == result.issue_changes
+    mock_body.assert_any_call("test-org/test-repo", 20, survivor.body)
+    assert 1 == mock_summary.call_args.args[0].children_body_updated
 
 
 def test_sync_unknown_severity_passes_at_min_low(

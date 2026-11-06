@@ -4,7 +4,7 @@
 
 This guide walks you through onboarding your repository to **Security Automation** step by step. When you are done, a nightly workflow will fetch AquaSec scan findings for your repository and turn them into a managed GitHub Issues backlog.
 
-> For a business-level overview of what the solution does and why, see the [Security Automation docs](/knowledge-base/security-automation).
+> For a business-level overview of what the solution does and why, see the [Security Automation docs](../security-automation).
 
 **What you will do:**
 
@@ -156,6 +156,6 @@ Still stuck? Open an issue or start a discussion:
 
 ## See Also
 
-- [Security Automation docs](/knowledge-base/security-automation): what the solution does and why
+- [Security Automation docs](../security-automation): what the solution does and why
 - [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): running the pipeline locally, CLI flags and contributor details
 - [Example Caller Workflow](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository

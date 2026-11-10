@@ -143,9 +143,33 @@ class AquaSecParser:
         items = data.get("data", [])
         logger.info("%sLoaded %d findings from AquaSec response", LOGGING_PREFIX, len(items))
 
-        open_by_number: dict[int, Alert] = {}
-        for idx, item in enumerate(items, start=1):
+        unique_alerts: list[Alert] = []
+        by_identifier: dict[tuple[str, str], list[Alert]] = {}
+        for item in items:
             alert = _parse_item(item, self.repo)
+            identifiers = [
+                (name, value)
+                for name, value in (
+                    ("Finding Identity", alert.alert_details.identity_key),
+                    ("Result Hash", alert.alert_details.alert_hash),
+                )
+                if value
+            ]
+            known_alerts = [known for identifier in identifiers for known in by_identifier.get(identifier, [])]
+            if any(known == alert for known in known_alerts):
+                continue
+            if known_alerts:
+                logger.warning(
+                    "%sConflicting Finding data for %s; keeping rows as separate alerts",
+                    LOGGING_PREFIX,
+                    ", ".join(f"{name} {value}" for name, value in identifiers),
+                )
+            unique_alerts.append(alert)
+            for identifier in identifiers:
+                by_identifier.setdefault(identifier, []).append(alert)
+
+        open_by_number: dict[int, Alert] = {}
+        for idx, alert in enumerate(unique_alerts, start=1):
             alert.metadata.alert_number = idx
             open_by_number[idx] = alert
 

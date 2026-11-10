@@ -16,6 +16,8 @@
 
 """Unit tests for ``security.alerts.aquasec_parser``."""
 
+import logging
+
 import pytest
 
 from security.alerts.aquasec_parser import (
@@ -293,3 +295,47 @@ def test_parse_in_memory() -> None:
     result = parser.parse(data)
     assert len(result.open_by_number) == 1
     assert result.open_by_number[1].metadata.rule_id == "CVE-2026-33870"
+
+
+@pytest.mark.parametrize("unused_data", [{}, {"vendor_scoring": {"score": 9}}])
+def test_parse_collapses_equivalent_findings(unused_data: dict) -> None:
+    rows = [_VULN_ITEM, {**_VULN_ITEM, **unused_data}, _SAST_ITEM]
+
+    result = AquaSecParser("org/repo").parse({"total": 3, "data": rows})
+
+    assert [1, 2] == list(result.open_by_number)
+    assert [1, 2] == [alert.metadata.alert_number for alert in result.open_by_number.values()]
+    assert [_VULN_ITEM["result_hash"], _SAST_ITEM["result_hash"]] == [
+        alert.alert_details.alert_hash for alert in result.open_by_number.values()
+    ]
+    assert 3 == len(rows)
+
+
+def test_parse_keeps_distinct_sast_occurrences() -> None:
+    rows = [
+        {**_SAST_ITEM, "fingerprint": "base_0", "result_hash": "hash_one"},
+        {**_SAST_ITEM, "fingerprint": "base_1", "result_hash": "hash_two", "target_start_line": 30},
+    ]
+
+    result = AquaSecParser("org/repo").parse({"total": 2, "data": rows})
+
+    assert ["base_0", "base_1"] == [
+        alert.alert_details.identity_key for alert in result.open_by_number.values()
+    ]
+
+
+@pytest.mark.parametrize("changes", [
+    {"severity": 4},
+    {"target_file": "other/pom.xml"},
+    {"fingerprint": "another_identity"},
+    {"result_hash": "another_hash"},
+])
+def test_parse_keeps_conflicting_identifiers_separate(changes: dict, caplog: pytest.LogCaptureFixture) -> None:
+    original = {**_VULN_ITEM, "fingerprint": "shared_identity"}
+    rows = [original, {**original, **changes}]
+
+    with caplog.at_level(logging.WARNING):
+        result = AquaSecParser("org/repo").parse({"total": 2, "data": rows})
+
+    assert 2 == len(result.open_by_number)
+    assert "Conflicting Finding data" in caplog.text

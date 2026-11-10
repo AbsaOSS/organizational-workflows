@@ -18,7 +18,7 @@ _Avoid_: Finding (once parsed), scan item
 The value used to decide whether a Finding in the current scan is the same Finding as one already tracked by a Child Issue. Taken from the AquaSec Fingerprint when AquaSec populates it, and from the Result Hash otherwise.
 _Avoid_: fingerprint (bare), unique key, hash
 
-> Both source values are unique per Finding. They differ in **stability**, not uniqueness.
+> Multiple AquaSec rows can share a Finding Identity, for example through dependency routes. Equivalent parsed rows become one Alert. Conflicting parsed data sharing a Finding Identity or Result Hash is kept as separate Alerts and logged as a warning.
 
 **AquaSec Fingerprint**:
 AquaSec's line-independent identifier for a Finding, carried in the `fingerprint` field. Populated for the `sast` Finding Category only. Shaped `<base>_<ordinal>`, where the ordinal is the occurrence's position among findings of the same Rule in the same file, so removing an earlier occurrence renumbers the later ones.
@@ -136,7 +136,7 @@ The Caller workflow lives in a consumer repository and invokes the Reusable work
 - "Parent" and "Epic" name the same issue; prefer **Parent Issue**.
 - "Sub-issue" is GitHub's link mechanism, not a synonym for **Child Issue**.
 - "Fingerprint" named two different things — AquaSec's `fingerprint` field and the Secmeta key holding a Finding Identity. Now **AquaSec Fingerprint** and **Result Hash** are the two sources, and **Finding Identity** is the value chosen from them. Never use "fingerprint" bare.
-- "Unique key" is not a synonym for **AquaSec Fingerprint** or **Result Hash**. Every source value is unique; they differ in stability.
+- "Unique key" is not a synonym for **AquaSec Fingerprint** or **Result Hash**. Repeated rows can share a source value.
 
 ## Current gaps
 

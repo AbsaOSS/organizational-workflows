@@ -26,6 +26,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from core.models import Issue
+from security.alerts.aquasec_parser import AquaSecParser
 from security.issues.sync import (
     _record_for_notification,
     _close_resolved_child_issues,
@@ -1278,7 +1279,7 @@ def test_close_resolved_parent_issue(mocker: MockerFixture) -> None:
     issue_index = build_issue_index(issues)
     stats = SyncStats()
 
-    _close_resolved_parent_issues(issues, issue_index, dry_run=False, stats=stats)
+    _close_resolved_parent_issues(issue_index, dry_run=False, stats=stats)
 
     mock_edit.assert_called_once_with("org/repo", 10, "closed")
     assert parent.state == "closed"
@@ -1297,7 +1298,7 @@ def test_close_resolved_parent_skips_open_child(mocker: MockerFixture) -> None:
     issues = {10: parent, 11: child}
     issue_index = build_issue_index(issues)
 
-    _close_resolved_parent_issues(issues, issue_index, dry_run=False, stats=SyncStats())
+    _close_resolved_parent_issues(issue_index, dry_run=False, stats=SyncStats())
 
     mock_edit.assert_not_called()
     assert parent.state == "open"
@@ -1418,6 +1419,83 @@ def test_sync_dry_run_single_alert(sast_alert: Alert) -> None:
     alerts = {303: sast_alert}
     result = sync_alerts_and_issues(alerts, {}, dry_run=True)
     assert len(result.issue_changes) == 1
+
+
+def test_sync_repeated_source_findings_are_idempotent(mocker: MockerFixture) -> None:
+    row = {
+        "category": "vulnerabilities",
+        "result_hash": "repeated_hash",
+        "avd_id": "CVE-2026-1234",
+        "severity": 3,
+        "target_file": "pom.xml",
+        "package_name": "example",
+        "installed_version": "1.0",
+    }
+    parser = AquaSecParser("test-org/test-repo")
+    data = {"total": 3, "data": [row, row, {**row, "vendor_scoring": {"score": 9}}]}
+    issues: dict[int, Issue] = {}
+    _patch_gh_calls(mocker)
+    create = mocker.patch("security.issues.sync.gh_issue_create", side_effect=[10, 11])
+    edit_state = mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    edit_body = mocker.patch("security.issues.sync.gh_issue_edit_body", return_value=True)
+    edit_title = mocker.patch("security.issues.sync.gh_issue_edit_title", return_value=True)
+    mocker.patch("security.issues.sync.gh_issue_get_sub_issue_numbers", return_value={11})
+
+    first = sync_alerts_and_issues(parser.parse(data).open_by_number, issues, min_severity="high")
+    second = sync_alerts_and_issues(parser.parse(data).open_by_number, issues, min_severity="high")
+
+    assert 2 == create.call_count
+    assert ["new"] == [change.state for change in first.issue_changes]
+    assert [] == second.issue_changes
+    assert {"high": 1} == second.open_child_issues_by_severity
+    edit_state.assert_not_called()
+    edit_body.assert_not_called()
+    edit_title.assert_not_called()
+
+
+@pytest.mark.parametrize("parent_state", ["open", "closed"])
+def test_sync_dry_run_replacement_children_keep_parent_open(
+    sast_alert: Alert, parent_state: str, caplog: pytest.LogCaptureFixture,
+) -> None:
+    rule_id = sast_alert.metadata.rule_id
+    parent = _issue_with_secmeta(10, {
+        "type": "parent", "rule_id": rule_id, "repo": "test-org/test-repo",
+    }, state=parent_state)
+    old_child = _issue_with_secmeta(11, {
+        "type": "child", "rule_id": rule_id, "fingerprint": "old_hash", "repo": "test-org/test-repo",
+    })
+    another = copy.deepcopy(sast_alert)
+    another.alert_details.identity_key = "another_hash"
+    another.alert_details.alert_hash = "another_hash"
+
+    with caplog.at_level(logging.INFO):
+        result = sync_alerts_and_issues(
+            {1: sast_alert, 2: another}, {10: parent, 11: old_child}, dry_run=True,
+        )
+
+    assert "open" == parent.state
+    assert "closed" == old_child.state
+    assert ["new", "new", "closed"] == [change.state for change in result.issue_changes]
+    assert {"high": 2} == result.open_child_issues_by_severity
+    assert "Would close parent issue #10" not in caplog.text
+    if parent_state == "closed":
+        assert 1 == caplog.text.count("Would reopen parent issue #10")
+
+
+def test_sync_dry_run_resolved_child_closes_parent() -> None:
+    parent = _issue_with_secmeta(10, {
+        "type": "parent", "rule_id": "R1", "repo": "org/repo",
+    })
+    child = _issue_with_secmeta(11, {
+        "type": "child", "rule_id": "R1", "fingerprint": "old_hash", "repo": "org/repo",
+    })
+
+    result = sync_alerts_and_issues({}, {10: parent, 11: child}, dry_run=True)
+
+    assert "closed" == child.state
+    assert "closed" == parent.state
+    assert ["closed"] == [change.state for change in result.issue_changes]
+    assert {} == result.open_child_issues_by_severity
 
 
 def test_sync_closes_parent_when_all_children_closed(mocker: MockerFixture) -> None:

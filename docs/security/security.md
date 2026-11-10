@@ -4,7 +4,7 @@
 
 Security Automation provides **continuous, automated vulnerability management** for your repositories. It authenticates directly with the AquaSec API, fetches scan findings, and automatically converts them into structured **GitHub Issues** with full lifecycle management. This gives your team a managed security posture without manual triage effort.
 
-> For setup instructions, see the [How to Onboard guide](/knowledge-base/how-to-onboard-security-automation).
+> For setup instructions, see the [How to Onboard guide](../how-onboard-security-automation).
 
 ---
 
@@ -252,6 +252,6 @@ See the full example at [aquasec-night-scan-example.yml](https://github.com/Absa
 
 ## See Also
 
-- [How to Onboard](/knowledge-base/how-to-onboard-security-automation): step-by-step onboarding guide
+- [How to Onboard](../how-onboard-security-automation): step-by-step onboarding guide
 - [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): running locally and technical details
 - [Example Caller Workflow](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository

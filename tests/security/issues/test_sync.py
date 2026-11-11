@@ -1304,6 +1304,27 @@ def test_close_resolved_parent_skips_open_child(mocker: MockerFixture) -> None:
     assert parent.state == "open"
 
 
+def test_close_resolved_parent_skips_unindexed_open_child(mocker: MockerFixture) -> None:
+    """An open child without lookup keys still prevents parent closure."""
+    mock_edit = mocker.patch("security.issues.sync.gh_issue_edit_state", return_value=True)
+    parent = _issue_with_secmeta(10, {
+        "type": "parent", "rule_id": "R1", "repo": "org/repo",
+    })
+    open_child = _issue_with_secmeta(11, {
+        "type": "child", "rule_id": "R1", "repo": "org/repo",
+    })
+    closed_child = _issue_with_secmeta(12, {
+        "type": "child", "rule_id": "R1", "fingerprint": "fp1", "repo": "org/repo",
+    }, state="closed")
+    issue_index = build_issue_index({10: parent, 11: open_child, 12: closed_child})
+
+    _close_resolved_parent_issues(issue_index, dry_run=False, stats=SyncStats())
+
+    assert "open" == open_child.state
+    assert "open" == parent.state
+    mock_edit.assert_not_called()
+
+
 # =====================================================================
 # ensure_issue (end-to-end orchestration per alert)
 # =====================================================================

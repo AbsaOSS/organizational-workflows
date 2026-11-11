@@ -115,7 +115,8 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
     every Finding Category except ``sast`` — there it also catches issues created before the AquaSec
     Fingerprint was adopted.
 
-    A child issue that stores no Finding Identity is keyed in the identity map by its Result Hash.
+    A child issue that stores no Finding Identity is keyed in the identity map by its Result Hash. A
+    child issue that stores neither is listed in ``unkeyed_children`` only.
 
     When several child issues share a key, an open issue wins over a closed one, then the oldest
     (lowest-numbered). For parent issues the oldest wins.
@@ -139,6 +140,8 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
         # reachable through the identity map.
         identity_key = secmeta.get("fingerprint", "").strip() or alert_hash
         if not identity_key:
+            if secmeta_type == SECMETA_TYPE_CHILD:
+                issue_index.unkeyed_children.append(issue)
             continue
         _index_child_issue(issue_index, issue, identity_key=identity_key, alert_hash=alert_hash)
 
@@ -314,7 +317,7 @@ def _close_resolved_parent_issues(
     """Close open parent issues whose known child issues are all closed."""
     child_issues_by_rule_id: dict[str, list[Issue]] = {}
 
-    for child_issue in issue_index.children:
+    for child_issue in [*issue_index.children, *issue_index.unkeyed_children]:
         secmeta = load_secmeta(child_issue.body)
         if secmeta.get("type", "").strip().lower() != SECMETA_TYPE_CHILD:
             continue

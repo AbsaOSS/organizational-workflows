@@ -115,7 +115,8 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
     every Finding Category except ``sast`` — there it also catches issues created before the AquaSec
     Fingerprint was adopted.
 
-    A child issue that stores no Finding Identity is keyed in the identity map by its Result Hash.
+    A child issue that stores no Finding Identity is keyed in the identity map by its Result Hash. A
+    child issue that stores neither is listed in ``unkeyed_children`` only.
 
     When several child issues share a key, an open issue wins over a closed one, then the oldest
     (lowest-numbered). For parent issues the oldest wins.
@@ -139,6 +140,8 @@ def build_issue_index(issues: dict[int, Issue]) -> IssueIndex:
         # reachable through the identity map.
         identity_key = secmeta.get("fingerprint", "").strip() or alert_hash
         if not identity_key:
+            if secmeta_type == SECMETA_TYPE_CHILD:
+                issue_index.unkeyed_children.append(issue)
             continue
         _index_child_issue(issue_index, issue, identity_key=identity_key, alert_hash=alert_hash)
 
@@ -306,7 +309,6 @@ def maybe_reopen_parent_issue(
 
 
 def _close_resolved_parent_issues(
-    parent_issues: dict[int, Issue],
     issue_index: IssueIndex,
     *,
     dry_run: bool,
@@ -315,8 +317,8 @@ def _close_resolved_parent_issues(
     """Close open parent issues whose known child issues are all closed."""
     child_issues_by_rule_id: dict[str, list[Issue]] = {}
 
-    for parent_issue in parent_issues.values():
-        secmeta = load_secmeta(parent_issue.body)
+    for child_issue in [*issue_index.children, *issue_index.unkeyed_children]:
+        secmeta = load_secmeta(child_issue.body)
         if secmeta.get("type", "").strip().lower() != SECMETA_TYPE_CHILD:
             continue
 
@@ -324,7 +326,7 @@ def _close_resolved_parent_issues(
         if not rule_id:
             continue
 
-        child_issues_by_rule_id.setdefault(rule_id, []).append(parent_issue)
+        child_issues_by_rule_id.setdefault(rule_id, []).append(child_issue)
 
     for rule_id, parent_issue in issue_index.parent_by_rule_id.items():
         if parent_issue.state.lower() == "closed":
@@ -355,6 +357,7 @@ def _close_resolved_parent_issues(
             )
             stats.parents_closed += 1
             bump_severity(stats.parents_closed_by_severity, parent_severity)
+            parent_issue.state = "closed"
             continue
 
         if gh_issue_edit_state(repo, parent_issue.number, "closed"):
@@ -555,6 +558,14 @@ def _handle_new_child_issue(
         # Mirror the real path so the run's posture count includes this issue.
         mirrored = Issue(number=0, state="open", title=title, body=body)
         _index_child_issue(sync.issue_index, mirrored, identity_key=ctx.identity_key, alert_hash=ctx.alert_hash)
+        maybe_reopen_parent_issue(
+            ctx.repo,
+            parent_issue,
+            rule_id=ctx.rule_id,
+            dry_run=True,
+            stats=sync.stats,
+            severity=ctx.severity,
+        )
         if sync.priority_sync is not None:
             sync.priority_sync.enqueue(ctx.repo, 0, ctx.severity, sync.severity_priority_map)
         return
@@ -1124,7 +1135,7 @@ def sync_alerts_and_issues(
         stats=sync.stats,
         issue_changes=issue_changes,
     )
-    _close_resolved_parent_issues(issues, issue_index, dry_run=dry_run, stats=sync.stats)
+    _close_resolved_parent_issues(issue_index, dry_run=dry_run, stats=sync.stats)
 
     _log_sync_summary(sync.stats, dry_run=dry_run)
 

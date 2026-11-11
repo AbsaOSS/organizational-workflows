@@ -1,4 +1,4 @@
-# How to Onboard to Security Automation
+# How Onboard to Security Automation
 
 ## Overview
 

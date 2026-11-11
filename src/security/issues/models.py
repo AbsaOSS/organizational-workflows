@@ -39,12 +39,16 @@ class IssueIndex:
     Fingerprint ordinal, or plain duplicates), so each map keeps one preferred issue per key - open
     before closed, then the lowest number - and is never enumerated. The Result Hash map also catches
     `sast` issues created before the Finding Identity was adopted, when only the Result Hash was stored.
+
+    `unkeyed_children` lists child issues whose Secmeta stores neither key. They cannot be matched,
+    closed or counted; they are kept only so an open one still keeps its parent issue open.
     """
 
     parent_by_rule_id: dict[str, Issue]
     child_by_identity_key: dict[str, Issue]
     child_by_alert_hash: dict[str, Issue] = field(default_factory=dict)
     children: list[Issue] = field(default_factory=list)
+    unkeyed_children: list[Issue] = field(default_factory=list)
 
 
 @dataclass

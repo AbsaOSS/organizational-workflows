@@ -4,19 +4,17 @@
 
 This guide walks you through onboarding your repository to **Security Automation** step by step. When you are done, a nightly workflow will fetch AquaSec scan findings for your repository and turn them into a managed GitHub Issues backlog.
 
-> For a business-level overview of what the solution does and why, see the [Security Automation docs](/knowledge-base/security-automation).
+> For a business-level overview of what the solution does and why, see the [Security Automation docs](../security-automation).
 
-**What you will do:**
-
-1. Check the prerequisites.
-2. Collect your AquaSec identifiers.
-3. Store the credentials as GitHub secrets.
-4. Add the caller workflow to your repository.
-5. Run it in dry-run mode, then switch to live mode.
+- **Step 0:** Check the prerequisites.
+- **Step 1:** Collect your AquaSec identifiers.
+- **Step 2:** Store the credentials as GitHub secrets.
+- **Step 3:** Add the caller workflow to your repository.
+- **Step 4:** Run it in dry-run mode, then switch to live mode.
 
 ---
 
-## Prerequisites
+## Step 0: Prerequisites
 
 Make sure you have the following before you start:
 
@@ -147,15 +145,12 @@ From now on, the workflow keeps the backlog in sync on every run: issues are reo
 | Priority is not set on the project board            | `project-number` and `project-org` must all be set, and the token needs access to the project.                                |
 | No Teams card arrives                               | `TEAMS_WEBHOOK_URL` secret must be set. A card is sent only when a child issue was opened, reopened or closed during the run. |
 
-Still stuck? Open an issue or start a discussion:
-
-- <a href="https://github.com/AbsaOSS/organizational-workflows/issues" target="_blank" rel="noopener noreferrer">Issues</a>
-- <a href="https://github.com/AbsaOSS/organizational-workflows/discussions" target="_blank" rel="noopener noreferrer">Discussions</a>
+> Still stuck? Open an <a href="https://github.com/AbsaOSS/organizational-workflows/issues" target="_blank" rel="noopener noreferrer">Issue</a> or start a <a href="https://github.com/AbsaOSS/organizational-workflows/discussions" target="_blank" rel="noopener noreferrer">Discussion</a>. Happy to help.
 
 ---
 
 ## See Also
 
-- [Security Automation docs](/knowledge-base/security-automation): what the solution does and why
+- [Security Automation docs](../security-automation): what the solution does and why
 - [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): running the pipeline locally, CLI flags and contributor details
 - [Example Caller Workflow](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository

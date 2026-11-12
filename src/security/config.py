@@ -36,7 +36,6 @@ class SecurityConfig:
 
     aqua_key: str
     aqua_secret: str
-    aqua_group_id: str
     aqua_repository_id: str
     repo: str
     dry_run: bool = False
@@ -69,7 +68,6 @@ class SecurityConfig:
         return cls(
             aqua_key=os.environ.get("AQUA_KEY", ""),
             aqua_secret=os.environ.get("AQUA_SECRET", ""),
-            aqua_group_id=os.environ.get("AQUA_GROUP_ID", ""),
             aqua_repository_id=os.environ.get("AQUA_REPOSITORY_ID", ""),
             repo=args.repo or os.environ.get("GITHUB_REPOSITORY", ""),
             dry_run=bool(args.dry_run),
@@ -93,8 +91,6 @@ class SecurityConfig:
             errors.append("AQUA_KEY: not provided.")
         if not self.aqua_secret:
             errors.append("AQUA_SECRET: not provided.")
-        if not self.aqua_group_id:
-            errors.append("AQUA_GROUP_ID: not provided.")
         if not self.aqua_repository_id:
             errors.append("AQUA_REPOSITORY_ID: not provided.")
         else:

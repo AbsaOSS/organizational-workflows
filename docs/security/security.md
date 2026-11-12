@@ -240,7 +240,6 @@ Adopt the security automation by adding a short caller workflow to your reposito
 | --- | --- | --- |
 | `AQUA_KEY` | Yes | AquaSec API key |
 | `AQUA_SECRET` | Yes | AquaSec API secret |
-| `AQUA_GROUP_ID` | Yes | AquaSec group identifier |
 | `AQUA_REPOSITORY_ID` | Yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | No | Teams webhook for run notifications |
 

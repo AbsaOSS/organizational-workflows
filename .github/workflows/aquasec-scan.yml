@@ -36,16 +36,6 @@ on:
         type: boolean
         default: false
 
-      severity-priority-map:
-        description: >
-          Comma-separated severity=priority pairs that map alert severities to
-          priority values on the GitHub Project (e.g.'Critical=Blocker,High=Urgent,Medium=Normal').
-          Only listed severities get a priority. Unlisted ones are left empty. When not set, priority
-          is skipped entirely.
-        required: false
-        type: string
-        default: ''
-
       project-number:
         description: >
           GitHub Projects V2 number (org-level) where a Priority single-select
@@ -78,8 +68,6 @@ on:
       AQUA_KEY:
         required: true
       AQUA_SECRET:
-        required: true
-      AQUA_GROUP_ID:
         required: true
       AQUA_REPOSITORY_ID:
         required: true
@@ -120,10 +108,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           AQUA_KEY: ${{ secrets.AQUA_KEY }}
           AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
-          AQUA_GROUP_ID: ${{ secrets.AQUA_GROUP_ID }}
           AQUA_REPOSITORY_ID: ${{ secrets.AQUA_REPOSITORY_ID }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          SEVERITY_PRIORITY_MAP: ${{ inputs.severity-priority-map }}
           PROJECT_NUMBER: ${{ inputs.project-number }}
           PROJECT_ORG: ${{ inputs.project-org }}
           MIN_SEVERITY: ${{ inputs.min-severity }}

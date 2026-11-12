@@ -32,7 +32,7 @@ def _aqua_env(monkeypatch):
     """Set required AquaSec env vars for all tests."""
     monkeypatch.setenv("AQUA_KEY", "test-key")
     monkeypatch.setenv("AQUA_SECRET", "test-secret")
-    monkeypatch.setenv("AQUA_GROUP_ID", "12345")
+    monkeypatch.delenv("AQUA_GROUP_ID", raising=False)
     monkeypatch.setenv("AQUA_REPOSITORY_ID", "abc12345-e89b-12d3-a456-426614174000")
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
 
@@ -145,8 +145,9 @@ def test_dry_run_is_forwarded_to_the_label_creator(mocker):
 
 
 def test_pipeline_success_returns_0(mocker):
-    _mock_pipeline(mocker)
+    mocks = _mock_pipeline(mocker)
     assert main(["--repo", REPO]) == 0
+    mocks["auth"].assert_called_once_with("test-key", "test-secret")
 
 
 def test_pipeline_calls_notify(mocker):

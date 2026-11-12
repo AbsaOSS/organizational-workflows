@@ -124,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # Authenticate with AquaSec
-    authenticator = AquaSecAuthenticator(config.aqua_key, config.aqua_secret, config.aqua_group_id)
+    authenticator = AquaSecAuthenticator(config.aqua_key, config.aqua_secret)
     bearer_token = authenticator.authenticate()
 
     # Fetch scan findings

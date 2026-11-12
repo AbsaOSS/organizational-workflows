@@ -28,27 +28,6 @@ Make sure you have the following before you start:
 
 ## Step 1: Collect Your AquaSec Identifiers
 
-You need two identifiers from AquaSec: the **Group ID** and the **Repository ID**.
-
-### How to Obtain the AquaSec Group ID
-
-**Option 1: Via User Management (requires User Management access)**
-
-1. Navigate to **User Management** → **Groups** in the AquaSec platform.
-2. Search for and select your specific group.
-3. Click on the group to view its details.
-4. The **Group ID** is displayed at the end of the URL after `/groups/`.
-
-**Option 2: Via JWT Token Inspection**
-
-1. Open your browser's Developer Tools and navigate to the **Network** tab.
-2. Reload the AquaSec platform and locate any API request in the **Request Headers** section.
-3. Copy your **Authorization Bearer token** from the headers.
-4. Decode the token using for example <a href="https://jwt.io/" target="_blank" rel="noopener noreferrer">jwt.io</a>.
-5. In the decoded payload, look for the **user_groups_user** field containing your accessible Group IDs.
-
-> **Security tip:** Treat the token like a password. Do not share it or paste it anywhere except a trusted decoder.
-
 ### How to Obtain the AquaSec Repository ID
 
 1. Navigate to **Code Repositories** in the AquaSec platform.
@@ -69,14 +48,13 @@ The workflow reads its credentials from GitHub secrets.
 |----------------------|----------|--------------------------------------|
 | `AQUA_KEY`           | Yes      | AquaSec API Key credential           |
 | `AQUA_SECRET`        | Yes      | AquaSec API Secret credential        |
-| `AQUA_GROUP_ID`      | Yes      | AquaSec Group ID for authentication  |
 | `AQUA_REPOSITORY_ID` | Yes      | AquaSec Repository ID (UUID format)  |
 | `TEAMS_WEBHOOK_URL`  | No       | Microsoft Teams Incoming Webhook URL |
 
 **For the AbsaOSS / absa-group organizations:**
 
 - `AQUA_KEY` and `AQUA_SECRET` are stored as **organization secrets** and are automatically available to all repositories.
-- You only need to add `AQUA_GROUP_ID` and `AQUA_REPOSITORY_ID` as **repository secrets**.
+- You only need to add `AQUA_REPOSITORY_ID` as a **repository secret**.
 
 To add a repository secret, open your repository on GitHub and go to **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
 
@@ -91,7 +69,7 @@ The caller workflow delegates to the shared reusable workflow in this repository
 ```yaml
 jobs:
   scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@v1.1.0 # Should be changed to the newest release SHA
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@<commit-sha> # Use a revision with group-free authentication
     with:
       dry-run: true
       min-severity: 'high' # Only high and critical severity alerts will be promoted to issues
@@ -100,7 +78,6 @@ jobs:
     secrets:
       AQUA_KEY: ${{ secrets.AQUA_KEY }}
       AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
-      AQUA_GROUP_ID: ${{ secrets.AQUA_GROUP_ID }}
       AQUA_REPOSITORY_ID: ${{ secrets.AQUA_REPOSITORY_ID }}
       TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
 ```
@@ -139,7 +116,7 @@ From now on, the workflow keeps the backlog in sync on every run: issues are reo
 
 | Symptom                                             | What to check                                                                                                                 |
 |-----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
-| Authentication with AquaSec fails                   | Verify `AQUA_KEY`, `AQUA_SECRET` and `AQUA_GROUP_ID`, and make sure the secrets are available to the repository.              |
+| Authentication with AquaSec fails                   | Verify `AQUA_KEY` and `AQUA_SECRET`, and make sure the secrets are available to the repository.                              |
 | No findings are fetched                             | Verify `AQUA_REPOSITORY_ID` and that the repository is onboarded in AquaSec.                                                  |
 | No issues are created                               | Check whether `dry-run` is still `true`, and whether `min-severity` is higher than your findings.                             |
 | Priority is not set on the project board            | `project-number` and `project-org` must all be set, and the token needs access to the project.                                |

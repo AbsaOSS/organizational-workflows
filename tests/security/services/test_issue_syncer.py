@@ -29,7 +29,6 @@ def config():
     return SecurityConfig(
         aqua_key="k",
         aqua_secret="s",
-        aqua_group_id="g",
         aqua_repository_id="00000000-0000-0000-0000-000000000000",
         repo="org/repo",
         severity_priority_map="Critical=P0",

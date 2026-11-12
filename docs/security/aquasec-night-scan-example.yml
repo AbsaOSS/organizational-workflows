@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@v1.1.0 # Should be changed to newest release SHA
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@<commit-sha> # Should be changed to newest release SHA
     with:
       dry-run: ${{ inputs.dry-run || false }}
       min-severity: 'high' # Only high and critical severity alerts will be promoted to issues
@@ -49,6 +49,5 @@ jobs:
     secrets:
       AQUA_KEY: ${{ secrets.AQUA_KEY }}
       AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
-      AQUA_GROUP_ID: ${{ secrets.AQUA_GROUP_ID }}
       AQUA_REPOSITORY_ID: ${{ secrets.AQUA_REPOSITORY_ID }}
       TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}

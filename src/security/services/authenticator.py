@@ -32,10 +32,9 @@ logger = logging.getLogger(__name__)
 class AquaSecAuthenticator:
     """Authenticates with the AquaSec API and returns a bearer token."""
 
-    def __init__(self, api_key: str, api_secret: str, group_id: str) -> None:
+    def __init__(self, api_key: str, api_secret: str) -> None:
         self.api_key = api_key
         self.api_secret = api_secret
-        self.group_id = group_id
 
     def _generate_signature(self, string_to_sign: str) -> str:
         """Generate HMAC-SHA256 signature for AquaSec API request.
@@ -67,7 +66,7 @@ class AquaSecAuthenticator:
         method = "POST"
         auth_endpoint = f"{AQUA_AUTH_URL}/v2/tokens"
         post_body = json.dumps(
-            {"group_id": int(self.group_id), "allowed_endpoints": ["ANY:*"], "validity": 240},
+            {"allowed_endpoints": ["ANY:*"], "validity": 240},
             separators=(",", ":"),
         )
         string_to_sign = f"{timestamp}{method}/v2/tokens{post_body}"

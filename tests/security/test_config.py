@@ -45,7 +45,6 @@ def _make_config(**kwargs) -> SecurityConfig:
     defaults = {
         "aqua_key": "test-key",
         "aqua_secret": "test-secret",
-        "aqua_group_id": "12345",
         "aqua_repository_id": "abc12345-e89b-12d3-a456-426614174000",
         "repo": "my-org/my-repo",
     }
@@ -70,13 +69,6 @@ def test_validate_raises_system_exit_when_aqua_key_missing():
 
 def test_validate_raises_system_exit_when_aqua_secret_missing():
     config = _make_config(aqua_secret="")
-
-    with pytest.raises(SystemExit):
-        config.validate()
-
-
-def test_validate_raises_system_exit_when_group_id_missing():
-    config = _make_config(aqua_group_id="")
 
     with pytest.raises(SystemExit):
         config.validate()
@@ -114,16 +106,16 @@ def test_validate_raises_system_exit_when_repo_no_slash():
 
 
 def test_load_reads_env_vars(monkeypatch):
+    monkeypatch.delenv("AQUA_GROUP_ID", raising=False)
     monkeypatch.setenv("AQUA_KEY", "env-key")
     monkeypatch.setenv("AQUA_SECRET", "env-secret")
-    monkeypatch.setenv("AQUA_GROUP_ID", "env-group")
     monkeypatch.setenv("AQUA_REPOSITORY_ID", "abc12345-e89b-12d3-a456-426614174000")
 
     config = SecurityConfig.load(_make_args())
+    config.validate()
 
     assert "env-key" == config.aqua_key
     assert "env-secret" == config.aqua_secret
-    assert "env-group" == config.aqua_group_id
     assert "abc12345-e89b-12d3-a456-426614174000" == config.aqua_repository_id
 
 
@@ -164,7 +156,6 @@ def test_load_falls_back_to_github_repository_env(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", "env-org/env-repo")
     monkeypatch.setenv("AQUA_KEY", "k")
     monkeypatch.setenv("AQUA_SECRET", "s")
-    monkeypatch.setenv("AQUA_GROUP_ID", "g")
     monkeypatch.setenv("AQUA_REPOSITORY_ID", "r")
 
     config = SecurityConfig.load(_make_args(repo=""))

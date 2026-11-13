@@ -79,6 +79,9 @@ on:
         required: true
       AQUA_SECRET:
         required: true
+      AQUA_GROUP_ID:
+        description: 'Deprecated: accepted for backward compatibility only. Not used for authentication anymore.'
+        required: false
       AQUA_REPOSITORY_ID:
         required: true
       TEAMS_WEBHOOK_URL:

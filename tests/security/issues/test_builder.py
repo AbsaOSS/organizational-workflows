@@ -222,11 +222,28 @@ def test_parent_body_confidence(vuln_alert: Alert) -> None:
     (None, "abcdef12", "medium", "[SEC:MEDIUM][FP=abcdef12] Security finding"),
     (None, "abcdef12", "", "[SEC][FP=abcdef12] Security finding"),
     ("A description", "", "critical", "[SEC:CRITICAL][FP=N/A] A description"),
-], ids=["full_format", "no_description_fallback", "no_severity", "empty_fingerprint"])
+    ("A description", "abcdef123456_123", "high", "[SEC:HIGH][FP=abcdef12_123] A description"),
+    ("A description", "abcdef123456_002", "high", "[SEC:HIGH][FP=abcdef12_002] A description"),
+    ("A description", "abc_0", "high", "[SEC:HIGH][FP=abc_0] A description"),
+    ("A description", "abcdef123456_suffix", "high", "[SEC:HIGH][FP=abcdef12] A description"),
+], ids=[
+    "full_format", "no_description_fallback", "no_severity", "empty_fingerprint",
+    "multi_digit_ordinal", "leading_zero_ordinal", "short_base", "nonnumeric_suffix",
+])
 def test_build_issue_title(
     description: str | None, identity_key: str, severity: str, expected: str
 ) -> None:
     assert expected == build_issue_title(description, identity_key, severity)
+
+
+def test_build_issue_title_tells_occurrences_of_one_fingerprint_base_apart() -> None:
+    base = "67529c72212987bef9797e0c8e343fcb09a89e6455493c93a8419620c2a735cc"
+    titles = {build_issue_title("A description", f"{base}_{ordinal}", "high") for ordinal in range(3)}
+    assert {
+        "[SEC:HIGH][FP=67529c72_0] A description",
+        "[SEC:HIGH][FP=67529c72_1] A description",
+        "[SEC:HIGH][FP=67529c72_2] A description",
+    } == titles
 
 
 # =====================================================================

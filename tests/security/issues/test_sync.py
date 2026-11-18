@@ -936,13 +936,20 @@ def test_rebuild_body_dry_run(sast_alert: Alert) -> None:
 
 
 def test_sync_title_drift_corrected(mocker: MockerFixture) -> None:
-    """Title is updated when it drifts from the expected format."""
+    """A legacy title gains its ordinal once during normal sync."""
     mock_title = mocker.patch("security.issues.sync.gh_issue_edit_title", return_value=True)
-    issue = Issue(number=1, state="open", title="Wrong title", body="b")
-    ctx = _make_alert_context(rule_name="sast", rule_id="CVE-2026-1234", identity_key="fp_test_123")
+    issue = Issue(
+        number=1, state="open", title="[SEC:HIGH][FP=abcdef12] Test finding description", body="b"
+    )
+    ctx = _make_alert_context(identity_key="abcdef123456_2")
     sync = _make_sync_context()
     _sync_child_title(ctx=ctx, sync=sync, child_issue=issue)
-    mock_title.assert_called_once()
+    _sync_child_title(ctx=ctx, sync=sync, child_issue=issue)
+
+    expected_title = "[SEC:HIGH][FP=abcdef12_2] Test finding description"
+    mock_title.assert_called_once_with("test-org/test-repo", 1, expected_title)
+    assert expected_title == issue.title
+    assert 1 == sync.stats.children_title_updated
 
 
 def test_sync_title_already_correct(mocker: MockerFixture) -> None:
@@ -956,12 +963,19 @@ def test_sync_title_already_correct(mocker: MockerFixture) -> None:
     mock_title.assert_not_called()
 
 
-def test_sync_title_dry_run() -> None:
+def test_sync_title_dry_run(mocker: MockerFixture, caplog: pytest.LogCaptureFixture) -> None:
     """Dry-run mode logs instead of calling gh."""
+    mock_title = mocker.patch("security.issues.sync.gh_issue_edit_title")
     issue = Issue(number=1, state="open", title="Wrong", body="b")
-    ctx = _make_alert_context()
+    ctx = _make_alert_context(identity_key="abcdef123456_2")
     sync = _make_sync_context(dry_run=True)
-    _sync_child_title(ctx=ctx, sync=sync, child_issue=issue)
+    with caplog.at_level(logging.DEBUG):
+        _sync_child_title(ctx=ctx, sync=sync, child_issue=issue)
+
+    assert "[SEC:HIGH][FP=abcdef12_2] Test finding description" in caplog.text
+    assert "Wrong" == issue.title
+    assert 1 == sync.stats.children_title_updated
+    mock_title.assert_not_called()
 
 
 # =====================================================================
@@ -1845,6 +1859,10 @@ def test_sync_matches_renumbered_finding_by_result_hash(mocker: MockerFixture, s
     assert removed_occurrence.state == "closed"
     assert surviving_occurrence.state == "open"
     assert load_secmeta(surviving_occurrence.body)["fingerprint"] == "fp_base_0"
+    assert (
+        f"[SEC:{sast_alert.metadata.severity.upper()}][FP=fp_base_0] {sast_alert.metadata.rule_description}"
+        == surviving_occurrence.title
+    )
 
 
 def _renumbered_sast_issues(sast_alert: Alert) -> tuple[dict[int, Issue], Issue]:

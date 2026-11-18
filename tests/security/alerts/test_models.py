@@ -18,8 +18,26 @@
 
 import pytest
 
-from security.alerts.models import AlertMetadata, RuleDetails
+from security.alerts.models import AlertMetadata, RuleDetails, split_aquasec_fingerprint
 from security.constants import NOT_AVAILABLE
+
+
+# split_aquasec_fingerprint
+
+
+@pytest.mark.parametrize("identity_key, expected", [
+    ("abcdef123456_0", ("abcdef123456", "0")),
+    ("abcdef123456_123", ("abcdef123456", "123")),
+    ("base_with_underscores_002", ("base_with_underscores", "002")),
+    ("", None),
+    ("abcdef123456", None),
+    ("_0", None),
+    ("base_", None),
+    ("base_suffix", None),
+    ("base_-1", None),
+])
+def test_split_aquasec_fingerprint(identity_key: str, expected: tuple[str, str] | None) -> None:
+    assert expected == split_aquasec_fingerprint(identity_key)
 
 
 # =====================================================================

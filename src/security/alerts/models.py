@@ -152,6 +152,19 @@ class Alert:
             repo=repo or str(d.get("_repo", "")),
         )
 
+    def differing_fields(self, others: list["Alert"]) -> list[str]:
+        """List parsed fields (except the alert number) where any of *others* differs from this Alert."""
+        return [
+            f"{section}.{item.name}"
+            for section in ("metadata", "alert_details", "rule_details")
+            for item in fields(getattr(self, section))
+            if (section, item.name) != ("metadata", "alert_number")
+            if any(
+                getattr(getattr(other, section), item.name) != getattr(getattr(self, section), item.name)
+                for other in others
+            )
+        ]
+
 
 @dataclass
 class LoadedAlerts:

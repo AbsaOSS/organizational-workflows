@@ -24,6 +24,7 @@ This is the main business-logic module that ties together all other
 
 import logging
 import re
+from collections import Counter
 
 from core.helpers import normalize_path
 from core.github.issues import (
@@ -60,6 +61,7 @@ from .builder import (
 )
 from .models import (
     AlertContext,
+    ChildMatchResult,
     IssueIndex,
     IssueChange,
     ParentOriginalBodies,
@@ -208,10 +210,114 @@ def _stable_fingerprint_bases(
     return {base for base, ids in alert_ids.items() if ids == issue_ids.get(base, set())} - conflicting_bases
 
 
-def resolve_child_matches(alerts: dict[int, Alert], issue_index: IssueIndex) -> dict[int, Issue]:
+def _child_match_signature(issue: Issue) -> tuple[str, str, str]:
+    """Describe stored identity and display evidence, ignoring Secmeta bookkeeping differences."""
+    meta = load_secmeta(issue.body)
+    identity = meta.get("fingerprint", "").strip() or meta.get("alert_hash", "").strip()
+    alert_hash = meta.get("alert_hash", "").strip() or identity
+    display = replace_secmeta(issue.body, {}).replace("\r\n", "\n").strip()
+    return identity, alert_hash, display
+
+
+def _shared_hash_matches(
+    alerts: dict[int, Alert], issue_index: IssueIndex, result: ChildMatchResult, *, want_open: bool, dry_run: bool
+) -> set[int]:
+    """Reach every shared-hash owner using existing identity and rendered display evidence."""
+    handled: set[int] = set()
+    children_by_hash: dict[str, list[Issue]] = {}
+    signatures = {id(issue): _child_match_signature(issue) for issue in issue_index.children}
+    for issue in issue_index.children:
+        children_by_hash.setdefault(signatures[id(issue)][1], []).append(issue)
+    alerts_by_hash: dict[str, list[int]] = {}
+    for key, alert in alerts.items():
+        if alert.alert_details.alert_hash:
+            alerts_by_hash.setdefault(alert.alert_details.alert_hash, []).append(key)
+
+    prefix = DRY_RUN_PREFIX if dry_run else LOGGING_PREFIX
+    for alert_hash, keys in alerts_by_hash.items():
+        owners = children_by_hash.get(alert_hash, [])
+        if not owners or (len(keys) == 1 and len({signatures[id(issue)] for issue in owners}) == 1):
+            continue
+        handled.update(keys)
+        displays = {
+            key: (render_secmeta({}) + "\n\n" + build_child_issue_body(alerts[key])).replace("\r\n", "\n").strip()
+            for key in keys
+        }
+        identities = Counter(alerts[key].alert_details.identity_key for key in keys)
+        identity_displays = Counter((alerts[key].alert_details.identity_key, displays[key]) for key in keys)
+        display_counts = Counter(displays.values())
+        claimed_signatures = {signatures[id(issue)] for issue in result.matches.values()}
+        for exact_display in (True, False):
+            for key in keys:
+                if key in result.matches:
+                    continue
+                identity = alerts[key].alert_details.identity_key
+                candidates = [
+                    issue
+                    for issue in owners
+                    if _is_open(issue) == want_open
+                    and signatures[id(issue)] not in claimed_signatures
+                    and signatures[id(issue)][0] == identity
+                ]
+                if exact_display:
+                    if identity_displays[(identity, displays[key])] != 1:
+                        continue
+                    candidates = [issue for issue in candidates if signatures[id(issue)][2] == displays[key]]
+                    # Legacy Result Hash ownership is usable only if the display identifies one source row.
+                    if not candidates and display_counts[displays[key]] == 1:
+                        candidates = [
+                            issue
+                            for issue in owners
+                            if _is_open(issue) == want_open
+                            and signatures[id(issue)] not in claimed_signatures
+                            and signatures[id(issue)][0] == alert_hash
+                            and signatures[id(issue)][2] == displays[key]
+                        ]
+                elif identities[identity] != 1:
+                    continue
+                if candidates and len({signatures[id(issue)] for issue in candidates}) == 1:
+                    winner = min(candidates, key=lambda issue: issue.number)
+                    result.matches[key] = winner
+                    claimed_signatures.add(signatures[id(winner)])
+
+        if want_open:
+            continue
+        remaining = [issue for issue in owners if signatures[id(issue)] not in claimed_signatures]
+        unresolved = [key for key in keys if key not in result.matches]
+        if remaining and unresolved:
+            result.unresolved_keys.update(unresolved)
+            result.protected_children.extend(remaining)
+            logging.warning(
+                "%sUnresolved ownership for AquaSec response Result Hash %s (Category %s, Rule %s); "
+                "differing parsed fields: %s; candidate Child Issues %s left unchanged; "
+                "no replacement creation or closure; needs review",
+                prefix,
+                alert_hash[:12],
+                alerts[keys[0]].metadata.rule_name,
+                alerts[keys[0]].metadata.rule_id,
+                ", ".join(alerts[keys[0]].differing_fields([alerts[key] for key in keys[1:]]))
+                or "stored display no longer matches",
+                ", ".join(f"#{issue.number}" for issue in sorted(remaining, key=lambda issue: issue.number)),
+            )
+        else:
+            logging.info(
+                "%sResolved shared Result Hash %s for %d separate Alerts using Finding Identity and display evidence "
+                "(%d existing Children matched)",
+                prefix,
+                alert_hash[:12],
+                len(keys),
+                sum(key in result.matches for key in keys),
+            )
+    return handled
+
+
+def resolve_child_matches(
+    alerts: dict[int, Alert], issue_index: IssueIndex, *, dry_run: bool = False
+) -> ChildMatchResult:
     """Match every alert of the scan to at most one existing child issue, each issue claimed once.
 
-    Returns the matched issue per key of *alerts*; an alert without an entry needs a new issue.
+    Returns proven matches and unresolved candidates protected from writes and closure.
+    Shared Result Hashes reach every relevant Child within the open and closed matching passes.
 
     Matching runs over the whole scan in three passes, so the strongest evidence wins regardless of
     alert order:
@@ -230,11 +336,14 @@ def resolve_child_matches(alerts: dict[int, Alert], issue_index: IssueIndex) -> 
     history and Waivers — to another finding. When the guard refuses, the finding gets a new issue
     and the unclaimed one closes.
     """
-    matches: dict[int, Issue] = {}
-    claimed: set[int] = set()  # id() of claimed issues - dry-run placeholders all share number 0
+    result = ChildMatchResult()
+    handled = _shared_hash_matches(alerts, issue_index, result, want_open=True, dry_run=dry_run)
+    matches = result.matches
+    claimed = {id(issue) for issue in matches.values()}
+    protected = {id(issue) for issue in result.protected_children}
 
     def _claim(alert_key: int, candidate: Issue | None, *, want_open: bool | None = None) -> bool:
-        if candidate is None or id(candidate) in claimed:
+        if candidate is None or id(candidate) in claimed or id(candidate) in protected:
             return False
         if want_open is not None and _is_open(candidate) != want_open:
             return False
@@ -245,25 +354,39 @@ def resolve_child_matches(alerts: dict[int, Alert], issue_index: IssueIndex) -> 
     def _claim_by_result_hash(*, want_open: bool) -> None:
         for alert_key, alert in alerts.items():
             alert_hash = alert.alert_details.alert_hash
-            if alert_key in matches or not alert_hash:
+            if alert_key in matches or alert_key in handled or not alert_hash:
                 continue
             if not _claim(alert_key, issue_index.child_by_identity_key.get(alert_hash), want_open=want_open):
                 _claim(alert_key, issue_index.child_by_alert_hash.get(alert_hash), want_open=want_open)
 
     _claim_by_result_hash(want_open=True)
 
-    unmatched_keys = [alert_key for alert_key in alerts if alert_key not in matches]
+    unmatched_keys = [alert_key for alert_key in alerts if alert_key not in matches and alert_key not in handled]
+    unmatched_keys.extend(key for key in handled if key not in matches)
     stable_bases = _stable_fingerprint_bases(alerts, issue_index, unmatched_keys, claimed)
+    identities = Counter(alert.alert_details.identity_key for alert in alerts.values())
     for alert_key in unmatched_keys:
         alert = alerts[alert_key]
         identity_key = alert.alert_details.identity_key
         base = _alert_fingerprint_base(alert)
         if identity_key and (base is None or base in stable_bases):
-            _claim(alert_key, issue_index.child_by_identity_key.get(identity_key))
+            if alert_key in handled:
+                candidates = [
+                    issue
+                    for issue in issue_index.children
+                    if _is_open(issue) and _child_match_signature(issue)[0] == identity_key and id(issue) not in claimed
+                ]
+                if identities[identity_key] == 1 and len({_child_match_signature(issue) for issue in candidates}) == 1:
+                    _claim(alert_key, min(candidates, key=lambda issue: issue.number))
+            else:
+                _claim(alert_key, issue_index.child_by_identity_key.get(identity_key))
 
+    _shared_hash_matches(alerts, issue_index, result, want_open=False, dry_run=dry_run)
+    claimed.update(id(issue) for issue in matches.values())
+    protected.update(id(issue) for issue in result.protected_children)
     _claim_by_result_hash(want_open=False)
 
-    return matches
+    return result
 
 
 def find_parent_issue(issue_index: IssueIndex, *, rule_id: str) -> Issue | None:
@@ -313,9 +436,11 @@ def _close_resolved_parent_issues(
     *,
     dry_run: bool,
     stats: SyncStats,
+    protected_children: list[Issue] | None = None,
 ) -> None:
     """Close open parent issues whose known child issues are all closed."""
     child_issues_by_rule_id: dict[str, list[Issue]] = {}
+    protected_rules = {load_secmeta(issue.body).get("rule_id", "").strip() for issue in protected_children or []}
 
     for child_issue in [*issue_index.children, *issue_index.unkeyed_children]:
         secmeta = load_secmeta(child_issue.body)
@@ -329,7 +454,7 @@ def _close_resolved_parent_issues(
         child_issues_by_rule_id.setdefault(rule_id, []).append(child_issue)
 
     for rule_id, parent_issue in issue_index.parent_by_rule_id.items():
-        if parent_issue.state.lower() == "closed":
+        if parent_issue.state.lower() == "closed" or rule_id in protected_rules:
             continue
 
         child_issues = child_issues_by_rule_id.get(rule_id, [])
@@ -816,11 +941,13 @@ def ensure_issue(
     sync: SyncContext,
     *,
     matched_issue: Issue | None,
+    parent_alert: Alert | None = None,
 ) -> None:
     """Process a single alert: create or update its child issue and parent.
 
     *matched_issue* is the alert's existing child issue as resolved by ``resolve_child_matches``
     over the whole scan, or ``None`` when a new child issue is needed.
+    *parent_alert* supplies deterministic Rule-level content without changing the Child's Alert.
     """
     alert_number = alert.metadata.alert_number
     rule_id = alert.metadata.rule_id
@@ -842,7 +969,7 @@ def ensure_issue(
     repo_full = alert.repo
 
     parent_issue = ensure_parent_issue(
-        alert,
+        parent_alert if parent_alert is not None else alert,
         sync.issues,
         sync.issue_index,
         dry_run=sync.dry_run,
@@ -950,6 +1077,7 @@ def _close_resolved_child_issues(
     dry_run: bool,
     stats: SyncStats,
     issue_changes: list[IssueChange] | None = None,
+    protected_children: list[Issue] | None = None,
 ) -> None:
     """Close open child issues that no alert in the scan results matched.
 
@@ -957,7 +1085,7 @@ def _close_resolved_child_issues(
     claimed by ``resolve_child_matches``. Every alert is matched, including those below
     min-severity, so their issues stay open.
     """
-    matched_ids = {id(issue) for issue in matched_issues}
+    matched_ids = {id(issue) for issue in [*matched_issues, *(protected_children or [])]}
     to_close = [
         child_issue
         for child_issue in child_issues
@@ -1079,6 +1207,24 @@ def _refresh_child_identity(alert: Alert, child_issue: Issue | None, sync: SyncC
     bump_severity(sync.stats.children_body_updated_by_severity, secmeta.get("severity"))
 
 
+def _select_parent_alerts(
+    alerts: dict[int, Alert], unresolved_keys: set[int], *, min_severity: str
+) -> dict[str, Alert]:
+    """Choose highest-Severity Parent content with a stable rendered-content tie-breaker."""
+    eligible = [
+        alert
+        for key, alert in alerts.items()
+        if key not in unresolved_keys and _meets_min_severity(alert.metadata.severity, min_severity)
+    ]
+    representatives: dict[str, Alert] = {}
+    for alert in sorted(
+        eligible,
+        key=lambda item: (-SEVERITY_ORDER.get(item.metadata.severity.lower(), 0), build_parent_issue_body(item)),
+    ):
+        representatives.setdefault(alert.metadata.rule_id, alert)
+    return representatives
+
+
 def sync_alerts_and_issues(
     alerts: dict[int, Alert],
     issues: dict[int, Issue],
@@ -1113,15 +1259,23 @@ def sync_alerts_and_issues(
     )
 
     # Resolve the whole scan before any write, so each existing issue is claimed by one alert at most.
-    child_matches = resolve_child_matches(alerts, issue_index)
+    child_matches = resolve_child_matches(alerts, issue_index, dry_run=dry_run)
     existing_children = list(issue_index.children)
+    parent_alerts = _select_parent_alerts(alerts, child_matches.unresolved_keys, min_severity=min_severity)
 
     for alert_key, alert in alerts.items():
+        if alert_key in child_matches.unresolved_keys:
+            continue
         if not _meets_min_severity(alert.metadata.severity, min_severity):
             # Keep frozen issues matchable without promoting or refreshing their content.
-            _refresh_child_identity(alert, child_matches.get(alert_key), sync)
+            _refresh_child_identity(alert, child_matches.matches.get(alert_key), sync)
             continue
-        ensure_issue(alert, sync, matched_issue=child_matches.get(alert_key))
+        ensure_issue(
+            alert,
+            sync,
+            matched_issue=child_matches.matches.get(alert_key),
+            parent_alert=parent_alerts[alert.metadata.rule_id],
+        )
 
     _flush_parent_body_updates(sync.parent_original_bodies, issues, dry_run=dry_run, stats=sync.stats)
 
@@ -1130,12 +1284,15 @@ def sync_alerts_and_issues(
 
     _close_resolved_child_issues(
         existing_children,
-        list(child_matches.values()),
+        list(child_matches.matches.values()),
         dry_run=dry_run,
         stats=sync.stats,
         issue_changes=issue_changes,
+        protected_children=child_matches.protected_children,
     )
-    _close_resolved_parent_issues(issue_index, dry_run=dry_run, stats=sync.stats)
+    _close_resolved_parent_issues(
+        issue_index, dry_run=dry_run, stats=sync.stats, protected_children=child_matches.protected_children
+    )
 
     _log_sync_summary(sync.stats, dry_run=dry_run)
 

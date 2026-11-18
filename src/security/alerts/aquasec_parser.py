@@ -159,10 +159,14 @@ class AquaSecParser:
             if any(known == alert for known in known_alerts):
                 continue
             if known_alerts:
-                logger.warning(
-                    "%sConflicting Finding data for %s; keeping rows as separate alerts",
+                logger.debug(
+                    "%sAquaSec response rows share %s (Category %s, Rule %s) but differ in %s; "
+                    "keeping separate Alerts; Child Issue ownership will be checked during matching",
                     LOGGING_PREFIX,
                     ", ".join(f"{name} {value}" for name, value in identifiers),
+                    alert.metadata.rule_name,
+                    alert.metadata.rule_id,
+                    ", ".join(known_alerts[0].differing_fields([*known_alerts[1:], alert])),
                 )
             unique_alerts.append(alert)
             for identifier in identifiers:

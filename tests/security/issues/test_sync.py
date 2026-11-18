@@ -21,6 +21,7 @@ orchestration functions with mocked GitHub CLI calls.
 import copy
 import logging
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from pytest_mock import MockerFixture
@@ -51,7 +52,7 @@ from security.issues.sync import (
     sync_alerts_and_issues,
 )
 from security.alerts.models import Alert
-from security.issues.builder import build_issue_title
+from security.issues.builder import build_child_issue_body, build_issue_title, build_parent_issue_body
 from security.issues.models import (
     AlertContext,
     IssueIndex,
@@ -78,6 +79,24 @@ def _alert_with_keys(identity_key: str, alert_hash: str) -> Alert:
         "alert_details": {"identity_key": identity_key, "alert_hash": alert_hash},
         "rule_details": {},
     })
+
+
+def _rendered_child_issue(number: int, alert: Alert, *, state: str = "open", legacy: bool = False) -> Issue:
+    meta = {
+        "type": "child",
+        "fingerprint": alert.alert_details.identity_key,
+        "repo": alert.repo,
+        "rule_id": alert.metadata.rule_id,
+        "severity": alert.metadata.severity,
+    }
+    if not legacy:
+        meta["alert_hash"] = alert.alert_details.alert_hash
+    return Issue(
+        number=number,
+        state=state,
+        title=build_issue_title(alert.metadata.rule_description, alert.alert_details.identity_key, alert.metadata.severity),
+        body=render_secmeta(meta) + "\n\n" + build_child_issue_body(alert),
+    )
 
 
 def _make_alert_context(**overrides: Any) -> AlertContext:
@@ -246,26 +265,26 @@ def test_no_secmeta_skipped() -> None:
 def test_resolve_matches_by_identity() -> None:
     child = _issue_with_secmeta(2, {"type": "child", "fingerprint": "fp_abc"})
     idx = build_issue_index({2: child})
-    assert {1: child} == resolve_child_matches({1: _alert_with_keys("fp_abc", "hash_x")}, idx)
+    assert {1: child} == resolve_child_matches({1: _alert_with_keys("fp_abc", "hash_x")}, idx).matches
 
 
 def test_resolve_matches_nothing() -> None:
     idx = build_issue_index({})
-    assert {} == resolve_child_matches({1: _alert_with_keys("missing", "hash_x")}, idx)
+    assert {} == resolve_child_matches({1: _alert_with_keys("missing", "hash_x")}, idx).matches
 
 
 def test_resolve_matches_by_legacy_hash_in_identity_map() -> None:
     """A pre-change issue storing its result hash under `fingerprint` is found via the Result Hash."""
     child = _issue_with_secmeta(3, {"type": "child", "fingerprint": "hash_old"})
     idx = build_issue_index({3: child})
-    assert {1: child} == resolve_child_matches({1: _alert_with_keys("fp_new", "hash_old")}, idx)
+    assert {1: child} == resolve_child_matches({1: _alert_with_keys("fp_new", "hash_old")}, idx).matches
 
 
 def test_resolve_matches_by_legacy_hash_in_alert_hash_map() -> None:
     """An issue carrying both keys is found when only the Result Hash matches."""
     child = _issue_with_secmeta(4, {"type": "child", "fingerprint": "fp_other", "alert_hash": "hash_old"})
     idx = build_issue_index({4: child})
-    assert {1: child} == resolve_child_matches({1: _alert_with_keys("fp_new", "hash_old")}, idx)
+    assert {1: child} == resolve_child_matches({1: _alert_with_keys("fp_new", "hash_old")}, idx).matches
 
 
 def test_resolve_matches_prefers_exact_result_hash_over_reused_ordinal() -> None:
@@ -273,7 +292,7 @@ def test_resolve_matches_prefers_exact_result_hash_over_reused_ordinal() -> None
     reused_ordinal = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_new"})
     exact_hash = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_x", "alert_hash": "hash_old"})
     idx = build_issue_index({10: reused_ordinal, 20: exact_hash})
-    assert {1: exact_hash} == resolve_child_matches({1: _alert_with_keys("fp_new", "hash_old")}, idx)
+    assert {1: exact_hash} == resolve_child_matches({1: _alert_with_keys("fp_new", "hash_old")}, idx).matches
 
 
 def test_resolve_matches_identity_when_result_hash_matches_nothing() -> None:
@@ -281,7 +300,7 @@ def test_resolve_matches_identity_when_result_hash_matches_nothing() -> None:
     shifted = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_new", "alert_hash": "hash_before_shift"})
     unrelated = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_x", "alert_hash": "hash_other"})
     idx = build_issue_index({10: shifted, 20: unrelated})
-    assert {1: shifted} == resolve_child_matches({1: _alert_with_keys("fp_new", "hash_after_shift")}, idx)
+    assert {1: shifted} == resolve_child_matches({1: _alert_with_keys("fp_new", "hash_after_shift")}, idx).matches
 
 
 def test_resolve_matches_identity_wins_without_aquasec_fingerprint() -> None:
@@ -289,7 +308,7 @@ def test_resolve_matches_identity_wins_without_aquasec_fingerprint() -> None:
     matched = _issue_with_secmeta(10, {"type": "child", "fingerprint": "hash_same"})
     other = _issue_with_secmeta(20, {"type": "child", "fingerprint": "fp_x", "alert_hash": "hash_same"})
     idx = build_issue_index({10: matched, 20: other})
-    assert {1: matched} == resolve_child_matches({1: _alert_with_keys("hash_same", "hash_same")}, idx)
+    assert {1: matched} == resolve_child_matches({1: _alert_with_keys("hash_same", "hash_same")}, idx).matches
 
 
 def test_resolve_matches_claims_each_issue_once() -> None:
@@ -297,7 +316,7 @@ def test_resolve_matches_claims_each_issue_once() -> None:
     child = _issue_with_secmeta(10, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_existing"})
     idx = build_issue_index({10: child})
     alerts = {1: _alert_with_keys("fp_base_0", "hash_inserted"), 2: _alert_with_keys("fp_base_1", "hash_existing")}
-    assert {2: child} == resolve_child_matches(alerts, idx)
+    assert {2: child} == resolve_child_matches(alerts, idx).matches
 
 
 def test_resolve_matches_open_identity_beats_closed_exact_hash() -> None:
@@ -305,7 +324,7 @@ def test_resolve_matches_open_identity_beats_closed_exact_hash() -> None:
     closed_legacy = _issue_with_secmeta(5, {"type": "child", "fingerprint": "hash_old"}, state="closed")
     open_owner = _issue_with_secmeta(9, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_new"})
     idx = build_issue_index({5: closed_legacy, 9: open_owner})
-    assert {1: open_owner} == resolve_child_matches({1: _alert_with_keys("fp_base_0", "hash_old")}, idx)
+    assert {1: open_owner} == resolve_child_matches({1: _alert_with_keys("fp_base_0", "hash_old")}, idx).matches
 
 
 def test_resolve_matches_reopens_closed_issue_by_exact_hash() -> None:
@@ -314,7 +333,7 @@ def test_resolve_matches_reopens_closed_issue_by_exact_hash() -> None:
         5, {"type": "child", "fingerprint": "fp_base_0", "alert_hash": "hash_a"}, state="closed"
     )
     idx = build_issue_index({5: closed})
-    assert {1: closed} == resolve_child_matches({1: _alert_with_keys("fp_base_0", "hash_a")}, idx)
+    assert {1: closed} == resolve_child_matches({1: _alert_with_keys("fp_base_0", "hash_a")}, idx).matches
 
 
 @pytest.mark.parametrize("issue_keys, alert_keys", [
@@ -330,7 +349,7 @@ def test_resolve_matches_reused_ordinal_with_line_shift_matches_nothing(
         for i, (fp, h) in enumerate(issue_keys)
     }
     alerts = {i + 1: _alert_with_keys(fp, h) for i, (fp, h) in enumerate(alert_keys)}
-    assert {} == resolve_child_matches(alerts, build_issue_index(issues))
+    assert {} == resolve_child_matches(alerts, build_issue_index(issues)).matches
 
 
 def test_resolve_matches_shift_of_all_occurrences_keeps_issues() -> None:
@@ -339,7 +358,7 @@ def test_resolve_matches_shift_of_all_occurrences_keeps_issues() -> None:
     second = _issue_with_secmeta(11, {"type": "child", "fingerprint": "fp_base_1", "alert_hash": "hash_b"})
     idx = build_issue_index({10: first, 11: second})
     alerts = {1: _alert_with_keys("fp_base_1", "hash_b2"), 2: _alert_with_keys("fp_base_0", "hash_a2")}
-    assert {1: second, 2: first} == resolve_child_matches(alerts, idx)
+    assert {1: second, 2: first} == resolve_child_matches(alerts, idx).matches
 
 
 @pytest.mark.parametrize("other_hash, other_state", [
@@ -355,7 +374,7 @@ def test_resolve_matches_line_shift_with_nonconflicting_owners(other_hash: str, 
     }, state=other_state)
     alerts = {1: _alert_with_keys("fp_base_0", "hash_after_shift")}
 
-    assert {1: owner} == resolve_child_matches(alerts, build_issue_index({20: other, 10: owner}))
+    assert {1: owner} == resolve_child_matches(alerts, build_issue_index({20: other, 10: owner})).matches
 
 
 def test_resolve_matches_conflict_settled_by_exact_hash_keeps_shifted_sibling() -> None:
@@ -374,7 +393,7 @@ def test_resolve_matches_conflict_settled_by_exact_hash_keeps_shifted_sibling() 
         2: _alert_with_keys("fp_base_1", "hash_sibling_shifted"),
     }
 
-    assert {1: survivor, 2: sibling} == resolve_child_matches(alerts, idx)
+    assert {1: survivor, 2: sibling} == resolve_child_matches(alerts, idx).matches
 
 
 @pytest.mark.parametrize("first_hash, owner_number", [
@@ -396,7 +415,209 @@ def test_resolve_matches_does_not_reuse_another_open_owner(
     alerts = {2: inserted, 1: existing} if inserted_first else {1: existing, 2: inserted}
     issues = {10: first, 20: second}
 
-    assert {1: issues[owner_number]} == resolve_child_matches(alerts, build_issue_index(issues))
+    assert {1: issues[owner_number]} == resolve_child_matches(alerts, build_issue_index(issues)).matches
+
+
+@pytest.mark.parametrize("collision_alerts", ["pipeline", "sast"], indirect=True)
+def test_sync_shared_hash_repeat_and_reorder_has_no_replacements(
+    collision_alerts: tuple[Alert, Alert],
+    collision_issue_writes: dict[str, MagicMock],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    for alert in collision_alerts:
+        alert.metadata.severity = "high"
+    alerts = {1: collision_alerts[0], 2: collision_alerts[1]}
+    issues: dict[int, Issue] = {}
+    created = sync_alerts_and_issues(alerts, issues)
+    assert ["new", "new"] == [change.state for change in created.issue_changes]
+    original_children = {
+        number: copy.deepcopy(issue)
+        for number, issue in issues.items()
+        if load_secmeta(issue.body).get("type") == "child"
+    }
+    for write in collision_issue_writes.values():
+        write.reset_mock()
+
+    with caplog.at_level(logging.INFO):
+        repeated = sync_alerts_and_issues(alerts, issues)
+        reordered = sync_alerts_and_issues(dict(reversed(list(alerts.items()))), dict(reversed(list(issues.items()))))
+
+    assert [] == repeated.issue_changes == reordered.issue_changes
+    assert {"high": 2} == reordered.open_child_issues_by_severity
+    assert original_children == {number: issues[number] for number in original_children}
+    assert "Resolved shared Result Hash" in caplog.text
+    assert not any(record.levelno >= logging.WARNING for record in caplog.records)
+    for write in collision_issue_writes.values():
+        write.assert_not_called()
+
+
+# sync_alerts_and_issues
+
+
+@pytest.mark.parametrize("collision_alerts", ["pipeline"], indirect=True)
+def test_sync_parent_confidence_is_independent_of_alert_order(
+    collision_alerts: tuple[Alert, Alert],
+    collision_issue_writes: dict[str, MagicMock],
+) -> None:
+    first, second = collision_alerts
+    first.rule_details.confidence = "medium"
+    second.rule_details.confidence = "high"
+    parent_bodies = []
+    for alerts in ({1: first, 2: second}, {1: second, 2: first}):
+        issues: dict[int, Issue] = {}
+        sync_alerts_and_issues(alerts, issues)
+        parent_bodies.append(
+            next(issue.body for issue in issues.values() if load_secmeta(issue.body).get("type") == "parent")
+        )
+
+    assert parent_bodies[0] == parent_bodies[1]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_sync_parent_uses_highest_eligible_severity(
+    pipeline_alert: Alert, collision_issue_writes: dict[str, MagicMock], reverse: bool
+) -> None:
+    high = pipeline_alert
+    high.metadata.severity = "high"
+    high.rule_details.confidence = "high"
+    critical = copy.deepcopy(high)
+    critical.metadata.severity = "critical"
+    critical.rule_details.confidence = "medium"
+    critical.alert_details.identity_key = critical.alert_details.alert_hash = "critical_hash"
+    alerts = {1: high, 2: critical}
+    if reverse:
+        alerts = dict(reversed(list(alerts.items())))
+    issues: dict[int, Issue] = {}
+
+    sync_alerts_and_issues(alerts, issues, min_severity="high")
+
+    parent = next(issue for issue in issues.values() if load_secmeta(issue.body).get("type") == "parent")
+    assert build_parent_issue_body(critical) == parent.body
+    assert ["critical", "high"] == sorted(
+        load_secmeta(issue.body)["severity"]
+        for issue in issues.values()
+        if load_secmeta(issue.body).get("type") == "child"
+    )
+    collision_issue_writes["gh_issue_edit_body"].assert_not_called()
+
+
+@pytest.mark.parametrize("collision_alerts", ["pipeline"], indirect=True)
+def test_sync_unresolved_alerts_cannot_supply_parent_content(
+    collision_alerts: tuple[Alert, Alert], collision_issue_writes: dict[str, MagicMock]
+) -> None:
+    first, second = collision_alerts
+    first.metadata.severity = second.metadata.severity = "critical"
+    issues = {10: _rendered_child_issue(10, first), 20: _rendered_child_issue(20, second)}
+    original = copy.deepcopy(issues)
+    proven = copy.deepcopy(first)
+    proven.metadata.severity = "high"
+    proven.alert_details.identity_key = proven.alert_details.alert_hash = "separate_hash"
+    proven.rule_details.confidence = "eligible"
+    first.alert_details.message = "Changed first step with ambiguous ownership."
+    second.alert_details.message = "Changed second step with ambiguous ownership."
+
+    sync_alerts_and_issues({1: proven, 2: first, 3: second}, issues, min_severity="high")
+
+    parent = next(issue for issue in issues.values() if load_secmeta(issue.body).get("type") == "parent")
+    assert build_parent_issue_body(proven) == parent.body
+    assert original == {number: issues[number] for number in original}
+    collision_issue_writes["gh_issue_edit_state"].assert_not_called()
+
+
+@pytest.mark.parametrize("collision_alerts", ["pipeline"], indirect=True)
+@pytest.mark.parametrize("dry_run,min_severity", [(False, "low"), (True, "low"), (False, "critical")])
+def test_sync_shared_hash_ambiguous_update_protects_candidates(
+    collision_alerts: tuple[Alert, Alert],
+    collision_issue_writes: dict[str, MagicMock],
+    caplog: pytest.LogCaptureFixture,
+    dry_run: bool,
+    min_severity: str,
+) -> None:
+    first, second = collision_alerts
+    children = {
+        10: _rendered_child_issue(10, first),
+        20: _rendered_child_issue(20, second, state="closed"),
+    }
+    children[10].labels = ["sec:suppression"]
+    originals = copy.deepcopy(children)
+    first.alert_details.message = "Changed step, with no way to identify its previous owner."
+    second.alert_details.message = "Another changed step, with no way to identify its previous owner."
+    unrelated = copy.deepcopy(first)
+    unrelated.alert_details.identity_key = "unrelated_hash"
+    unrelated.alert_details.alert_hash = "unrelated_hash"
+    unrelated.metadata.severity = "critical"
+    unrelated.metadata.rule_id = "UNRELATED-RULE"
+    children[30] = _rendered_child_issue(30, unrelated, legacy=True)
+    parent = _issue_with_secmeta(
+        1, {"type": "parent", "repo": first.repo, "rule_id": first.metadata.rule_id}
+    )
+    children[1] = parent
+    children[2] = _issue_with_secmeta(
+        2, {"type": "parent", "repo": unrelated.repo, "rule_id": unrelated.metadata.rule_id, "severity": "critical"}
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = sync_alerts_and_issues(
+            {1: first, 2: second, 3: unrelated}, children, dry_run=dry_run, min_severity=min_severity
+        )
+
+    assert originals == {number: children[number] for number in originals}
+    assert "open" == parent.state
+    assert [] == result.issue_changes
+    assert "alert_hash=unrelated_hash" in children[30].body or dry_run
+    assert "left unchanged" in caplog.text
+    assert "10" in caplog.text and "20" in caplog.text
+    assert "message" in caplog.text
+    for call in collision_issue_writes["gh_issue_edit_body"].call_args_list:
+        assert call.args[1] not in originals
+    collision_issue_writes["gh_issue_create"].assert_not_called()
+    collision_issue_writes["gh_issue_edit_state"].assert_not_called()
+
+
+@pytest.mark.parametrize("collision_alerts", ["sast"], indirect=True)
+def test_resolve_open_identity_precedes_closed_shared_hash_history(collision_alerts: tuple[Alert, Alert]) -> None:
+    first, second = collision_alerts
+    historical = _rendered_child_issue(20, first, state="closed")
+    other_history = _rendered_child_issue(30, second, state="closed")
+    owner = copy.deepcopy(first)
+    owner.alert_details.alert_hash = "current_hash"
+    open_owner = _rendered_child_issue(10, owner)
+
+    result = resolve_child_matches({1: first}, build_issue_index({30: other_history, 20: historical, 10: open_owner}))
+
+    assert {1: open_owner} == result.matches
+    assert set() == result.unresolved_keys
+
+
+@pytest.mark.parametrize("collision_alerts", ["pipeline"], indirect=True)
+def test_resolve_shared_hash_partial_match_protects_only_unresolved_owner(
+    collision_alerts: tuple[Alert, Alert],
+) -> None:
+    first, second = collision_alerts
+    children = {10: _rendered_child_issue(10, first), 20: _rendered_child_issue(20, second)}
+    second.alert_details.message = "Changed message."
+
+    result = resolve_child_matches({2: second, 1: first}, build_issue_index(children))
+
+    assert {1: children[10]} == result.matches
+    assert {2} == result.unresolved_keys
+    assert [children[20]] == result.protected_children
+
+
+@pytest.mark.parametrize("collision_alerts", ["pipeline"], indirect=True)
+def test_resolve_shared_hash_legacy_bookkeeping_does_not_hide_display_match(
+    collision_alerts: tuple[Alert, Alert],
+) -> None:
+    first, second = collision_alerts
+    children = {
+        10: _rendered_child_issue(10, first, legacy=True),
+        20: _rendered_child_issue(20, second, legacy=True),
+    }
+    children[10].body = children[10].body.replace("\n", "\r\n")
+
+    result = resolve_child_matches({2: second, 1: first}, build_issue_index(children))
+
+    assert {1: children[10], 2: children[20]} == result.matches
 
 
 # =====================================================================
@@ -1137,7 +1358,7 @@ def test_close_resolved_child_no_orphans() -> None:
         100: Alert.from_dict(
             {"metadata": {"state": "open"}, "alert_details": {"alert_hash": "fp1"}, "rule_details": {}}),
     }
-    matched = list(resolve_child_matches(alerts, issue_index).values())
+    matched = list(resolve_child_matches(alerts, issue_index).matches.values())
     _close_resolved_child_issues(issue_index.children, matched, dry_run=False, stats=SyncStats())
 
 
@@ -1205,7 +1426,7 @@ def test_close_resolved_child_matched_via_legacy_hash(mocker: MockerFixture) -> 
         }),
     }
     stats = SyncStats()
-    matched = list(resolve_child_matches(alerts, issue_index).values())
+    matched = list(resolve_child_matches(alerts, issue_index).matches.values())
     _close_resolved_child_issues(issue_index.children, matched, dry_run=False, stats=stats)
     mock_edit.assert_not_called()
     assert 0 == stats.children_closed
@@ -1351,7 +1572,7 @@ def test_ensure_issue_migrates_pre_change_child_in_place(mocker: MockerFixture, 
     issues = {7: child}
     sync = _make_sync_context(issues=issues)
 
-    ensure_issue(sast_alert, sync, matched_issue=resolve_child_matches({1: sast_alert}, sync.issue_index).get(1))
+    ensure_issue(sast_alert, sync, matched_issue=resolve_child_matches({1: sast_alert}, sync.issue_index).matches.get(1))
 
     mock_body.assert_called_once()
     assert 0 == sync.stats.children_created
@@ -1371,7 +1592,7 @@ def test_ensure_issue_line_shift_maps_to_same_child(mocker: MockerFixture, sast_
     sast_alert.alert_details.alert_hash = "hash_after_shift"
     sync = _make_sync_context(issues={8: child})
 
-    ensure_issue(sast_alert, sync, matched_issue=resolve_child_matches({1: sast_alert}, sync.issue_index).get(1))
+    ensure_issue(sast_alert, sync, matched_issue=resolve_child_matches({1: sast_alert}, sync.issue_index).matches.get(1))
 
     assert 0 == sync.stats.children_created
     assert "hash_after_shift" == load_secmeta(child.body)["alert_hash"]
@@ -1389,7 +1610,7 @@ def test_ensure_issue_without_aquasec_fingerprint_keys_off_result_hash(
     })
     sync = _make_sync_context(issues={9: child})
 
-    ensure_issue(sast_alert, sync, matched_issue=resolve_child_matches({1: sast_alert}, sync.issue_index).get(1))
+    ensure_issue(sast_alert, sync, matched_issue=resolve_child_matches({1: sast_alert}, sync.issue_index).matches.get(1))
 
     assert 0 == sync.stats.children_created
 

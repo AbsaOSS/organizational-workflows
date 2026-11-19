@@ -31,14 +31,14 @@ A ready-to-copy example is available at [docs/security/aquasec-night-scan-exampl
 
 ## Running Locally
 
-The entry point is `src/security/main.py`. It runs the full pipeline: authenticate with AquaSec, fetch findings, sync to Issues, and notify if set.
+The entry point is `src/security/main.py`. It runs the full pipeline: authenticate with AquaSec, fetch the repository ID & scan findings, sync to Issues, and notify if set.
 
 ### Prerequisites
 
 - Python 3.14 (current required runtime)
 - Install and authenticate GitHub CLI: `gh auth login`
 - Required labels are created automatically if missing; the token needs `issues: write`
-- AquaSec credentials available as environment variables: `AQUA_KEY`, `AQUA_SECRET`, `AQUA_REPOSITORY_ID`
+- AquaSec required credentials available as environment variables: `AQUA_KEY`, `AQUA_SECRET`
 
 ### Commands
 
@@ -53,21 +53,21 @@ pip install -r requirements.txt
 **Dry-run** (no changes are made, actions are logged):
 
 ```bash
-AQUA_KEY=... AQUA_SECRET=... AQUA_REPOSITORY_ID=... \
+AQUA_KEY=... AQUA_SECRET=... \
 PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run
 ```
 
 **Live run** (creates/updates real GitHub Issues):
 
 ```bash
-AQUA_KEY=... AQUA_SECRET=... AQUA_REPOSITORY_ID=... \
+AQUA_KEY=... AQUA_SECRET=... \
 PYTHONPATH=src python3 src/security/main.py --repo <owner/repo>
 ```
 
 **With verbose logging:**
 
 ```bash
-AQUA_KEY=... AQUA_SECRET=... AQUA_REPOSITORY_ID=... \
+AQUA_KEY=... AQUA_SECRET=... \
 PYTHONPATH=src python3 src/security/main.py --repo <owner/repo> --dry-run --verbose
 ```
 

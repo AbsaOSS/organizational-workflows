@@ -47,7 +47,7 @@ class RepositoryFetcher:
         Raises:
             SystemExit: If discovery fails or the repository is absent or ambiguous.
         """
-        logger.info("%sRepository discovery starting for %s", LOGGING_PREFIX, repo)
+        logger.info("%sRepository discovery starting", LOGGING_PREFIX)
 
         repository_ids: set[uuid.UUID] = set()
         page_num = 1
@@ -87,7 +87,7 @@ class RepositoryFetcher:
         if len(repository_ids) != 1:
             raise SystemExit(f"ERROR: Multiple AquaSec repository UUIDs found for GitHub repository {repo}.")
 
-        logger.info("%sRepository discovery successful for %s", LOGGING_PREFIX, repo)
+        logger.info("%sRepository discovery successful", LOGGING_PREFIX)
         return str(next(iter(repository_ids)))
 
     def _fetch_page(self, repo: str, page_num: int) -> tuple[list[dict[str, Any]], int]:

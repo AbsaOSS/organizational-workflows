@@ -19,6 +19,7 @@ This solution authenticates with the AquaSec API, fetches scan findings, and con
 flowchart TD
     IN[("AquaSec API credentials")]
     AUTH["Authenticate with AquaSec"]
+    RESOLVE["Fetch AquaSec repository ID"]
     FETCH["Fetch AquaSec scan findings"]
     NORM["Normalise AquaSec findings"]
     MATCH{"Compare finding<br/>with existing GH issues"}
@@ -35,7 +36,8 @@ flowchart TD
     QUIET["No notification"]
 
     IN --> AUTH
-    AUTH --> FETCH
+    AUTH --> RESOLVE
+    RESOLVE --> FETCH
     FETCH --> NORM
     NORM --> MATCH
 
@@ -59,6 +61,7 @@ flowchart TD
 
     style IN fill:#2b5896,color:#fff,stroke:#000
     style AUTH fill:#2b6696,color:#fff,stroke:#000
+    style RESOLVE fill:#2b6696,color:#fff,stroke:#000
     style FETCH fill:#2b7596,color:#fff,stroke:#000
     style NORM fill:#2b8496,color:#fff,stroke:#000
     style MATCH fill:#52525b,color:#fff,stroke:#000
@@ -77,13 +80,15 @@ flowchart TD
 
 1. **Authenticate with AquaSec**: The pipeline authenticates using HMAC-SHA256 signed credentials to obtain a bearer token from the AquaSec API.
 
-2. **Fetch and Normalise Findings**: Scan results are fetched directly from the AquaSec Code Security API (paginated), then parsed and normalised into a common format extracting severity, rule ID, affected file, and the identity used to match a finding to its issue.
+2. **Fetch AquaSec repository ID**: The pipeline queries the AquaSec Supply Chain API, filtering by repository name to find the matching UUID.
 
-3. **Create / Update / Reopen Issues**: New findings become new GitHub Issues. Existing findings are updated with the latest occurrence data. Previously closed findings that reappear are automatically reopened. Parent issues (epics) group findings by rule and auto-close when all children are resolved.
+3. **Fetch and Normalise Findings**: Scan results are fetched directly from the AquaSec Code Security API (paginated), then parsed and normalised into a common format extracting severity, rule ID, affected file, and the identity used to match a finding to its issue.
 
-4. **Close Resolved Findings**: Issues for findings that are no longer detected in the scan are **automatically closed**. Closed issues remain searchable and traceable through their history and any waiver labels.
+4. **Create / Update / Reopen Issues**: New findings become new GitHub Issues. Existing findings are updated with the latest occurrence data. Previously closed findings that reappear are automatically reopened. Parent issues (epics) group findings by rule and auto-close when all children are resolved.
 
-5. **Send Teams Notifications (Optional)**: When issues are opened, reopened or closed, a single Microsoft Teams card summarizing the run is sent automatically.
+5. **Close Resolved Findings**: Issues for findings that are no longer detected in the scan are **automatically closed**. Closed issues remain searchable and traceable through their history and any waiver labels.
+
+6. **Send Teams Notifications (Optional)**: When issues are opened, reopened or closed, a single Microsoft Teams card summarizing the run is sent automatically.
 
 ---
 
@@ -240,7 +245,6 @@ Adopt the security automation by adding a short caller workflow to your reposito
 | --- | --- | --- |
 | `AQUA_KEY` | Yes | AquaSec API key |
 | `AQUA_SECRET` | Yes | AquaSec API secret |
-| `AQUA_REPOSITORY_ID` | Yes | AquaSec repository identifier |
 | `TEAMS_WEBHOOK_URL` | No | Teams webhook for run notifications |
 
 ### Example Caller Workflow

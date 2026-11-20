@@ -258,3 +258,27 @@ def vuln_alert() -> Alert:
 def pipeline_alert() -> Alert:
     """Pipeline misconfiguration finding (alert 317) - unpinned action."""
     return _enrich(_PIPELINE_ALERT_317)
+
+
+@pytest.fixture()
+def repository_lookup(mocker):
+    """Mock repository HTTP requests and between-page delays."""
+    mocker.patch("security.services.repository_fetcher.time.sleep")
+    return mocker.patch("security.services.repository_fetcher.requests.get")
+
+
+@pytest.fixture()
+def repository_response(mocker):
+    """Build a repository-list response with the API's pagination metadata."""
+    def _response(data, *, page=1, total=None):
+        response = mocker.Mock(status_code=200)
+        response.json.return_value = {
+            "current_page": page,
+            "data": data,
+            "returned_count": len(data),
+            "total_count": len(data) if total is None else total,
+            "total_repositories": 63,
+        }
+        return response
+
+    return _response

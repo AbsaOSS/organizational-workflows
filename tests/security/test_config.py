@@ -45,7 +45,6 @@ def _make_config(**kwargs) -> SecurityConfig:
     defaults = {
         "aqua_key": "test-key",
         "aqua_secret": "test-secret",
-        "aqua_repository_id": "abc12345-e89b-12d3-a456-426614174000",
         "repo": "my-org/my-repo",
     }
     defaults.update(kwargs)
@@ -74,20 +73,6 @@ def test_validate_raises_system_exit_when_aqua_secret_missing():
         config.validate()
 
 
-def test_validate_raises_system_exit_when_repository_id_missing():
-    config = _make_config(aqua_repository_id="")
-
-    with pytest.raises(SystemExit):
-        config.validate()
-
-
-def test_validate_raises_system_exit_when_repository_id_invalid_uuid():
-    config = _make_config(aqua_repository_id="not-a-uuid")
-
-    with pytest.raises(SystemExit):
-        config.validate()
-
-
 def test_validate_raises_system_exit_when_repo_missing():
     config = _make_config(repo="")
 
@@ -105,18 +90,21 @@ def test_validate_raises_system_exit_when_repo_no_slash():
 # load
 
 
-def test_load_reads_env_vars(monkeypatch):
+@pytest.mark.parametrize("legacy_id", [None, "not-a-uuid"])
+def test_load_reads_env_vars_without_requiring_legacy_id(monkeypatch, legacy_id):
     monkeypatch.delenv("AQUA_GROUP_ID", raising=False)
     monkeypatch.setenv("AQUA_KEY", "env-key")
     monkeypatch.setenv("AQUA_SECRET", "env-secret")
-    monkeypatch.setenv("AQUA_REPOSITORY_ID", "abc12345-e89b-12d3-a456-426614174000")
+    if legacy_id is None:
+        monkeypatch.delenv("AQUA_REPOSITORY_ID", raising=False)
+    else:
+        monkeypatch.setenv("AQUA_REPOSITORY_ID", legacy_id)
 
     config = SecurityConfig.load(_make_args())
     config.validate()
 
     assert "env-key" == config.aqua_key
     assert "env-secret" == config.aqua_secret
-    assert "abc12345-e89b-12d3-a456-426614174000" == config.aqua_repository_id
 
 
 def test_load_reads_repo_from_args():
@@ -156,7 +144,6 @@ def test_load_falls_back_to_github_repository_env(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", "env-org/env-repo")
     monkeypatch.setenv("AQUA_KEY", "k")
     monkeypatch.setenv("AQUA_SECRET", "s")
-    monkeypatch.setenv("AQUA_REPOSITORY_ID", "r")
 
     config = SecurityConfig.load(_make_args(repo=""))
 

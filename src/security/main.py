@@ -16,7 +16,7 @@
 #
 
 """Orchestrator that runs the full Security pipeline.
-Pipeline: validate config -> ensure labels -> authenticate -> fetch -> parse -> sync -> notify.
+Pipeline: validate config -> ensure labels -> authenticate -> fetch repo ID -> fetch findings -> parse -> sync -> notify.
 """
 
 import argparse
@@ -33,6 +33,7 @@ from security.services.authenticator import AquaSecAuthenticator
 from security.services.issue_syncer import IssueSyncer
 from security.services.label_creator import LabelCreator
 from security.services.notification_sender import NotificationSender
+from security.services.repository_fetcher import RepositoryFetcher
 from security.services.scan_fetcher import ScanFetcher
 
 logger = logging.getLogger(__name__)
@@ -46,10 +47,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "  1) Validate configuration\n"
             "  2) Ensure required labels exist\n"
             "  3) Authenticate with AquaSec API\n"
-            "  4) Fetch repository scan findings\n"
-            "  5) Parse findings\n"
-            "  6) Sync findings to GitHub Issues\n"
-            "  7) Send Teams notifications"
+            "  4) Fetch AquaSec repository ID\n"
+            "  5) Fetch repository scan findings\n"
+            "  6) Parse findings\n"
+            "  7) Sync findings to GitHub Issues\n"
+            "  8) Send Teams notifications"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -127,8 +129,11 @@ def main(argv: list[str] | None = None) -> int:
     authenticator = AquaSecAuthenticator(config.aqua_key, config.aqua_secret)
     bearer_token = authenticator.authenticate()
 
+    # Fetch the repository ID
+    repository_id = RepositoryFetcher(bearer_token).fetch_repository_id(repo)
+
     # Fetch scan findings
-    fetcher = ScanFetcher(bearer_token, config.aqua_repository_id)
+    fetcher = ScanFetcher(bearer_token, repository_id)
     scan_data = fetcher.fetch_findings()
 
     # Write the raw scan JSON for monitoring when a path is provided

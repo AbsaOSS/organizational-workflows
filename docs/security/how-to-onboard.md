@@ -7,10 +7,9 @@ This guide walks you through onboarding your repository to **Security Automation
 > For a business-level overview of what the solution does and why, see the [Security Automation docs](../security-automation).
 
 - **Step 0:** Check the prerequisites.
-- **Step 1:** Collect your AquaSec identifiers.
-- **Step 2:** Store the credentials as GitHub secrets.
-- **Step 3:** Add the caller workflow to your repository.
-- **Step 4:** Run it in dry-run mode, then switch to live mode.
+- **Step 1:** Store the credentials as GitHub secrets.
+- **Step 2:** Add the caller workflow to your repository.
+- **Step 3:** Run it in dry-run mode, then switch to live mode.
 
 ---
 
@@ -26,21 +25,7 @@ Make sure you have the following before you start:
 
 ---
 
-## Step 1: Collect Your AquaSec Identifiers
-
-### How to Obtain the AquaSec Repository ID
-
-1. Navigate to **Code Repositories** in the AquaSec platform.
-2. Use the search bar to filter and locate your repository.
-3. Click on the repository name to open its overview page.
-4. The **Repository ID** (UUID format) is displayed in the URL after `/repositories/`.
-
-**Example:** `https://aquasec.com/repositories/9d93jajb-6c6e-438d-8bef-afb5a12396e5/overview`  
-→ Repository ID: `9d93jajb-6c6e-438d-8bef-afb5a12396e5`
-
----
-
-## Step 2: Store the Credentials as GitHub Secrets
+## Step 1: Store the Credentials as GitHub Secrets
 
 The workflow reads its credentials from GitHub secrets.
 
@@ -48,19 +33,17 @@ The workflow reads its credentials from GitHub secrets.
 |----------------------|----------|--------------------------------------|
 | `AQUA_KEY`           | Yes      | AquaSec API Key credential           |
 | `AQUA_SECRET`        | Yes      | AquaSec API Secret credential        |
-| `AQUA_REPOSITORY_ID` | Yes      | AquaSec Repository ID (UUID format)  |
 | `TEAMS_WEBHOOK_URL`  | No       | Microsoft Teams Incoming Webhook URL |
 
 **For the AbsaOSS / absa-group organizations:**
 
 - `AQUA_KEY` and `AQUA_SECRET` are stored as **organization secrets** and are automatically available to all repositories.
-- You only need to add `AQUA_REPOSITORY_ID` as a **repository secret**.
 
 To add a repository secret, open your repository on GitHub and go to **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
 
 ---
 
-## Step 3: Add the Caller Workflow
+## Step 2: Add the Caller Workflow
 
 Create a workflow file in your repository, for example `.github/workflows/aquasec-night-scan.yml`. A ready-to-copy example is available at <a href="https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml" target="_blank" rel="noopener noreferrer">aquasec-night-scan-example.yml</a>.
 
@@ -69,7 +52,7 @@ The caller workflow delegates to the shared reusable workflow in this repository
 ```yaml
 jobs:
   scan:
-    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@<commit-sha> # Use a revision with group-free authentication
+    uses: AbsaOSS/organizational-workflows/.github/workflows/aquasec-scan.yml@<commit-sha> # Should be changed to the newest release SHA
     with:
       dry-run: true
       min-severity: 'high' # Only high and critical severity alerts will be promoted to issues
@@ -78,7 +61,6 @@ jobs:
     secrets:
       AQUA_KEY: ${{ secrets.AQUA_KEY }}
       AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
-      AQUA_REPOSITORY_ID: ${{ secrets.AQUA_REPOSITORY_ID }}
       TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
 ```
 
@@ -101,10 +83,10 @@ Optional features:
 
 ---
 
-## Step 4: Run in Dry-Run Mode and Go Live
+## Step 3: Run in Dry-Run Mode and Go Live
 
 1. Open the **Actions** tab of your repository and run the workflow manually (or wait for the schedule).
-2. Open the run log and check that the AquaSec authentication succeeds and the planned actions look right.
+2. Open the run log and check that AquaSec authentication and repository ID lookup succeed and the planned actions look right.
 3. Set `dry-run: false` in your caller workflow and run it again.
 4. Open the **Issues** tab and filter by the `type:aquasec` label. You should see one parent (rule) issue per rule, with the individual findings as child sub-issues.
 
@@ -117,7 +99,7 @@ From now on, the workflow keeps the backlog in sync on every run: issues are reo
 | Symptom                                             | What to check                                                                                                                 |
 |-----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | Authentication with AquaSec fails                   | Verify `AQUA_KEY` and `AQUA_SECRET`, and make sure the secrets are available to the repository.                              |
-| No findings are fetched                             | Verify `AQUA_REPOSITORY_ID` and that the repository is onboarded in AquaSec.                                                  |
+| No findings are fetched                             | Confirm repository ID lookup succeeded and that the repository has a scan in AquaSec.                                    |
 | No issues are created                               | Check whether `dry-run` is still `true`, and whether `min-severity` is higher than your findings.                             |
 | Priority is not set on the project board            | `project-number` and `project-org` must all be set, and the token needs access to the project.                                |
 | No Teams card arrives                               | `TEAMS_WEBHOOK_URL` secret must be set. A card is sent only when a child issue was opened, reopened or closed during the run. |

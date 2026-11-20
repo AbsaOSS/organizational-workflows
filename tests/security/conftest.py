@@ -21,7 +21,11 @@ Alerts use the nested schema (``metadata`` / ``alert_details`` / ``rule_details`
 produced by ``AquaSecParser``.
 """
 
+import copy
+from itertools import count
+
 import pytest
+from pytest_mock import MockerFixture, MockType
 
 from security.alerts.models import Alert
 
@@ -258,6 +262,42 @@ def vuln_alert() -> Alert:
 def pipeline_alert() -> Alert:
     """Pipeline misconfiguration finding (alert 317) - unpinned action."""
     return _enrich(_PIPELINE_ALERT_317)
+
+
+@pytest.fixture()
+def collision_alerts(request: pytest.FixtureRequest, pipeline_alert: Alert, sast_alert: Alert) -> tuple[Alert, Alert]:
+    """Distinct platform rows sharing a Result Hash."""
+    first = copy.deepcopy(sast_alert if request.param == "sast" else pipeline_alert)
+    first.metadata.alert_number = 1
+    first.alert_details.alert_hash = "shared_hash"
+    first.alert_details.identity_key = "path_a_0" if request.param == "sast" else "shared_hash"
+    second = copy.deepcopy(first)
+    second.metadata.alert_number = 2
+    if request.param == "sast":
+        second.alert_details.identity_key = "path_b_0"
+    else:
+        second.alert_details.message = "A different imported pipeline step."
+    return first, second
+
+
+@pytest.fixture()
+def collision_issue_writes(mocker: MockerFixture) -> dict[str, MockType]:
+    """Successful issue writes with persistent synthetic Sub-issue links."""
+    linked: set[int] = set()
+    numbers = count(100)
+    writes = {
+        name: mocker.patch(f"security.issues.sync.{name}", return_value=True)
+        for name in ("gh_issue_edit_body", "gh_issue_edit_title", "gh_issue_edit_state")
+    }
+    writes["gh_issue_create"] = mocker.patch(
+        "security.issues.sync.gh_issue_create", side_effect=lambda *_: next(numbers)
+    )
+    writes["gh_issue_add_sub_issue_by_number"] = mocker.patch(
+        "security.issues.sync.gh_issue_add_sub_issue_by_number",
+        side_effect=lambda _repo, _parent, child: linked.add(child) or True,
+    )
+    mocker.patch("security.issues.sync.gh_issue_get_sub_issue_numbers", side_effect=lambda *_: linked.copy())
+    return writes
 
 
 @pytest.fixture()

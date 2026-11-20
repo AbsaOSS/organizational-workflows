@@ -324,18 +324,22 @@ def test_parse_keeps_distinct_sast_occurrences() -> None:
     ]
 
 
-@pytest.mark.parametrize("changes", [
-    {"severity": 4},
-    {"target_file": "other/pom.xml"},
-    {"fingerprint": "another_identity"},
-    {"result_hash": "another_hash"},
+@pytest.mark.parametrize("changes,field", [
+    ({"severity": 4}, "metadata.severity"),
+    ({"target_file": "other/pom.xml"}, "metadata.file"),
+    ({"fingerprint": "another_identity"}, "alert_details.identity_key"),
+    ({"result_hash": "another_hash"}, "alert_details.alert_hash"),
+    ({"message": "Another imported step."}, "alert_details.message"),
 ])
-def test_parse_keeps_conflicting_identifiers_separate(changes: dict, caplog: pytest.LogCaptureFixture) -> None:
+def test_parse_keeps_conflicting_identifiers_separate(
+    changes: dict, field: str, caplog: pytest.LogCaptureFixture
+) -> None:
     original = {**_VULN_ITEM, "fingerprint": "shared_identity"}
     rows = [original, {**original, **changes}]
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         result = AquaSecParser("org/repo").parse({"total": 2, "data": rows})
 
     assert 2 == len(result.open_by_number)
-    assert "Conflicting Finding data" in caplog.text
+    assert field in caplog.text
+    assert not any(record.levelno >= logging.WARNING for record in caplog.records)

@@ -36,9 +36,10 @@ class IssueIndex:
 
     `child_by_identity_key` and `child_by_alert_hash` are **lookup-only** maps, keyed by each issue's
     stored **Finding Identity** and **Result Hash**. Several issues can share a key (a reused AquaSec
-    Fingerprint ordinal, or plain duplicates), so each map keeps one preferred issue per key - open
+    Fingerprint ordinal, distinct platform rows, or plain duplicates), so each map keeps one preferred issue per key - open
     before closed, then the lowest number - and is never enumerated. The Result Hash map also catches
     `sast` issues created before the Finding Identity was adopted, when only the Result Hash was stored.
+    Matching derives all shared-key candidates from `children`, not only these preferred winners.
 
     `unkeyed_children` lists child issues whose Secmeta stores neither key. They cannot be matched,
     closed or counted; they are kept only so an open one still keeps its parent issue open.
@@ -60,6 +61,15 @@ class IssueChange:
     severity: str
     rule_id: str
     state: str  # "new", "reopen" or "closed"
+
+
+@dataclass
+class ChildMatchResult:
+    """Proven matches and unresolved ownership that must not cause replacement churn."""
+
+    matches: dict[int, Issue] = field(default_factory=dict)
+    unresolved_keys: set[int] = field(default_factory=set)
+    protected_children: list[Issue] = field(default_factory=list)
 
 
 # Ordered from lowest to highest so severities can be ranked and filtered.

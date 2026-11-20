@@ -99,17 +99,18 @@ The Caller workflow lives in a consumer repository and invokes the Reusable work
 
 ## Pipeline
 
-`security/main.py` runs: validate config → ensure labels → authenticate → fetch → parse → sync → notify.
+`security/main.py` runs: validate config → ensure labels → authenticate → fetch repo ID → fetch → parse → sync → notify.
 
-| Step | Owner |
-|------|-------|
-| Config | `security/config.py` |
-| Labels (`scope:security`, `type:aquasec`, `epic`, waiver labels) | `services/label_creator.py` |
-| Auth and fetch | `services/authenticator.py`, `services/scan_fetcher.py` |
-| Parse | `alerts/aquasec_parser.py` |
-| Sync | `services/issue_syncer.py`, `issues/sync.py` |
-| Notify | `services/notification_sender.py`, `notifications/` |
-| GitHub access (via `gh`) | `core/github/` |
+| Step                                                             | Owner                                                   |
+|------------------------------------------------------------------|---------------------------------------------------------|
+| Config                                                           | `security/config.py`                                    |
+| Labels (`scope:security`, `type:aquasec`, `epic`, waiver labels) | `services/label_creator.py`                             |
+| Auth and fetch                                                   | `services/authenticator.py`, `services/scan_fetcher.py` |
+| Repository UUID fetch                                            | `services/repository_fetcher.py`                        |
+| Parse                                                            | `alerts/aquasec_parser.py`                              |
+| Sync                                                             | `services/issue_syncer.py`, `issues/sync.py`            |
+| Notify                                                           | `services/notification_sender.py`, `notifications/`     |
+| GitHub access (via `gh`)                                         | `core/github/`                                          |
 
 ## Lifecycle rules
 

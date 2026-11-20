@@ -58,6 +58,7 @@ DRY_RUN_PREFIX = "Security [DRY-RUN] - "
 
 # AquaSec API
 AQUA_AUTH_URL = "https://eu-1.api.cloudsploit.com"
+AQUA_REPOSITORIES_URL = "https://api.eu-1.supply-chain.cloud.aquasec.com/v2/build/repositories"
 AQUA_SCAN_URL = "https://eu-1.codesec.aquasec.com/api/v1/scans/results"
 HTTP_TIMEOUT = 30
 FETCH_PAGE_SIZE = 100

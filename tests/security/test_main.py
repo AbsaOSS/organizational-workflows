@@ -25,6 +25,8 @@ from security.services.notification_sender import NotificationSender
 
 
 REPO = "my-org/my-repo"
+REPOSITORY_ID = "00000000-0000-0000-0000-000000000001"
+
 
 
 @pytest.fixture(autouse=True)
@@ -32,8 +34,6 @@ def _aqua_env(monkeypatch):
     """Set required AquaSec env vars for all tests."""
     monkeypatch.setenv("AQUA_KEY", "test-key")
     monkeypatch.setenv("AQUA_SECRET", "test-secret")
-    monkeypatch.delenv("AQUA_GROUP_ID", raising=False)
-    monkeypatch.setenv("AQUA_REPOSITORY_ID", "abc12345-e89b-12d3-a456-426614174000")
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
 
 
@@ -41,6 +41,8 @@ def _mock_pipeline_stages(mocker: MockerFixture):
     """Mock external dependencies downstream of the label ensure step."""
     mock_auth = mocker.patch("security.main.AquaSecAuthenticator")
     mock_auth.return_value.authenticate.return_value = "token"
+    mock_repository_fetcher = mocker.patch("security.main.RepositoryFetcher")
+    mock_repository_fetcher.return_value.fetch_repository_id.return_value = REPOSITORY_ID
     mock_fetcher = mocker.patch("security.main.ScanFetcher")
     mock_fetcher.return_value.fetch_findings.return_value = {"total": 0, "data": []}
     mock_parser = mocker.patch("security.main.AquaSecParser")
@@ -50,6 +52,7 @@ def _mock_pipeline_stages(mocker: MockerFixture):
     mock_notifier = mocker.patch.object(NotificationSender, "notify")
     return {
         "auth": mock_auth,
+        "repository_fetcher": mock_repository_fetcher,
         "fetcher": mock_fetcher,
         "parser": mock_parser,
         "syncer": mock_syncer,
@@ -109,6 +112,7 @@ def test_env_repo_fallback(mocker, monkeypatch):
     mocks = _mock_pipeline(mocker)
     assert main([]) == 0
     mocks["auth"].assert_called_once()
+    mocks["repository_fetcher"].return_value.fetch_repository_id.assert_called_once_with(REPO)
 
 
 # main - required labels
@@ -144,10 +148,23 @@ def test_dry_run_is_forwarded_to_the_label_creator(mocker):
 # main - pipeline success
 
 
-def test_pipeline_success_returns_0(mocker):
+@pytest.mark.parametrize(("legacy_id", "dry_run"), [
+    (None, False),
+    ("abc12345-e89b-12d3-a456-426614174000", False),
+    ("not-a-uuid", True),
+])
+def test_pipeline_success_returns_0(mocker, monkeypatch, legacy_id, dry_run):
+    if legacy_id is None:
+        monkeypatch.delenv("AQUA_REPOSITORY_ID", raising=False)
+    else:
+        monkeypatch.setenv("AQUA_REPOSITORY_ID", legacy_id)
     mocks = _mock_pipeline(mocker)
-    assert main(["--repo", REPO]) == 0
+    args = ["--repo", REPO] + (["--dry-run"] if dry_run else [])
+    assert 0 == main(args)
     mocks["auth"].assert_called_once_with("test-key", "test-secret")
+    mocks["repository_fetcher"].assert_called_once_with("token")
+    mocks["repository_fetcher"].return_value.fetch_repository_id.assert_called_once_with(REPO)
+    mocks["fetcher"].assert_called_once_with("token", REPOSITORY_ID)
 
 
 def test_pipeline_calls_notify(mocker):
@@ -205,6 +222,10 @@ def test_pipeline_call_order(mocker):
     mocker.patch.object(LabelCreator, "ensure_labels", side_effect=lambda **_: (call_order.append("ensure"), [])[-1])
     mock_auth = mocker.patch("security.main.AquaSecAuthenticator")
     mock_auth.return_value.authenticate.side_effect = lambda: (call_order.append("auth"), "token")[-1]
+    mock_repository_fetcher = mocker.patch("security.main.RepositoryFetcher")
+    mock_repository_fetcher.return_value.fetch_repository_id.side_effect = lambda _: (
+        call_order.append("repository"), REPOSITORY_ID
+    )[-1]
     mock_fetcher = mocker.patch("security.main.ScanFetcher")
     mock_fetcher.return_value.fetch_findings.side_effect = lambda: (call_order.append("fetch"), {"total": 0, "data": []})[-1]
     mock_parser = mocker.patch("security.main.AquaSecParser")
@@ -215,30 +236,25 @@ def test_pipeline_call_order(mocker):
 
     main(["--repo", REPO])
 
-    assert call_order == ["ensure", "auth", "fetch", "parse", "sync", "notify"]
+    assert ["ensure", "auth", "repository", "fetch", "parse", "sync", "notify"] == call_order
 
 
 # main - error propagation
 
 
-def test_auth_error_propagates(mocker):
-    mocker.patch.object(LabelCreator, "ensure_labels", return_value=[])
-    mock_auth = mocker.patch("security.main.AquaSecAuthenticator")
-    mock_auth.return_value.authenticate.side_effect = SystemExit("auth failed")
+@pytest.mark.parametrize(("stage", "method", "downstream"), [
+    ("auth", "authenticate", ["repository_fetcher", "fetcher", "parser", "syncer", "notifier"]),
+    ("repository_fetcher", "fetch_repository_id", ["fetcher", "parser", "syncer", "notifier"]),
+    ("fetcher", "fetch_findings", ["parser", "syncer", "notifier"]),
+])
+def test_pipeline_error_propagates_without_running_downstream_stages(mocker, stage, method, downstream):
+    mocks = _mock_pipeline(mocker)
+    getattr(mocks[stage].return_value, method).side_effect = SystemExit(f"{stage} failed")
 
-    with pytest.raises(SystemExit, match="auth failed"):
+    with pytest.raises(SystemExit, match=f"{stage} failed"):
         main(["--repo", REPO])
-
-
-def test_fetch_error_propagates(mocker):
-    mocker.patch.object(LabelCreator, "ensure_labels", return_value=[])
-    mock_auth = mocker.patch("security.main.AquaSecAuthenticator")
-    mock_auth.return_value.authenticate.return_value = "token"
-    mock_fetcher = mocker.patch("security.main.ScanFetcher")
-    mock_fetcher.return_value.fetch_findings.side_effect = SystemExit("fetch failed")
-
-    with pytest.raises(SystemExit, match="fetch failed"):
-        main(["--repo", REPO])
+    for next_stage in downstream:
+        mocks[next_stage].assert_not_called()
 
 
 # main - verbose via RUNNER_DEBUG

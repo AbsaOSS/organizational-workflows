@@ -19,7 +19,6 @@
 import argparse
 import logging
 import os
-import uuid
 from dataclasses import dataclass
 
 from security.constants import LOGGING_PREFIX, MIN_SEVERITY_DEFAULT, VALID_SEVERITIES
@@ -36,7 +35,6 @@ class SecurityConfig:
 
     aqua_key: str
     aqua_secret: str
-    aqua_repository_id: str
     repo: str
     dry_run: bool = False
     verbose: bool = False
@@ -68,7 +66,6 @@ class SecurityConfig:
         return cls(
             aqua_key=os.environ.get("AQUA_KEY", ""),
             aqua_secret=os.environ.get("AQUA_SECRET", ""),
-            aqua_repository_id=os.environ.get("AQUA_REPOSITORY_ID", ""),
             repo=args.repo or os.environ.get("GITHUB_REPOSITORY", ""),
             dry_run=bool(args.dry_run),
             verbose=bool(args.verbose),
@@ -91,13 +88,6 @@ class SecurityConfig:
             errors.append("AQUA_KEY: not provided.")
         if not self.aqua_secret:
             errors.append("AQUA_SECRET: not provided.")
-        if not self.aqua_repository_id:
-            errors.append("AQUA_REPOSITORY_ID: not provided.")
-        else:
-            try:
-                uuid.UUID(self.aqua_repository_id)
-            except ValueError:
-                errors.append("AQUA_REPOSITORY_ID: invalid UUID format.")
         if not self.repo or "/" not in self.repo:
             errors.append("repo: not specified or invalid. Use --repo owner/repo.")
 

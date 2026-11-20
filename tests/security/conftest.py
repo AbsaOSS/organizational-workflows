@@ -23,10 +23,9 @@ produced by ``AquaSecParser``.
 
 import copy
 from itertools import count
-from unittest.mock import MagicMock
 
 import pytest
-from pytest_mock import MockerFixture
+from pytest_mock import MockerFixture, MockType
 
 from security.alerts.models import Alert
 
@@ -282,7 +281,7 @@ def collision_alerts(request: pytest.FixtureRequest, pipeline_alert: Alert, sast
 
 
 @pytest.fixture()
-def collision_issue_writes(mocker: MockerFixture) -> dict[str, MagicMock]:
+def collision_issue_writes(mocker: MockerFixture) -> dict[str, MockType]:
     """Successful issue writes with persistent synthetic Sub-issue links."""
     linked: set[int] = set()
     numbers = count(100)

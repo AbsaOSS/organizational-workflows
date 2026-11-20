@@ -21,10 +21,9 @@ orchestration functions with mocked GitHub CLI calls.
 import copy
 import logging
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
-from pytest_mock import MockerFixture
+from pytest_mock import MockerFixture, MockType
 
 from core.models import Issue
 from security.alerts.aquasec_parser import AquaSecParser
@@ -421,7 +420,7 @@ def test_resolve_matches_does_not_reuse_another_open_owner(
 @pytest.mark.parametrize("collision_alerts", ["pipeline", "sast"], indirect=True)
 def test_sync_shared_hash_repeat_and_reorder_has_no_replacements(
     collision_alerts: tuple[Alert, Alert],
-    collision_issue_writes: dict[str, MagicMock],
+    collision_issue_writes: dict[str, MockType],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     for alert in collision_alerts:
@@ -455,27 +454,43 @@ def test_sync_shared_hash_repeat_and_reorder_has_no_replacements(
 
 
 @pytest.mark.parametrize("collision_alerts", ["pipeline"], indirect=True)
-def test_sync_parent_confidence_is_independent_of_alert_order(
+@pytest.mark.parametrize("reverse", [False, True])
+def test_sync_parent_body_is_stable_across_initial_order_and_reordered_repeat(
     collision_alerts: tuple[Alert, Alert],
-    collision_issue_writes: dict[str, MagicMock],
+    collision_issue_writes: dict[str, MockType],
+    reverse: bool,
 ) -> None:
     first, second = collision_alerts
+    first.metadata.severity = second.metadata.severity = "high"
     first.rule_details.confidence = "medium"
     second.rule_details.confidence = "high"
-    parent_bodies = []
-    for alerts in ({1: first, 2: second}, {1: second, 2: first}):
-        issues: dict[int, Issue] = {}
-        sync_alerts_and_issues(alerts, issues)
-        parent_bodies.append(
-            next(issue.body for issue in issues.values() if load_secmeta(issue.body).get("type") == "parent")
-        )
+    alerts = {1: first, 2: second}
+    if reverse:
+        alerts = dict(reversed(list(alerts.items())))
+    issues: dict[int, Issue] = {}
+    sync_alerts_and_issues(alerts, issues)
 
-    assert parent_bodies[0] == parent_bodies[1]
+    parent = next(issue for issue in issues.values() if load_secmeta(issue.body).get("type") == "parent")
+    expected_body = min(build_parent_issue_body(alert) for alert in alerts.values())
+    assert expected_body == parent.body
+    original_body = parent.body
+    for write in collision_issue_writes.values():
+        write.reset_mock()
+
+    result = sync_alerts_and_issues(
+        dict(reversed(list(alerts.items()))),
+        dict(reversed(list(issues.items()))),
+    )
+
+    assert original_body == parent.body
+    assert [] == result.issue_changes
+    for write in collision_issue_writes.values():
+        write.assert_not_called()
 
 
 @pytest.mark.parametrize("reverse", [False, True])
 def test_sync_parent_uses_highest_eligible_severity(
-    pipeline_alert: Alert, collision_issue_writes: dict[str, MagicMock], reverse: bool
+    pipeline_alert: Alert, collision_issue_writes: dict[str, MockType], reverse: bool
 ) -> None:
     high = pipeline_alert
     high.metadata.severity = "high"
@@ -503,7 +518,7 @@ def test_sync_parent_uses_highest_eligible_severity(
 
 @pytest.mark.parametrize("collision_alerts", ["pipeline"], indirect=True)
 def test_sync_unresolved_alerts_cannot_supply_parent_content(
-    collision_alerts: tuple[Alert, Alert], collision_issue_writes: dict[str, MagicMock]
+    collision_alerts: tuple[Alert, Alert], collision_issue_writes: dict[str, MockType]
 ) -> None:
     first, second = collision_alerts
     first.metadata.severity = second.metadata.severity = "critical"
@@ -528,7 +543,7 @@ def test_sync_unresolved_alerts_cannot_supply_parent_content(
 @pytest.mark.parametrize("dry_run,min_severity", [(False, "low"), (True, "low"), (False, "critical")])
 def test_sync_shared_hash_ambiguous_update_protects_candidates(
     collision_alerts: tuple[Alert, Alert],
-    collision_issue_writes: dict[str, MagicMock],
+    collision_issue_writes: dict[str, MockType],
     caplog: pytest.LogCaptureFixture,
     dry_run: bool,
     min_severity: str,

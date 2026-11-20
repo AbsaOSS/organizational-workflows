@@ -54,10 +54,13 @@ Patterns
 - Use American English (colored, serialize, behavior)
 
 Testing
+- Use pytest for all tests, fixtures, parametrization, and exception assertions
+- Never use unittest-style test classes or import directly from `unittest`
 - Mirror src structure: `src/security/module.py` -> `tests/security/test_module.py`
 - Minimal tests, no redundant tests
 - All imports at the top of test files (never inside test functions)
 - Use conftest.py fixtures for repeated mocking patterns across tests
+- Use the pytest-mock `mocker` fixture for mocking
 - Comment sections: `# method_name` before tests
 - Use `mocker.patch("module.dependency")` or `mocker.patch.object(Class, "method")`
 - Assert pattern: `assert expected == actual`

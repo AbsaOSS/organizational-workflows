@@ -1,4 +1,4 @@
-# How Onboard to Security Automation
+# How Onboard Security Automation
 
 ## Overview
 
@@ -17,8 +17,7 @@ This guide walks you through onboarding your repository to **Security Automation
 
 Make sure you have the following before you start:
 
-- Admin (or equivalent) access to the GitHub repository you are onboarding, so you can add secrets and workflow files.
-- Access to the AquaSec platform, and your repository already onboarded there as a **Code Repository**.
+- Access to the GitHub repository you are onboarding, so you can add the shared-workflow file.
 - *(Optional)* A Microsoft Teams Incoming Webhook URL, if you want to run notifications.
 
 > **No label setup required.** The pipeline creates any missing labels on its first run: `scope:security`, `type:aquasec`, `epic`, `sec:suppression`, `sec:false-positive`.
@@ -113,3 +112,4 @@ From now on, the workflow keeps the backlog in sync on every run: issues are reo
 - [Security Automation docs](../security-automation): what the solution does and why
 - [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): running the pipeline locally, CLI flags and contributor details
 - [Example Caller Workflow](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
+- [AquaSec Suppression Skill](/knowledge-base/agentic-toolkit/skills/aquasec-suppress): follow-up triage and suppression-request evidence

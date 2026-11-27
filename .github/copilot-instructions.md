@@ -50,7 +50,8 @@ Patterns
 - All logs must start with "<Domain> -" prefix (e.g., "Security -")
 - Never disable pylint behavior in the code
 - External links should link to a new window
-- Knowledge Base docs are Markdown files under `docs/`; cross-page links must use relative published paths (e.g., `../toolkit/skills/aquasec-suppress`), never root-relative `/knowledge-base/...` URLs (KB-HTML-003).
+- Relative links in docs must open in the same tab; use Markdown links without `target="_blank"`
+- Knowledge Base docs are Markdown files under `docs/`; cross-page links must use relative published paths (e.g., `../toolkit/skills/aquasec-suppress`), never root-relative `/knowledge-base/...` URLs (KB-HTML-003)
 - Write product and tool names as spelled by their owners: Markdown, GitHub, AquaSec, Python, Teams
 - Use American English (colored, serialize, behavior)
 

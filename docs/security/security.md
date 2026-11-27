@@ -118,7 +118,7 @@ linking the related Jira ticket:
 | `sec:suppression` | A request to knowingly accept a real finding for a period. |
 | `sec:false-positive` | A request to confirm a finding is not a real issue. |
 
-The optional <a href="../agentic-toolkit/skills/aquasec-suppress" target="_blank" rel="noopener noreferrer">aquasec-suppress skill</a> provides follow-up triage for AquaSec policy-clash and blocked-remediation Findings tracked in GitHub Issues under `type:aquasec`, using reviewed patterns and source evidence to distinguish confirmed False Positives, policy clashes, and legitimate Findings. It prepares a CSO Application Security suppression request with Markdown / PDF evidence, applies Waiver labels only after explicit user approval, and supports a dry-run mode that leaves issues unchanged.
+The optional [aquasec-suppress skill](../agentic-toolkit/skills/aquasec-suppress) provides follow-up triage for AquaSec policy-clash and blocked-remediation Findings tracked in GitHub Issues under `type:aquasec`, using reviewed patterns and source evidence to distinguish confirmed False Positives, policy clashes, and legitimate Findings. It prepares a CSO Application Security suppression request with Markdown / PDF evidence, applies Waiver labels only after explicit user approval, and supports a dry-run mode that leaves issues unchanged.
 
 ---
 

@@ -112,4 +112,4 @@ From now on, the workflow keeps the backlog in sync on every run: issues are reo
 - [Security Automation docs](../security-automation): what the solution does and why
 - [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): running the pipeline locally, CLI flags and contributor details
 - [Example Caller Workflow](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
-- [AquaSec Suppression Skill](/knowledge-base/agentic-toolkit/skills/aquasec-suppress): follow-up triage and suppression-request evidence
+- [AquaSec Suppression Skill](../agentic-toolkit/skills/aquasec-suppress): follow-up triage and suppression-request evidence

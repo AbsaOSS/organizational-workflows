@@ -118,7 +118,7 @@ linking the related Jira ticket:
 | `sec:suppression` | A request to knowingly accept a real finding for a period. |
 | `sec:false-positive` | A request to confirm a finding is not a real issue. |
 
-The optional <a href="/knowledge-base/agentic-toolkit/skills/aquasec-suppress" target="_blank" rel="noopener noreferrer">aquasec-suppress skill</a> provides follow-up triage for AquaSec policy-clash and blocked-remediation Findings tracked in GitHub Issues under `type:aquasec`, using reviewed patterns and source evidence to distinguish confirmed False Positives, policy clashes, and legitimate Findings. It prepares a CSO Application Security suppression request with Markdown / PDF evidence, applies Waiver labels only after explicit user approval, and supports a dry-run mode that leaves issues unchanged.
+The optional <a href="../agentic-toolkit/skills/aquasec-suppress" target="_blank" rel="noopener noreferrer">aquasec-suppress skill</a> provides follow-up triage for AquaSec policy-clash and blocked-remediation Findings tracked in GitHub Issues under `type:aquasec`, using reviewed patterns and source evidence to distinguish confirmed False Positives, policy clashes, and legitimate Findings. It prepares a CSO Application Security suppression request with Markdown / PDF evidence, applies Waiver labels only after explicit user approval, and supports a dry-run mode that leaves issues unchanged.
 
 ---
 
@@ -260,4 +260,4 @@ See the full example at [aquasec-night-scan-example.yml](https://github.com/Absa
 - [How to Onboard](../how-onboard-security-automation): step-by-step onboarding guide
 - [Security README](https://github.com/AbsaOSS/organizational-workflows/blob/master/src/security/README.md): running locally and technical details
 - [Example Caller Workflow](https://github.com/AbsaOSS/organizational-workflows/blob/master/docs/security/aquasec-night-scan-example.yml): ready-to-copy workflow file for your repository
-- [AquaSec Suppression Skill](/knowledge-base/agentic-toolkit/skills/aquasec-suppress): follow-up triage and suppression-request evidence
+- [AquaSec Suppression Skill](../agentic-toolkit/skills/aquasec-suppress): follow-up triage and suppression-request evidence
